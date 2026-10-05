@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bruto — edição de vídeo bruto</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark" aria-hidden="true"></span>Bruto</div>
+    <input id="projName" class="proj-name" aria-label="Nome do projeto" value="Projeto sem nome">
+    <nav class="actions">
+      <button id="btnAdd" class="btn">Adicionar vídeos</button>
+      <button id="btnClaude" class="btn">Montar com o Claude</button>
+      <details class="menu" id="projMenu">
+        <summary class="btn">Projeto</summary>
+        <div class="menu-pop">
+          <button id="btnSaveProj">Salvar projeto (.json)</button>
+          <button id="btnOpenProj">Abrir projeto ou edição</button>
+          <button id="btnNewProj">Novo projeto</button>
+        </div>
+      </details>
+      <button id="btnUndo" class="btn icon" title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
+      <button id="btnRedo" class="btn icon" title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
+      <button id="btnExport" class="btn primary">Exportar</button>
+    </nav>
+    <input type="file" id="fileVideos" multiple accept="video/*,.mov,.mkv,.m4v" hidden>
+    <input type="file" id="fileProject" accept=".json,application/json" hidden>
+  </header>
+
+  <main class="workspace">
+    <aside class="bin">
+      <div class="panel-head">
+        <h2>Material</h2>
+        <span id="binCount" class="muted"></span>
+      </div>
+      <div class="bin-tools">
+        <label class="field">
+          <span>Sensibilidade de detecção de cortes</span>
+          <input id="sens" type="range" min="1" max="10" value="5">
+        </label>
+        <div class="row">
+          <button id="btnReanalyze" class="btn small">Reanalisar tudo</button>
+          <button id="btnDraft" class="btn small">Montar rascunho</button>
+        </div>
+      </div>
+      <div id="binList"></div>
+    </aside>
+
+    <section class="viewer">
+      <div class="viewer-head">
+        <div class="tabs" role="group" aria-label="Modo do player">
+          <button class="mode-tab" data-mode="source" aria-pressed="true">Fonte</button>
+          <button class="mode-tab" data-mode="sequence" aria-pressed="false">Sequência</button>
+        </div>
+        <span id="viewerTitle" class="muted"></span>
+      </div>
+      <div class="stage-wrap">
+        <div class="stage" id="stage">
+          <video id="player" playsinline preload="auto"></video>
+          <div class="stage-empty" id="stageEmpty">Adicione vídeos para começar</div>
+        </div>
+      </div>
+      <div class="transport">
+        <button id="btnPlay" class="play" aria-label="Reproduzir">▶</button>
+        <span id="timeDisp" class="time">00:00.0 / 00:00.0</span>
+        <div id="markControls" class="row">
+          <button id="btnIn" class="btn small" title="Atalho: I">Marcar entrada</button>
+          <button id="btnOut" class="btn small" title="Atalho: O">Marcar saída</button>
+          <button id="btnAddRange" class="btn small accent" title="Atalho: A">Adicionar à timeline</button>
+        </div>
+      </div>
+      <div id="scrubWrap"><div id="scrub" aria-label="Linha do tempo do arquivo"></div></div>
+    </section>
+
+    <aside class="inspector" id="inspector"></aside>
+  </main>
+
+  <section class="timeline">
+    <div class="tl-head">
+      <h2>Timeline</h2>
+      <span id="seqSummary" class="muted"></span>
+      <label class="zoom">Zoom <input id="zoom" type="range" min="4" max="60" value="14"></label>
+    </div>
+    <div id="track"></div>
+  </section>
+
+  <dialog id="dlgClaude">
+    <form method="dialog" class="dlg-head">
+      <h2>Montar com o Claude</h2>
+      <button class="btn icon" aria-label="Fechar">✕</button>
+    </form>
+    <div class="dlg-body">
+      <ol class="steps">
+        <li>
+          <h3>Descreva o vídeo</h3>
+          <div class="grid2">
+            <label class="field"><span>Tipo de vídeo</span>
+              <select id="tplSelect">
+                <option value="imovel">Imóvel</option>
+                <option value="vlog">Vlog ou fala para câmera</option>
+                <option value="entrevista">Entrevista</option>
+                <option value="gameplay">Gameplay</option>
+                <option value="produto">Produto</option>
+                <option value="livre">Livre</option>
+              </select>
+            </label>
+            <label class="field"><span>Duração alvo (segundos)</span>
+              <input id="targetDur" type="number" min="5" step="5" value="60">
+            </label>
+          </div>
+          <label class="field"><span>Objetivo e observações</span>
+            <textarea id="briefing" rows="3" placeholder="Ex.: apartamento de 3 quartos no Centro, destacar a suíte e a varanda gourmet, vídeo para Reels."></textarea>
+          </label>
+        </li>
+        <li>
+          <h3>Leve o material para o Claude</h3>
+          <p class="muted">Baixe as folhas de contato, copie o prompt e envie tudo numa conversa com o Claude.</p>
+          <div class="row">
+            <button id="btnSheets" class="btn">Baixar folhas de contato</button>
+            <button id="btnCopyPrompt" class="btn">Copiar prompt</button>
+          </div>
+          <details class="prompt-preview">
+            <summary>Ver prompt</summary>
+            <textarea id="promptPreview" rows="8" readonly></textarea>
+          </details>
+        </li>
+        <li>
+          <h3>Aplique a resposta</h3>
+          <textarea id="editJson" rows="6" placeholder="Cole aqui o JSON que o Claude devolveu"></textarea>
+          <div class="row">
+            <button id="btnApplyEdit" class="btn primary">Aplicar edição</button>
+            <button id="btnLoadEditFile" class="btn">Abrir arquivo .json</button>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </dialog>
+
+  <dialog id="dlgExport">
+    <form method="dialog" class="dlg-head">
+      <h2>Exportar</h2>
+      <button class="btn icon" aria-label="Fechar">✕</button>
+    </form>
+    <div class="dlg-body">
+      <div class="grid3">
+        <label class="field"><span>Formato</span>
+          <select data-setting="aspect">
+            <option value="16:9">Horizontal 16:9</option>
+            <option value="9:16">Vertical 9:16</option>
+          </select>
+        </label>
+        <label class="field"><span>Enquadramento</span>
+          <select data-setting="fit">
+            <option value="contain">Encaixar com barras</option>
+            <option value="cover">Preencher cortando</option>
+          </select>
+        </label>
+        <label class="field"><span>Resolução</span>
+          <select data-setting="res">
+            <option value="720">720p</option>
+            <option value="1080">1080p</option>
+            <option value="2160">4K (só render local)</option>
+          </select>
+        </label>
+        <label class="field"><span>Quadros por segundo</span>
+          <select data-setting="fps">
+            <option value="30">30</option>
+            <option value="60">60</option>
+          </select>
+        </label>
+        <label class="field"><span>Áudio original</span>
+          <select data-setting="audio">
+            <option value="true">Manter</option>
+            <option value="false">Remover</option>
+          </select>
+        </label>
+        <label class="field"><span>Qualidade</span>
+          <select data-setting="quality">
+            <option value="final">Final</option>
+            <option value="draft">Rascunho rápido</option>
+          </select>
+        </label>
+      </div>
+
+      <section class="exp-block">
+        <h3>Renderizar no navegador</h3>
+        <p class="muted" id="expEstimate"></p>
+        <div class="row">
+          <button id="btnRender" class="btn primary">Renderizar MP4</button>
+          <button id="btnCancel" class="btn" hidden>Cancelar</button>
+        </div>
+        <div id="expProgress" hidden>
+          <div class="bar"><i id="expBar"></i></div>
+          <div id="expStatus"></div>
+          <pre id="expLog"></pre>
+        </div>
+        <div id="expResult"></div>
+      </section>
+
+      <section class="exp-block">
+        <h3>Outras saídas</h3>
+        <p class="muted">Para vídeos longos ou em 4K, o render local com ffmpeg é bem mais rápido. A EDL abre a sequência no DaVinci Resolve ou no Premiere para acabamento.</p>
+        <div class="row wrap">
+          <button id="btnBat" class="btn">Script Windows (.bat)</button>
+          <button id="btnSh" class="btn">Script Mac/Linux (.sh)</button>
+          <button id="btnEdl" class="btn">EDL (DaVinci/Premiere)</button>
+          <button id="btnSaveProj2" class="btn">Projeto (.json)</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
+  <div id="dropOverlay" hidden><div>Solte os vídeos para adicionar ao projeto</div></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
