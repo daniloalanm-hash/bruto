@@ -960,6 +960,7 @@ function autoBuild() {
 const GEMINI_KEY = 'bruto:gemini:key';
 const GEMINI_MODEL = 'bruto:gemini:model';
 const DEFAULT_MODEL = 'gemini-flash-latest';
+const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-flash-lite-latest'];
 const getKey = () => { try { return localStorage.getItem(GEMINI_KEY) || ''; } catch { return ''; } };
 const getModel = () => { try { return localStorage.getItem(GEMINI_MODEL) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; } };
 function updateKeyState() {
@@ -973,6 +974,7 @@ function geminiError(status, body) {
   if (status === 403) return 'A chave não tem permissão para usar o Gemini. Confira a chave no AI Studio.';
   if (status === 404) return `Modelo "${getModel()}" não encontrado. Deixe o campo Modelo vazio para usar o padrão, ou informe outro nome.`;
   if (status === 429) return 'Limite gratuito do Gemini atingido. Espere alguns minutos ou use "Montar automaticamente".';
+  if (status >= 500) return 'Os servidores do Gemini estão sobrecarregados agora (erro ' + status + '). Tente de novo em alguns minutos ou use "Montar automaticamente".';
   return `O Gemini respondeu com erro ${status}. ${msg}`.trim();
 }
 async function aiBuild() {
@@ -985,13 +987,25 @@ async function aiBuild() {
     const sheets = await renderSheets((m) => { status.textContent = m; });
     status.textContent = 'A IA está analisando as cenas…';
     const parts = [{ text: buildPrompt() }, ...sheets.map((u) => ({ inline_data: { mime_type: 'image/jpeg', data: u.split(',')[1] } }))];
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getModel())}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(geminiError(res.status, body));
+    const payload = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } });
+    const models = [...new Set([getModel(), ...FALLBACK_MODELS])];
+    let res = null, body = {}, lastStatus = 0;
+    outer: for (const model of models) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) { status.textContent = `IA ocupada, tentando de novo (${model})…`; await sleep(attempt * 4000); }
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: payload,
+        });
+        body = await res.json().catch(() => ({}));
+        lastStatus = res.status;
+        if (res.ok) break outer;
+        if (res.status === 404) break;                       // modelo inexistente: tenta o próximo
+        if (res.status !== 503 && res.status !== 500 && res.status !== 429) throw new Error(geminiError(res.status, body));
+        if (res.status === 429) break;                       // cota do modelo: tenta outro modelo
+      }
+      status.textContent = 'Trocando para outro modelo da IA…';
+    }
+    if (!res?.ok) throw new Error(geminiError(lastStatus, body));
     const text = (body.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
     if (!text) throw new Error('A IA não devolveu uma edição. Tente de novo.');
     applyEdit(parseLooseJSON(text));
