@@ -246,7 +246,7 @@ async function analyzeSource(src) {
     await withGrab(async () => {
       await grabLoad(src);
       const v = grab.v, dur = src.duration;
-      const step = dur <= 60 ? 0.25 : dur <= 180 ? 0.5 : dur <= 900 ? 1 : 2;
+      const step = dur <= 60 ? 0.25 : dur <= 180 ? 0.5 : dur <= 2400 ? 1 : 2;
       const W = 128, H = 72;
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -267,7 +267,14 @@ async function analyzeSource(src) {
           const l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - W] - g[i + W];
           ls += l; lq += l * l; n++;
         }
-        samples.push({ t, diff, bright: sum / g.length, sharp: lq / n - (ls / n) ** 2 });
+        const sig = new Float32Array(27), cnt = new Float32Array(9);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const cell = Math.min(2, Math.floor((y * 3) / H)) * 3 + Math.min(2, Math.floor((x * 3) / W));
+          const j = (y * W + x) * 4;
+          sig[cell * 3] += d[j]; sig[cell * 3 + 1] += d[j + 1]; sig[cell * 3 + 2] += d[j + 2]; cnt[cell]++;
+        }
+        for (let k = 0; k < 27; k++) sig[k] /= cnt[Math.floor(k / 3)] * 255;
+        samples.push({ t, diff, bright: sum / g.length, sharp: lq / n - (ls / n) ** 2, sig });
         prev = g;
         if (performance.now() - lastUI > 150) { src.analyzing = t / dur; updateAnalyzeLabel(src); lastUI = performance.now(); }
       }
@@ -287,6 +294,29 @@ async function analyzeSource(src) {
         }
       }
       bounds.push(dur);
+      // gravações contínuas: divide quando o ambiente muda (cores e composição mudam de forma consistente)
+      const SOFT_MIN = clamp(dur / 130, 5, 12);
+      const D = 0.16 - (state.sensitivity - 1) * 0.012;
+      const soft = [];
+      for (let h = 0; h < bounds.length - 1; h++) {
+        const a = bounds[h], b = bounds[h + 1];
+        let start = a, mean = null, n = 0;
+        for (const smp of samples) {
+          if (smp.t < a || smp.t >= b) continue;
+          if (!mean) { mean = Float32Array.from(smp.sig); n = 1; continue; }
+          let dist = 0;
+          for (let k = 0; k < 27; k++) dist += Math.abs(smp.sig[k] - mean[k]);
+          dist /= 27;
+          if (dist > D && smp.t - start >= SOFT_MIN && b - smp.t >= SOFT_MIN * 0.5) {
+            soft.push(smp.t); start = smp.t; mean = Float32Array.from(smp.sig); n = 1;
+          } else {
+            n = Math.min(n + 1, 8);
+            for (let k = 0; k < 27; k++) mean[k] += (smp.sig[k] - mean[k]) / n;
+          }
+        }
+      }
+      bounds.push(...soft);
+      bounds.sort((p, q) => p - q);
       const made = [];
       for (let i = 0; i < bounds.length - 1; i++) {
         const start = +bounds[i].toFixed(2), end = +bounds[i + 1].toFixed(2);
@@ -300,7 +330,9 @@ async function analyzeSource(src) {
           samples: inside.map((x) => ({ t: x.t, d: x.diff * (0.5 / step), sh: x.sharp, b: x.bright, cut: !!x.isCut })),
         });
       }
-      for (const sc of made) {
+      for (const [mi, sc] of made.entries()) {
+        const lbl = document.getElementById(`ap-${src.id}`);
+        if (lbl) lbl.textContent = `Miniaturas ${mi + 1}/${made.length}`;
         sc.thumbs = [];
         for (const f of [0.15, 0.5, 0.85]) { await seek(v, sc.start + (sc.end - sc.start) * f); sc.thumbs.push(snapJPEG(v)); }
         sc.thumb = sc.thumbs[1];
@@ -322,11 +354,13 @@ function renumberScenes() {
   state.sceneSeq = state.scenes.length;
 }
 function computeFlags() {
+  const brs = state.scenes.map((s) => s.bright).sort((a, b) => a - b);
+  const brightMed = brs[Math.floor(brs.length / 2)] || 0.5;
   const sharps = state.scenes.map((s) => s.sharp).filter((x) => x > 0).sort((a, b) => a - b);
   const med = sharps[Math.floor(sharps.length / 2)] || 0;
   for (const s of state.scenes) {
     const f = [];
-    if (s.bright < 0.18) f.push('escuro');
+    if (s.bright < Math.min(0.18, brightMed * 0.6)) f.push('escuro');
     if (s.bright > 0.85) f.push('estourado');
     if (med && sharps.length > 2 && s.sharp < med * 0.35) f.push('desfocado');
     if (s.motion > 0.06) f.push('muito movimento');
@@ -800,6 +834,7 @@ function buildPrompt() {
     `Objetivo: ${state.briefing || '(não informado)'}`,
     `Duração alvo: cerca de ${state.targetDur} s`,
     `Formato de saída: ${state.settings.aspect}`,
+    ...(state.sources.length <= 2 && state.scenes.length > 3 ? ['O material é uma gravação contínua: cada cena é um trecho do percurso, separado pela mudança de ambiente. Cenas vizinhas podem mostrar o mesmo ambiente; escolha só a melhor delas.'] : []),
     '',
     `Diretrizes para este tipo: ${TEMPLATES[state.template]}`,
     '',
@@ -920,7 +955,11 @@ function globalSharpMed() {
 }
 // Nota de um trecho: nítido, estável (movimento constante, sem trancos), bem exposto,
 // e com entrada/saída em momentos de câmera mais calma.
-function windowScore(w, med) {
+function globalBrightMed() {
+  const v = state.scenes.flatMap((x) => (x.samples || []).map((y) => y.b)).filter((y) => y != null).sort((p, q) => p - q);
+  return v[Math.floor(v.length / 2)] || 0.5;
+}
+function windowScore(w, med, bmed = 0.5) {
   const n = w.length;
   const avg = (k, def) => w.reduce((t, x) => t + (x[k] ?? def), 0) / n;
   let jitter = 0;
@@ -929,9 +968,9 @@ function windowScore(w, med) {
   const motion = avg('d', 0), sharp = avg('sh', med) / med, bright = avg('b', 0.5);
   const edge = (w[0].d + w[n - 1].d) / 2;
   return Math.min(sharp, 1.5) - 8 * jitter - 2.5 * Math.max(0, motion - 0.05)
-    - 3 * Math.max(0, 0.22 - bright) - 3 * Math.max(0, bright - 0.85) - 1.5 * edge;
+    - 3 * Math.max(0, Math.min(0.22, bmed * 0.7) - bright) - 3 * Math.max(0, bright - 0.85) - 1.5 * edge;
 }
-function findWindows(src, L, k = 1, range = null) {
+function findWindows(src, L, k = 1, range = null, gap = 0) {
   const lo = range ? range[0] : 0, hi = range ? range[1] : src.duration;
   const margin = Math.min(0.6, (hi - lo) * 0.1);
   const t0 = lo + margin, t1 = hi - margin;
@@ -939,17 +978,20 @@ function findWindows(src, L, k = 1, range = null) {
   const centered = () => { const m = (t0 + t1) / 2; return [{ a: m - L / 2, b: m + L / 2, score: -9 }]; };
   const smp = srcSamples(src.id).filter((x) => x.t >= lo && x.t <= hi);
   if (smp.length < 3) return centered();
-  const med = globalSharpMed();
+  const med = globalSharpMed(), bmed = globalBrightMed();
   const cands = [];
+  let i0 = 0;
   for (let a = t0; a + L <= t1 + 1e-6; a += 0.25) {
-    const w = smp.filter((x) => x.t >= a - 1e-6 && x.t <= a + L + 1e-6);
-    if (w.length >= 2) cands.push({ a, b: a + L, score: windowScore(w, med) });
+    while (i0 < smp.length && smp[i0].t < a - 1e-6) i0++;
+    const w = [];
+    for (let j = i0; j < smp.length && smp[j].t <= a + L + 1e-6; j++) w.push(smp[j]);
+    if (w.length >= 2) cands.push({ a, b: a + L, score: windowScore(w, med, bmed) });
   }
   if (!cands.length) return centered();
   cands.sort((p, q) => q.score - p.score);
   const out = [];
   for (const c of cands) {
-    if (out.every((o) => c.b <= o.a || c.a >= o.b)) out.push(c);
+    if (out.every((o) => c.b + gap <= o.a || c.a >= o.b + gap)) out.push(c);
     if (out.length >= k) break;
   }
   return out.sort((p, q) => p.a - q.a);
@@ -975,38 +1017,50 @@ function autoBuild() {
       const worst = picks.reduce((w, p) => (p.b - p.a < w.b - w.a ? p : w));
       picks = picks.filter((p) => p !== worst); total -= worst.b - worst.a; dropped++;
     }
-  } else if (usable.length >= 3 && usable.every((s) => s.duration < 150)) {
-    // um arquivo por ambiente: um trecho por arquivo, na ordem dos arquivos
-    let chosen = usable.map((s) => ({ s, w: findWindows(s, MAX, 1)[0] }));
+  } else {
+    // cada cena é um ambiente: um arquivo curto ou um trecho de uma gravação contínua
+    const units = state.scenes.filter((sc) => usable.some((u) => u.id === sc.srcId)).map((sc) => {
+      const src = srcById(sc.srcId), len = sc.end - sc.start;
+      const w = findWindows(src, Math.min(MAX, len), 1, [sc.start, sc.end])[0];
+      return { sc, src, len, w, rank: w.score + 0.15 * Math.log(1 + len) };
+    }).filter((u) => u.len >= 1.2);
+    let chosen = units;
     const fit = Math.max(1, Math.floor(target / MIN));
     if (chosen.length > fit) {
-      const keep = new Set([chosen[0], ...chosen.slice(1).sort((p, q) => q.w.score - p.w.score).slice(0, fit - 1)]);
+      const keep = new Set([chosen[0], ...chosen.slice(1).sort((p, q) => q.rank - p.rank).slice(0, fit - 1)]);
       dropped = chosen.length - keep.size;
-      chosen = chosen.filter((c) => keep.has(c));
+      chosen = chosen.filter((u) => keep.has(u));
     }
     const L = clamp(target / chosen.length, MIN, MAX);
-    // em arquivos curtos, prefere um trecho menor e limpo a um trecho longo que pega partes ruins
-    picks = chosen.map(({ s }) => {
-      const tries = [...new Set([L, L * 0.8, L * 0.65, MIN].map((x) => +Math.max(MIN, Math.min(x, s.duration - 0.4)).toFixed(2)))];
-      const opts = tries.map((len) => findWindows(s, len, 1)[0]);
+    // se sobrar tempo (poucos ambientes longos), tira mais de um trecho dos ambientes mais longos, sem colar trechos vizinhos
+    let extra = Math.max(0, Math.round(target / L) - chosen.length);
+    const extraOf = new Map();
+    const byLen = [...chosen].sort((p, q) => q.len - p.len);
+    for (let gave = true; extra > 0 && gave;) {
+      gave = false;
+      for (const u of byLen) {
+        if (extra <= 0) break;
+        const can = Math.max(0, Math.floor(u.len / (L * 2.5)) - 1);
+        if ((extraOf.get(u) || 0) < can) { extraOf.set(u, (extraOf.get(u) || 0) + 1); extra--; gave = true; }
+      }
+    }
+    for (const u of chosen) {
+      const range = [u.sc.start, u.sc.end];
+      const k = 1 + (extraOf.get(u) || 0);
+      if (k > 1) {
+        for (const w of findWindows(u.src, L, k, range, L)) picks.push({ src: u.src, a: w.a, b: w.b, sc: u.sc });
+        continue;
+      }
+      const tries = [...new Set([L, L * 0.8, L * 0.65, MIN].map((x) => +Math.max(MIN, Math.min(x, u.len - 0.4)).toFixed(2)))];
+      const opts = tries.map((len) => findWindows(u.src, len, 1, range)[0]);
       const top = Math.max(...opts.map((o) => o.score));
-      const w = opts.find((o) => o.score >= top - 0.04) || opts[0];
-      return { src: s, a: w.a, b: w.b };
-    });
-  } else {
-    // poucos arquivos longos: vários trechos por arquivo, proporcionais à duração
-    const ideal = tpl === 'produto' ? 3 : tpl === 'gameplay' ? 5 : 4;
-    const k = Math.max(1, Math.round(target / ideal));
-    const L = clamp(target / k, MIN, MAX);
-    const totalDur = usable.reduce((t, s) => t + s.duration, 0);
-    for (const s of usable) {
-      const ks = Math.max(1, Math.round((k * s.duration) / totalDur));
-      for (const w of findWindows(s, L, ks)) picks.push({ src: s, a: w.a, b: w.b });
+      const w = opts.find((o) => o.score >= top - 0.12) || opts[0];
+      picks.push({ src: u.src, a: w.a, b: w.b, sc: u.sc });
     }
   }
   const clips = picks.filter((p) => p.b - p.a >= 0.8).map((p) => ({
     id: uid(), srcId: p.src.id, in: +Math.max(0, p.a).toFixed(2), out: +Math.min(p.src.duration, p.b).toFixed(2),
-    label: usable.length >= 3 ? baseName(p.src.name) : (sceneAt(p.src.id, p.a)?.id || baseName(p.src.name)), speed: 1, mute, note: '',
+    label: usable.length >= 3 ? baseName(p.src.name) : (p.sc?.id || sceneAt(p.src.id, p.a)?.id || baseName(p.src.name)), speed: 1, mute, note: '',
   }));
   if (!clips.length) { toast('Não encontrei trechos aproveitáveis. Tente reanalisar.', 'warn'); return false; }
   checkpoint();
@@ -1072,7 +1126,7 @@ async function aiBuild() {
     status.textContent = '';
     $('#dlgClaude').close();
   } catch (e) {
-    status.textContent = '';
+    status.textContent = `Erro: ${e.message || 'falha ao falar com o Gemini.'}`;
     toast(e.message || 'Falha ao falar com o Gemini.', 'warn', 8000);
   } finally {
     btn.classList.remove('busy'); $('#btnAutoBuild').disabled = false;
