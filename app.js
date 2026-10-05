@@ -107,7 +107,7 @@ function projectData() {
     format: 'bruto-projeto', version: 1, name: state.name, savedAt: new Date().toISOString(),
     settings: state.settings, template: state.template, briefing: state.briefing, targetDur: state.targetDur,
     sources: state.sources.map(({ id, name, size, duration, width, height, analyzed, hasAudio }) => ({ id, name, size, duration, width, height, analyzed, hasAudio })),
-    scenes: state.scenes.map(({ thumbs, thumb, ...rest }) => rest),
+    scenes: state.scenes.map(({ thumbs, thumb, samples, ...rest }) => rest),
     clips: state.clips, sceneSeq: state.sceneSeq, srcSeq: state.srcSeq,
   };
 }
@@ -295,6 +295,7 @@ async function analyzeSource(src) {
           id: '', srcId: src.id, start, end,
           bright: mean(inside, 'bright'), sharp: mean(inside, 'sharp'),
           motion: mean(moving, 'diff') * (0.5 / step), flags: [],
+          samples: inside.map((x) => ({ t: x.t, d: x.diff * (0.5 / step), sh: x.sharp, cut: !!x.isCut })),
         });
       }
       for (const sc of made) {
@@ -784,7 +785,7 @@ function buildPrompt() {
     duracao: +(s.end - s.start).toFixed(2), ...(s.flags?.length ? { alertas: s.flags } : {}),
   }));
   return [
-    'Você é o editor assistente do Bruto, uma ferramenta de edição de vídeo bruto.',
+    'Você é o editor assistente do Bruto, uma ferramenta de edição de vídeo bruto. Escreva as notas em português.',
     'As folhas de contato anexadas mostram cada cena em uma linha: ID, arquivo, intervalo e 3 quadros (início, meio e fim).',
     'Analise as imagens e os dados abaixo e monte a edição.',
     '',
@@ -811,16 +812,13 @@ function buildPrompt() {
   ].join('\n');
 }
 function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
-async function exportSheets() {
+async function renderSheets(onProgress = () => {}) {
   const scenes = state.scenes.filter((s) => srcById(s.srcId));
-  if (!scenes.length) return toast('Analise os vídeos antes de gerar as folhas de contato.', 'warn');
-  const btn = $('#btnSheets');
-  btn.disabled = true;
-  try {
-    for (const [i, sc] of scenes.entries()) { btn.textContent = `Preparando ${i + 1}/${scenes.length}`; await ensureSceneThumbs(sc); }
-    const per = 10, W = 1000, rowH = 150, top = 56;
-    const pages = Math.ceil(scenes.length / per);
-    for (let p = 0; p < pages; p++) {
+  for (const [i, sc] of scenes.entries()) { onProgress(`Preparando quadros ${i + 1}/${scenes.length}`); await ensureSceneThumbs(sc); }
+  const per = 10, W = 1000, rowH = 150, top = 56;
+  const pages = Math.ceil(scenes.length / per);
+  const out = [];
+  for (let p = 0; p < pages; p++) {
       const chunk = scenes.slice(p * per, p * per + per);
       const c = document.createElement('canvas');
       c.width = W; c.height = top + chunk.length * rowH + 10;
@@ -842,10 +840,18 @@ async function exportSheets() {
           try { const img = await loadImg(src); ctx.drawImage(img, 250 + k * 250, y + 7, 240, 135); } catch { /* quadro ausente */ }
         }
       }
-      download(`${slug(state.name)}-folha-${p + 1}.jpg`, c.toDataURL('image/jpeg', 0.85));
-      await sleep(400);
-    }
-    toast(`${pages} folha(s) de contato baixada(s).`);
+    out.push(c.toDataURL('image/jpeg', 0.85));
+  }
+  return out;
+}
+async function exportSheets() {
+  if (!state.scenes.some((s) => srcById(s.srcId))) return toast('Analise os vídeos antes de gerar as folhas de contato.', 'warn');
+  const btn = $('#btnSheets');
+  btn.disabled = true;
+  try {
+    const sheets = await renderSheets((m) => { btn.textContent = m; });
+    for (const [i, u] of sheets.entries()) { download(`${slug(state.name)}-folha-${i + 1}.jpg`, u); await sleep(400); }
+    toast(`${sheets.length} folha(s) de contato baixada(s).`);
   } finally {
     btn.disabled = false; btn.textContent = 'Baixar folhas de contato';
   }
@@ -884,6 +890,119 @@ function applyEdit(obj) {
   afterEdit(); updateStage();
   toast(`${clips.length} clipe(s) aplicados${skipped ? `, ${skipped} ignorado(s)` : ''}. Use Ctrl+Z para voltar.`, 'info', 5000);
   return true;
+}
+
+/* ---------------- montagem automática ---------------- */
+const MUTE_BY_DEFAULT = { imovel: true, produto: true };
+function sharpMedian(list) {
+  const v = list.map((s) => s.sharp).filter((x) => x > 0).sort((a, b) => a - b);
+  return v[Math.floor(v.length / 2)] || 1;
+}
+function bestWindow(sc, L, med) {
+  const mid = (sc.start + sc.end) / 2;
+  const centered = [Math.max(sc.start, mid - L / 2), Math.min(sc.end, mid + L / 2)];
+  const a0 = sc.start + 0.3, b0 = sc.end - 0.3;
+  if (b0 - a0 <= L) return centered;
+  const smp = (sc.samples || []).filter((x) => !x.cut);
+  if (smp.length < 2) return centered;
+  let best = null;
+  for (let a = a0; a + L <= b0 + 1e-6; a += 0.25) {
+    const w = smp.filter((x) => x.t >= a && x.t <= a + L);
+    if (!w.length) continue;
+    const motion = w.reduce((t, x) => t + x.d, 0) / w.length;
+    const sharp = w.reduce((t, x) => t + x.sh, 0) / w.length / med;
+    const score = Math.min(sharp, 2) - motion * 10;
+    if (!best || score > best.score) best = { a, score };
+  }
+  return best ? [best.a, best.a + L] : centered;
+}
+function autoBuild() {
+  const all = state.scenes.filter((s) => srcById(s.srcId)?.file);
+  if (!all.length) { toast('Adicione os vídeos e aguarde a análise antes de montar.', 'warn'); return false; }
+  const tpl = state.template;
+  const target = Math.max(5, +state.targetDur || 60);
+  const speech = tpl === 'vlog' || tpl === 'entrevista';
+  let pool = all.filter((s) => !s.flags?.some((f) => ['desfocado', 'escuro', 'curta'].includes(f)));
+  if (pool.length < 2) pool = all.filter((s) => s.end - s.start >= 0.8);
+  const med = sharpMedian(pool);
+  const quality = (s) => Math.min(s.sharp / med, 2) - s.motion * 8 - Math.abs(s.bright - 0.5) - (s.flags?.includes('muito movimento') ? 0.5 : 0);
+  const order = (a, b) => state.scenes.indexOf(a) - state.scenes.indexOf(b);
+  const mute = !!MUTE_BY_DEFAULT[tpl];
+  let ranges;
+  if (speech) {
+    let picked = [...pool].sort(order);
+    const len = (s) => Math.max(0.5, s.end - s.start - 0.4);
+    while (picked.length > 1 && picked.reduce((t, s) => t + len(s), 0) > target * 1.1) {
+      const worst = picked.reduce((w, s) => (quality(s) < quality(w) ? s : w));
+      picked = picked.filter((s) => s !== worst);
+    }
+    ranges = picked.map((s) => [s, s.start + 0.2, s.end - 0.2]);
+  } else {
+    const ideal = tpl === 'produto' ? 2.5 : tpl === 'gameplay' ? 4 : 3.5;
+    const k = Math.max(1, Math.round(target / ideal));
+    let picked = pool.length > k ? [...pool].sort((a, b) => quality(b) - quality(a)).slice(0, k) : [...pool];
+    picked.sort(order);
+    const L = clamp(target / picked.length, 1.5, tpl === 'gameplay' ? 8 : 5);
+    ranges = picked.map((s) => [s, ...bestWindow(s, Math.min(L, s.end - s.start), med)]);
+  }
+  const clips = ranges.filter(([, a, b]) => b - a >= 0.4).map(([s, a, b]) => ({
+    id: uid(), srcId: s.srcId, in: +a.toFixed(2), out: +b.toFixed(2), label: s.id, speed: 1, mute, note: '',
+  }));
+  if (!clips.length) { toast('Não encontrei trechos aproveitáveis. Tente reanalisar com outra sensibilidade.', 'warn'); return false; }
+  checkpoint();
+  state.clips = clips; state.selectedClip = null;
+  afterEdit(); updateStage();
+  toast(`Montagem com ${clips.length} clipes (${fmt(seqDur())}). Confira no modo Sequência; Ctrl+Z desfaz.`, 'info', 5000);
+  return true;
+}
+
+/* ---------------- montagem com IA (Gemini) ---------------- */
+const GEMINI_KEY = 'bruto:gemini:key';
+const GEMINI_MODEL = 'bruto:gemini:model';
+const DEFAULT_MODEL = 'gemini-flash-latest';
+const getKey = () => { try { return localStorage.getItem(GEMINI_KEY) || ''; } catch { return ''; } };
+const getModel = () => { try { return localStorage.getItem(GEMINI_MODEL) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; } };
+function updateKeyState() {
+  const k = getKey();
+  $('#keyState').textContent = k ? `Chave salva (termina em ${k.slice(-4)})` : 'Nenhuma chave salva';
+  $('#geminiModel').value = getModel() === DEFAULT_MODEL ? '' : getModel();
+}
+function geminiError(status, body) {
+  const msg = body?.error?.message || '';
+  if (status === 400 && /api key/i.test(msg)) return 'A chave do Gemini é inválida. Gere outra em aistudio.google.com/apikey.';
+  if (status === 403) return 'A chave não tem permissão para usar o Gemini. Confira a chave no AI Studio.';
+  if (status === 404) return `Modelo "${getModel()}" não encontrado. Deixe o campo Modelo vazio para usar o padrão, ou informe outro nome.`;
+  if (status === 429) return 'Limite gratuito do Gemini atingido. Espere alguns minutos ou use "Montar automaticamente".';
+  return `O Gemini respondeu com erro ${status}. ${msg}`.trim();
+}
+async function aiBuild() {
+  const key = getKey();
+  if (!key) { $('#aiConfig').open = true; $('#geminiKey').focus(); toast('Cadastre a chave gratuita do Gemini para usar a montagem com IA.', 'warn', 5000); return; }
+  if (!state.scenes.some((s) => srcById(s.srcId)?.file)) { toast('Adicione os vídeos e aguarde a análise antes de montar.', 'warn'); return; }
+  const btn = $('#btnAiBuild'), status = $('#autoStatus');
+  btn.classList.add('busy'); $('#btnAutoBuild').disabled = true;
+  try {
+    const sheets = await renderSheets((m) => { status.textContent = m; });
+    status.textContent = 'A IA está analisando as cenas…';
+    const parts = [{ text: buildPrompt() }, ...sheets.map((u) => ({ inline_data: { mime_type: 'image/jpeg', data: u.split(',')[1] } }))];
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getModel())}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(geminiError(res.status, body));
+    const text = (body.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+    if (!text) throw new Error('A IA não devolveu uma edição. Tente de novo.');
+    applyEdit(parseLooseJSON(text));
+    status.textContent = '';
+    $('#dlgClaude').close();
+  } catch (e) {
+    status.textContent = '';
+    toast(e.message || 'Falha ao falar com o Gemini.', 'warn', 8000);
+  } finally {
+    btn.classList.remove('busy'); $('#btnAutoBuild').disabled = false;
+  }
 }
 
 /* ---------------- exportação ---------------- */
@@ -1185,13 +1304,27 @@ function bind() {
   // Claude
   $('#btnClaude').onclick = () => {
     $('#tplSelect').value = state.template; $('#targetDur').value = state.targetDur; $('#briefing').value = state.briefing;
+    $('#autoAspect').value = state.settings.aspect;
     $('#promptPreview').value = buildPrompt();
+    updateKeyState();
     $('#dlgClaude').showModal();
   };
-  const syncBrief = () => {
+  $('#autoAspect').onchange = (e) => { state.settings.aspect = e.target.value; updateStage(); persist(); $('#promptPreview').value = buildPrompt(); };
+  $('#btnAutoBuild').onclick = () => { syncBrief(); if (autoBuild()) $('#dlgClaude').close(); };
+  $('#btnAiBuild').onclick = () => { syncBrief(); aiBuild(); };
+  $('#btnSaveKey').onclick = () => {
+    const k = $('#geminiKey').value.trim(), m = $('#geminiModel').value.trim();
+    try {
+      if (k) localStorage.setItem(GEMINI_KEY, k);
+      if (m) localStorage.setItem(GEMINI_MODEL, m); else localStorage.removeItem(GEMINI_MODEL);
+    } catch { toast('O navegador bloqueou o armazenamento local.', 'warn'); return; }
+    $('#geminiKey').value = ''; updateKeyState(); toast('Configuração da IA salva neste navegador.');
+  };
+  $('#btnClearKey').onclick = () => { try { localStorage.removeItem(GEMINI_KEY); } catch { /* ignora */ } updateKeyState(); toast('Chave removida.'); };
+  function syncBrief() {
     state.template = $('#tplSelect').value; state.targetDur = +$('#targetDur').value || 60; state.briefing = $('#briefing').value;
     $('#promptPreview').value = buildPrompt(); persist();
-  };
+  }
   ['#tplSelect', '#targetDur', '#briefing'].forEach((s) => $(s).addEventListener('input', syncBrief));
   $('#btnSheets').onclick = exportSheets;
   $('#btnCopyPrompt').onclick = async () => {

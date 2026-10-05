@@ -14,8 +14,10 @@ Teste local: `npx serve .` dentro da pasta (abrir o `index.html` direto pelo exp
 ## Fluxo de trabalho
 
 1. **Adicionar vídeos** (ou arrastar para a janela). Cada arquivo é analisado: o Bruto detecta cortes de cena, gera miniaturas e marca alertas (escuro, estourado, desfocado, muito movimento, curta).
-2. **Montar com o Claude**: escolha o tipo de vídeo, descreva o objetivo, baixe as folhas de contato e copie o prompt. Envie tudo numa conversa com o Claude e cole o JSON da resposta em "Aplicar edição".
-   Sem o Claude: use **Montar rascunho** (todas as cenas sem alerta) ou monte na mão.
+2. **Montar vídeo**: escolha o tipo, a duração e o formato.
+   - **Montar automaticamente**: sem IA e sem configuração. Descarta trechos escuros, desfocados ou tremidos e pega o melhor pedaço de cada cena até completar a duração.
+   - **Montar com IA**: usa o Gemini (plano gratuito) para olhar as imagens, identificar os ambientes e decidir a ordem. Precisa de uma chave grátis de aistudio.google.com/apikey, salva só no navegador de quem usa.
+   - **Fluxo manual com o Claude**: folhas de contato + prompt, e o JSON da resposta é colado de volta.
 3. **Ajustar**: arraste clipes para reordenar, mude entrada/saída, velocidade e áudio no painel da direita. Modo **Sequência** mostra a prévia do vídeo final.
 4. **Exportar**: MP4 renderizado no navegador, script de render local (.bat/.sh, muito mais rápido para vídeos longos ou 4K) ou EDL para DaVinci Resolve/Premiere.
 

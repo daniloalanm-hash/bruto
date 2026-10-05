@@ -16,7 +16,7 @@
     <input id="projName" class="proj-name" aria-label="Nome do projeto" value="Projeto sem nome">
     <nav class="actions">
       <button id="btnAdd" class="btn">Adicionar vídeos</button>
-      <button id="btnClaude" class="btn">Montar com o Claude</button>
+      <button id="btnClaude" class="btn accent">Montar vídeo</button>
       <details class="menu" id="projMenu">
         <summary class="btn">Projeto</summary>
         <div class="menu-pop">
@@ -92,53 +92,76 @@
 
   <dialog id="dlgClaude">
     <form method="dialog" class="dlg-head">
-      <h2>Montar com o Claude</h2>
+      <h2>Montar vídeo</h2>
       <button class="btn icon" aria-label="Fechar">✕</button>
     </form>
     <div class="dlg-body">
-      <ol class="steps">
-        <li>
-          <h3>Descreva o vídeo</h3>
+      <div class="grid3">
+        <label class="field"><span>Tipo de vídeo</span>
+          <select id="tplSelect">
+            <option value="imovel">Imóvel</option>
+            <option value="vlog">Vlog ou fala para câmera</option>
+            <option value="entrevista">Entrevista</option>
+            <option value="gameplay">Gameplay</option>
+            <option value="produto">Produto</option>
+            <option value="livre">Livre</option>
+          </select>
+        </label>
+        <label class="field"><span>Duração alvo (segundos)</span>
+          <input id="targetDur" type="number" min="5" step="5" value="60">
+        </label>
+        <label class="field"><span>Formato</span>
+          <select id="autoAspect">
+            <option value="16:9">Horizontal 16:9</option>
+            <option value="9:16">Vertical 9:16</option>
+          </select>
+        </label>
+      </div>
+      <label class="field"><span>Objetivo e observações (usado pela IA)</span>
+        <textarea id="briefing" rows="2" placeholder="Ex.: apartamento de 3 quartos no Centro, destacar a suíte e a varanda gourmet."></textarea>
+      </label>
+      <div class="row wrap">
+        <button id="btnAutoBuild" class="btn primary">Montar automaticamente</button>
+        <button id="btnAiBuild" class="btn accent">Montar com IA</button>
+        <span id="autoStatus" class="muted small"></span>
+      </div>
+      <p class="muted small">“Montar automaticamente” usa só a análise das cenas: descarta trechos escuros, desfocados ou tremidos e pega o melhor pedaço de cada cena até completar a duração. “Montar com IA” olha as imagens, identifica os ambientes e decide a ordem.</p>
+
+      <details class="box" id="aiConfig">
+        <summary>Configurar IA (Gemini, gratuito)</summary>
+        <div class="box-body">
+          <p class="muted small">1. Entre em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> com uma conta Google e crie uma chave. 2. Cole abaixo e salve. A chave fica guardada só neste navegador. O plano gratuito tem limite diário de uso.</p>
           <div class="grid2">
-            <label class="field"><span>Tipo de vídeo</span>
-              <select id="tplSelect">
-                <option value="imovel">Imóvel</option>
-                <option value="vlog">Vlog ou fala para câmera</option>
-                <option value="entrevista">Entrevista</option>
-                <option value="gameplay">Gameplay</option>
-                <option value="produto">Produto</option>
-                <option value="livre">Livre</option>
-              </select>
-            </label>
-            <label class="field"><span>Duração alvo (segundos)</span>
-              <input id="targetDur" type="number" min="5" step="5" value="60">
-            </label>
+            <label class="field"><span>Chave da API do Gemini</span><input id="geminiKey" type="password" autocomplete="off" placeholder="Cole a chave aqui"></label>
+            <label class="field"><span>Modelo</span><input id="geminiModel" type="text" placeholder="gemini-flash-latest"></label>
           </div>
-          <label class="field"><span>Objetivo e observações</span>
-            <textarea id="briefing" rows="3" placeholder="Ex.: apartamento de 3 quartos no Centro, destacar a suíte e a varanda gourmet, vídeo para Reels."></textarea>
-          </label>
-        </li>
-        <li>
-          <h3>Leve o material para o Claude</h3>
-          <p class="muted">Baixe as folhas de contato, copie o prompt e envie tudo numa conversa com o Claude.</p>
           <div class="row">
-            <button id="btnSheets" class="btn">Baixar folhas de contato</button>
-            <button id="btnCopyPrompt" class="btn">Copiar prompt</button>
+            <button id="btnSaveKey" class="btn small">Salvar</button>
+            <button id="btnClearKey" class="btn small danger">Remover chave</button>
+            <span id="keyState" class="muted small"></span>
+          </div>
+        </div>
+      </details>
+
+      <details class="box">
+        <summary>Fluxo manual com o Claude</summary>
+        <div class="box-body">
+          <p class="muted small">Baixe as folhas de contato, copie o prompt e envie os dois numa conversa com o Claude. Depois cole o JSON da resposta abaixo.</p>
+          <div class="row wrap">
+            <button id="btnSheets" class="btn small">Baixar folhas de contato</button>
+            <button id="btnCopyPrompt" class="btn small">Copiar prompt</button>
           </div>
           <details class="prompt-preview">
             <summary>Ver prompt</summary>
-            <textarea id="promptPreview" rows="8" readonly></textarea>
+            <textarea id="promptPreview" rows="6" readonly></textarea>
           </details>
-        </li>
-        <li>
-          <h3>Aplique a resposta</h3>
-          <textarea id="editJson" rows="6" placeholder="Cole aqui o JSON que o Claude devolveu"></textarea>
-          <div class="row">
-            <button id="btnApplyEdit" class="btn primary">Aplicar edição</button>
-            <button id="btnLoadEditFile" class="btn">Abrir arquivo .json</button>
+          <textarea id="editJson" rows="4" placeholder="Cole aqui o JSON da resposta"></textarea>
+          <div class="row wrap">
+            <button id="btnApplyEdit" class="btn small">Aplicar edição</button>
+            <button id="btnLoadEditFile" class="btn small">Abrir arquivo .json</button>
           </div>
-        </li>
-      </ol>
+        </div>
+      </details>
     </div>
   </dialog>
 

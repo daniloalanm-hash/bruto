@@ -231,6 +231,12 @@ dialog::backdrop { background: rgba(8, 10, 12, .65); }
 .result { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: rgba(91,184,166,.12); border: 1px solid rgba(91,184,166,.4); padding: 10px 12px; border-radius: 6px; }
 .result.error { background: rgba(227,112,94,.1); border-color: rgba(227,112,94,.45); white-space: pre-wrap; font-size: 13px; }
 
+.box { border: 1px solid var(--line); border-radius: 8px; }
+.box > summary { cursor: pointer; padding: 10px 12px; font-weight: 500; }
+.box-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.box a { color: var(--accent); }
+.btn.busy { opacity: .6; pointer-events: none; }
+
 /* Avisos e arrastar */
 #toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: 380px; }
 .toast { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--in); padding: 9px 12px; border-radius: 6px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
