@@ -246,7 +246,7 @@ async function analyzeSource(src) {
     await withGrab(async () => {
       await grabLoad(src);
       const v = grab.v, dur = src.duration;
-      const step = dur <= 180 ? 0.5 : dur <= 900 ? 1 : 2;
+      const step = dur <= 60 ? 0.25 : dur <= 180 ? 0.5 : dur <= 900 ? 1 : 2;
       const W = 128, H = 72;
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -280,7 +280,9 @@ async function analyzeSource(src) {
         const recent = samples.slice(Math.max(1, i - 5), i);
         const avg = recent.length ? recent.reduce((a, b) => a + b.diff, 0) / recent.length : 0;
         const cutT = (samples[i - 1].t + s.t) / 2;
-        if (s.diff > T && s.diff > 2.5 * avg + 0.02 && cutT - bounds[bounds.length - 1] >= MIN && dur - cutT >= MIN * 0.5) {
+        const prevD = samples[i - 1].diff, nextD = samples[i + 1]?.diff ?? 0;
+        const isolated = prevD < s.diff * 0.35 && nextD < s.diff * 0.35;
+        if (isolated && s.diff > T && s.diff > 2.5 * avg + 0.02 && cutT - bounds[bounds.length - 1] >= MIN && dur - cutT >= MIN * 0.5) {
           bounds.push(cutT); s.isCut = true;
         }
       }
@@ -295,7 +297,7 @@ async function analyzeSource(src) {
           id: '', srcId: src.id, start, end,
           bright: mean(inside, 'bright'), sharp: mean(inside, 'sharp'),
           motion: mean(moving, 'diff') * (0.5 / step), flags: [],
-          samples: inside.map((x) => ({ t: x.t, d: x.diff * (0.5 / step), sh: x.sharp, cut: !!x.isCut })),
+          samples: inside.map((x) => ({ t: x.t, d: x.diff * (0.5 / step), sh: x.sharp, b: x.bright, cut: !!x.isCut })),
         });
       }
       for (const sc of made) {
@@ -780,10 +782,15 @@ const TEMPLATES = {
 };
 const TEMPLATE_NAMES = { imovel: 'Imóvel', vlog: 'Vlog ou fala para câmera', entrevista: 'Entrevista', gameplay: 'Gameplay', produto: 'Produto', livre: 'Livre' };
 function buildPrompt() {
-  const data = state.scenes.filter((s) => srcById(s.srcId)).map((s) => ({
-    id: s.id, arquivo: srcById(s.srcId).name, inicio: s.start, fim: s.end,
-    duracao: +(s.end - s.start).toFixed(2), ...(s.flags?.length ? { alertas: s.flags } : {}),
-  }));
+  const data = state.scenes.filter((s) => srcById(s.srcId)).map((s) => {
+    const src = srcById(s.srcId);
+    const good = src.file ? findWindows(src, Math.min(5, s.end - s.start), 2, [s.start, s.end]).map((w) => [+w.a.toFixed(2), +w.b.toFixed(2)]) : [];
+    return {
+      id: s.id, arquivo: src.name, inicio: s.start, fim: s.end,
+      duracao: +(s.end - s.start).toFixed(2), ...(s.flags?.length ? { alertas: s.flags } : {}),
+      ...(good.length ? { trechos_estaveis: good } : {}),
+    };
+  });
   return [
     'Você é o editor assistente do Bruto, uma ferramenta de edição de vídeo bruto. Escreva as notas em português.',
     'As folhas de contato anexadas mostram cada cena em uma linha: ID, arquivo, intervalo e 3 quadros (início, meio e fim).',
@@ -807,6 +814,8 @@ function buildPrompt() {
     }, null, 1),
     '',
     'Regras: "in" e "out" ficam dentro do intervalo da cena indicada em "scene"; a ordem de "clips" é a ordem do vídeo final; "speed" entre 0.5 e 2;',
+    'quando houver "trechos_estaveis", use esses intervalos como "in" e "out" (pode encurtar, nunca estender): eles evitam cortes no meio de movimentos de câmera e trechos tremidos;',
+    'cada arquivo costuma ser um ambiente: não repita o mesmo ambiente e não deixe ambientes de fora sem motivo; clipes com no mínimo 2,5 s;',
     'evite cenas com alertas (escuro, desfocado, muito movimento) a não ser que sejam a única opção; use "note" para explicar escolhas que o editor deve revisar;',
     '"fit" pode ser "contain" (barras) ou "cover" (preenche cortando).',
   ].join('\n');
@@ -871,9 +880,13 @@ function applyEdit(obj) {
     const sc = c.scene ? sceneById(c.scene) : null;
     const src = sc ? srcById(sc.srcId) : state.sources.find((s) => s.name === c.file || s.name === c.arquivo || s.id === c.srcId);
     if (!src) { skipped++; continue; }
-    const a = clamp(+(c.in ?? c.start ?? sc?.start ?? 0), 0, src.duration);
-    const b = clamp(+(c.out ?? c.end ?? sc?.end ?? src.duration), 0, src.duration);
+    let a = clamp(+(c.in ?? c.start ?? sc?.start ?? 0), 0, src.duration);
+    let b = clamp(+(c.out ?? c.end ?? sc?.end ?? src.duration), 0, src.duration);
     if (!(b - a >= 0.2)) { skipped++; continue; }
+    if (!['vlog', 'entrevista'].includes(state.template) && b - a < 2) {
+      const m = (a + b) / 2, half = Math.min(1.25, src.duration / 2);
+      a = clamp(m - half, 0, src.duration - 2 * half); b = a + 2 * half;
+    }
     clips.push({
       id: uid(), srcId: src.id, in: +a.toFixed(2), out: +b.toFixed(2),
       label: String(c.label || c.scene || ''), speed: clamp(+c.speed || 1, 0.5, 4), mute: !!c.mute, note: String(c.note || ''),
@@ -898,61 +911,108 @@ function sharpMedian(list) {
   const v = list.map((s) => s.sharp).filter((x) => x > 0).sort((a, b) => a - b);
   return v[Math.floor(v.length / 2)] || 1;
 }
-function bestWindow(sc, L, med) {
-  const mid = (sc.start + sc.end) / 2;
-  const centered = [Math.max(sc.start, mid - L / 2), Math.min(sc.end, mid + L / 2)];
-  const a0 = sc.start + 0.3, b0 = sc.end - 0.3;
-  if (b0 - a0 <= L) return centered;
-  const smp = (sc.samples || []).filter((x) => !x.cut);
-  if (smp.length < 2) return centered;
-  let best = null;
-  for (let a = a0; a + L <= b0 + 1e-6; a += 0.25) {
-    const w = smp.filter((x) => x.t >= a && x.t <= a + L);
-    if (!w.length) continue;
-    const motion = w.reduce((t, x) => t + x.d, 0) / w.length;
-    const sharp = w.reduce((t, x) => t + x.sh, 0) / w.length / med;
-    const score = Math.min(sharp, 2) - motion * 10;
-    if (!best || score > best.score) best = { a, score };
-  }
-  return best ? [best.a, best.a + L] : centered;
+function srcSamples(srcId) {
+  return state.scenes.filter((x) => x.srcId === srcId).flatMap((x) => (x.samples || []).filter((y) => !y.cut)).sort((p, q) => p.t - q.t);
 }
+function globalSharpMed() {
+  const v = state.scenes.flatMap((x) => (x.samples || []).map((y) => y.sh)).filter((y) => y > 0).sort((p, q) => p - q);
+  return v[Math.floor(v.length / 2)] || sharpMedian(state.scenes);
+}
+// Nota de um trecho: nítido, estável (movimento constante, sem trancos), bem exposto,
+// e com entrada/saída em momentos de câmera mais calma.
+function windowScore(w, med) {
+  const n = w.length;
+  const avg = (k, def) => w.reduce((t, x) => t + (x[k] ?? def), 0) / n;
+  let jitter = 0;
+  for (let i = 1; i < n; i++) jitter += Math.abs(w[i].d - w[i - 1].d);
+  jitter /= Math.max(1, n - 1);
+  const motion = avg('d', 0), sharp = avg('sh', med) / med, bright = avg('b', 0.5);
+  const edge = (w[0].d + w[n - 1].d) / 2;
+  return Math.min(sharp, 1.5) - 8 * jitter - 2.5 * Math.max(0, motion - 0.05)
+    - 3 * Math.max(0, 0.22 - bright) - 3 * Math.max(0, bright - 0.85) - 1.5 * edge;
+}
+function findWindows(src, L, k = 1, range = null) {
+  const lo = range ? range[0] : 0, hi = range ? range[1] : src.duration;
+  const margin = Math.min(0.6, (hi - lo) * 0.1);
+  const t0 = lo + margin, t1 = hi - margin;
+  L = Math.max(0.8, Math.min(L, t1 - t0));
+  const centered = () => { const m = (t0 + t1) / 2; return [{ a: m - L / 2, b: m + L / 2, score: -9 }]; };
+  const smp = srcSamples(src.id).filter((x) => x.t >= lo && x.t <= hi);
+  if (smp.length < 3) return centered();
+  const med = globalSharpMed();
+  const cands = [];
+  for (let a = t0; a + L <= t1 + 1e-6; a += 0.25) {
+    const w = smp.filter((x) => x.t >= a - 1e-6 && x.t <= a + L + 1e-6);
+    if (w.length >= 2) cands.push({ a, b: a + L, score: windowScore(w, med) });
+  }
+  if (!cands.length) return centered();
+  cands.sort((p, q) => q.score - p.score);
+  const out = [];
+  for (const c of cands) {
+    if (out.every((o) => c.b <= o.a || c.a >= o.b)) out.push(c);
+    if (out.length >= k) break;
+  }
+  return out.sort((p, q) => p.a - q.a);
+}
+const baseName = (n) => n.replace(/\.[^.]+$/, '');
+function sceneAt(srcId, t) { return state.scenes.find((x) => x.srcId === srcId && t >= x.start && t < x.end); }
 function autoBuild() {
-  const all = state.scenes.filter((s) => srcById(s.srcId)?.file);
-  if (!all.length) { toast('Adicione os vídeos e aguarde a análise antes de montar.', 'warn'); return false; }
+  const usable = state.sources.filter((s) => s.file && !s.unsupported && s.analyzed);
+  if (!usable.length) { toast('Adicione os vídeos e aguarde a análise antes de montar.', 'warn'); return false; }
+  if (usable.some((s) => !srcSamples(s.id).length)) toast('Alguns vídeos foram analisados na versão anterior. Use "Reanalisar tudo" para cortes melhores.', 'warn', 6000);
   const tpl = state.template;
   const target = Math.max(5, +state.targetDur || 60);
-  const speech = tpl === 'vlog' || tpl === 'entrevista';
-  let pool = all.filter((s) => !s.flags?.some((f) => ['desfocado', 'escuro', 'curta'].includes(f)));
-  if (pool.length < 2) pool = all.filter((s) => s.end - s.start >= 0.8);
-  const med = sharpMedian(pool);
-  const quality = (s) => Math.min(s.sharp / med, 2) - s.motion * 8 - Math.abs(s.bright - 0.5) - (s.flags?.includes('muito movimento') ? 0.5 : 0);
-  const order = (a, b) => state.scenes.indexOf(a) - state.scenes.indexOf(b);
   const mute = !!MUTE_BY_DEFAULT[tpl];
-  let ranges;
-  if (speech) {
-    let picked = [...pool].sort(order);
-    const len = (s) => Math.max(0.5, s.end - s.start - 0.4);
-    while (picked.length > 1 && picked.reduce((t, s) => t + len(s), 0) > target * 1.1) {
-      const worst = picked.reduce((w, s) => (quality(s) < quality(w) ? s : w));
-      picked = picked.filter((s) => s !== worst);
+  const MIN = tpl === 'produto' ? 2 : 2.5, MAX = tpl === 'gameplay' ? 8 : 6;
+  let picks = [];
+  let dropped = 0;
+
+  if (tpl === 'vlog' || tpl === 'entrevista') {
+    // fala: mantém cada arquivo/cena inteiro, cortando só as pontas
+    for (const s of usable) for (const sc of state.scenes.filter((x) => x.srcId === s.id)) picks.push({ src: s, a: sc.start + 0.2, b: sc.end - 0.2 });
+    let total = picks.reduce((t, p) => t + p.b - p.a, 0);
+    while (picks.length > 1 && total > target * 1.15) {
+      const worst = picks.reduce((w, p) => (p.b - p.a < w.b - w.a ? p : w));
+      picks = picks.filter((p) => p !== worst); total -= worst.b - worst.a; dropped++;
     }
-    ranges = picked.map((s) => [s, s.start + 0.2, s.end - 0.2]);
+  } else if (usable.length >= 3 && usable.every((s) => s.duration < 150)) {
+    // um arquivo por ambiente: um trecho por arquivo, na ordem dos arquivos
+    let chosen = usable.map((s) => ({ s, w: findWindows(s, MAX, 1)[0] }));
+    const fit = Math.max(1, Math.floor(target / MIN));
+    if (chosen.length > fit) {
+      const keep = new Set([chosen[0], ...chosen.slice(1).sort((p, q) => q.w.score - p.w.score).slice(0, fit - 1)]);
+      dropped = chosen.length - keep.size;
+      chosen = chosen.filter((c) => keep.has(c));
+    }
+    const L = clamp(target / chosen.length, MIN, MAX);
+    // em arquivos curtos, prefere um trecho menor e limpo a um trecho longo que pega partes ruins
+    picks = chosen.map(({ s }) => {
+      const tries = [...new Set([L, L * 0.8, L * 0.65, MIN].map((x) => +Math.max(MIN, Math.min(x, s.duration - 0.4)).toFixed(2)))];
+      const opts = tries.map((len) => findWindows(s, len, 1)[0]);
+      const top = Math.max(...opts.map((o) => o.score));
+      const w = opts.find((o) => o.score >= top - 0.04) || opts[0];
+      return { src: s, a: w.a, b: w.b };
+    });
   } else {
-    const ideal = tpl === 'produto' ? 2.5 : tpl === 'gameplay' ? 4 : 3.5;
+    // poucos arquivos longos: vários trechos por arquivo, proporcionais à duração
+    const ideal = tpl === 'produto' ? 3 : tpl === 'gameplay' ? 5 : 4;
     const k = Math.max(1, Math.round(target / ideal));
-    let picked = pool.length > k ? [...pool].sort((a, b) => quality(b) - quality(a)).slice(0, k) : [...pool];
-    picked.sort(order);
-    const L = clamp(target / picked.length, 1.5, tpl === 'gameplay' ? 8 : 5);
-    ranges = picked.map((s) => [s, ...bestWindow(s, Math.min(L, s.end - s.start), med)]);
+    const L = clamp(target / k, MIN, MAX);
+    const totalDur = usable.reduce((t, s) => t + s.duration, 0);
+    for (const s of usable) {
+      const ks = Math.max(1, Math.round((k * s.duration) / totalDur));
+      for (const w of findWindows(s, L, ks)) picks.push({ src: s, a: w.a, b: w.b });
+    }
   }
-  const clips = ranges.filter(([, a, b]) => b - a >= 0.4).map(([s, a, b]) => ({
-    id: uid(), srcId: s.srcId, in: +a.toFixed(2), out: +b.toFixed(2), label: s.id, speed: 1, mute, note: '',
+  const clips = picks.filter((p) => p.b - p.a >= 0.8).map((p) => ({
+    id: uid(), srcId: p.src.id, in: +Math.max(0, p.a).toFixed(2), out: +Math.min(p.src.duration, p.b).toFixed(2),
+    label: usable.length >= 3 ? baseName(p.src.name) : (sceneAt(p.src.id, p.a)?.id || baseName(p.src.name)), speed: 1, mute, note: '',
   }));
-  if (!clips.length) { toast('Não encontrei trechos aproveitáveis. Tente reanalisar com outra sensibilidade.', 'warn'); return false; }
+  if (!clips.length) { toast('Não encontrei trechos aproveitáveis. Tente reanalisar.', 'warn'); return false; }
   checkpoint();
   state.clips = clips; state.selectedClip = null;
   afterEdit(); updateStage();
-  toast(`Montagem com ${clips.length} clipes (${fmt(seqDur())}). Confira no modo Sequência; Ctrl+Z desfaz.`, 'info', 5000);
+  toast(`Montagem com ${clips.length} clipes (${fmt(seqDur())}).${dropped ? ` ${dropped} trecho(s) ficaram de fora para caber na duração; aumente a duração alvo para incluir.` : ''} Ctrl+Z desfaz.`, 'info', 7000);
   return true;
 }
 
