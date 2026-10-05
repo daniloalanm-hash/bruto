@@ -1075,8 +1075,9 @@ const GEMINI_KEY = 'bruto:gemini:key';
 const GEMINI_MODEL = 'bruto:gemini:model';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-flash-lite-latest'];
-const getKey = () => { try { return localStorage.getItem(GEMINI_KEY) || ''; } catch { return ''; } };
-const getModel = () => { try { return localStorage.getItem(GEMINI_MODEL) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; } };
+const cleanToken = (v) => String(v || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+const getKey = () => { try { return cleanToken(localStorage.getItem(GEMINI_KEY)); } catch { return ''; } };
+const getModel = () => { try { return cleanToken(localStorage.getItem(GEMINI_MODEL)) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; } };
 function updateKeyState() {
   const k = getKey();
   $('#keyState').textContent = k ? `Chave salva (termina em ${k.slice(-4)})` : 'Nenhuma chave salva';
@@ -1441,7 +1442,7 @@ function bind() {
   $('#btnAutoBuild').onclick = () => { syncBrief(); if (autoBuild()) $('#dlgClaude').close(); };
   $('#btnAiBuild').onclick = () => { syncBrief(); aiBuild(); };
   $('#btnSaveKey').onclick = () => {
-    const k = $('#geminiKey').value.trim(), m = $('#geminiModel').value.trim();
+    const k = cleanToken($('#geminiKey').value), m = cleanToken($('#geminiModel').value);
     try {
       if (k) localStorage.setItem(GEMINI_KEY, k);
       if (m) localStorage.setItem(GEMINI_MODEL, m); else localStorage.removeItem(GEMINI_MODEL);
