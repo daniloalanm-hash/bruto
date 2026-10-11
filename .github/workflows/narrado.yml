@@ -1,0 +1,89 @@
+name: Modo Narrado
+
+# Disparado pela tela /narrado (via /api/job). Cada vídeo é uma release "narrado-<id>":
+# a tela sobe job.json + áudio nela; aqui o vídeo é montado e o resultado volta para a mesma release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release do vídeo (narrado-...)"
+        required: true
+      fase:
+        description: "preparar (1ª versão) ou render (após ajustes na tela)"
+        required: true
+        default: preparar
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NARRADO_TAG: ${{ inputs.tag }}
+      NARRADO_RAW: ${{ github.workspace }}/.narrado-cache/raw
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Avisar a tela que começou
+        run: |
+          mkdir -p job
+          printf '{"estado":"processando","fase":"%s","etapa":"Iniciando o servidor de render","progresso":2,"atualizado":%s}' \
+            "${{ inputs.fase }}" "$(date +%s)" > job/status.json
+          gh release upload "$NARRADO_TAG" job/status.json --clobber
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: narrado/requirements.txt
+
+      - name: Cache do modelo de transcrição
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-medium-v1
+
+      - name: Cache do material dos jogos
+        uses: actions/cache@v4
+        with:
+          path: .narrado-cache/raw
+          key: narrado-raw-${{ inputs.tag }}-${{ github.run_id }}
+          restore-keys: |
+            narrado-raw-${{ inputs.tag }}-
+            narrado-raw-
+
+      - name: Instalar ffmpeg e dependências
+        run: |
+          # ffmpeg (corte, voz, render) e tesseract (descarta trechos de trailer com texto na tela)
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr tesseract-ocr-eng
+          pip install -q -r narrado/requirements.txt
+
+      - name: Baixar o pedido da tela
+        run: |
+          gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" || true
+          # o áudio chega em partes (limite de upload do Vercel); junta de volta
+          if ls job/voz.part* >/dev/null 2>&1; then
+            nome=$(python -c "import json;print(json.load(open('job/job.json'))['voz']['arquivo'])")
+            cat $(ls job/voz.part* | sort -V) > "job/$nome"
+          fi
+          ls -la job
+
+      - name: Montar o vídeo
+        run: python narrado/pipeline.py "${{ inputs.fase }}" job
+
+      - name: Publicar erro
+        if: failure()
+        run: |
+          if [ ! -f job/status.json ] || ! grep -q '"erro"' job/status.json; then
+            printf '{"estado":"erro","fase":"%s","erro":"O servidor de render falhou. Veja os logs da execução no GitHub Actions.","atualizado":%s}' \
+              "${{ inputs.fase }}" "$(date +%s)" > job/status.json
+          fi
+          gh release upload "$NARRADO_TAG" job/status.json --clobber || true

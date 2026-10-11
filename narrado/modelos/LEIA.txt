@@ -1,0 +1,2 @@
+sh.rnnn ("somnolent-hogwash") — modelo de redução de ruído RNNoise treinado por Gregor Richards.
+Fonte: https://github.com/GregorR/rnnoise-models (mesma licença BSD do RNNoise).

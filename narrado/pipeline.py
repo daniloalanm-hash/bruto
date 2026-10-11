@@ -1,0 +1,206 @@
+"""Orquestra o Modo Narrado.
+
+    python narrado/pipeline.py preparar <pasta_do_job>   # 1ª versão do vídeo a partir do job.json + voz
+    python narrado/pipeline.py render   <pasta_do_job>   # re-render a partir do projeto.json editado na tela
+
+Na pasta do job: job.json (vem da tela), o áudio enviado e, no re-render, o projeto.json.
+Saídas na mesma pasta: final.mp4, projeto.json, cenas.jpg, status.json.
+"""
+import os
+import subprocess
+import sys
+import traceback
+from difflib import SequenceMatcher
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import assets  # noqa: E402
+import fala  # noqa: E402
+import render  # noqa: E402
+import voz  # noqa: E402
+from comum import Status, gravar, ler, norm  # noqa: E402
+
+RAIZ = os.path.dirname(os.path.abspath(__file__))
+RAW = os.environ.get("NARRADO_RAW", os.path.join(RAIZ, "..", ".narrado-cache", "raw"))
+FONTES = os.environ.get("NARRADO_FONTES", os.path.join(RAIZ, "fontes"))
+MODELO_RNN = os.environ.get("NARRADO_RNN", os.path.join(RAIZ, "modelos", "sh.rnnn"))
+MODELO_WHISPER = os.environ.get("NARRADO_WHISPER", "medium")
+
+
+def publicador():
+    """Publica arquivos na release do job (no GitHub Actions); localmente não faz nada."""
+    tag = os.environ.get("NARRADO_TAG")
+    if not tag:
+        return None
+
+    def pub(*paths):
+        subprocess.run(["gh", "release", "upload", tag, *paths, "--clobber"], check=True, capture_output=True)
+    return pub
+
+
+def chave_do_jogo(nome, jogos):
+    if not nome:
+        return None
+    melhor = max(jogos, key=lambda j: SequenceMatcher(None, norm(nome), norm(j["nome"])).ratio(), default=None)
+    if melhor and SequenceMatcher(None, norm(nome), norm(melhor["nome"])).ratio() >= 0.5:
+        return melhor["chave"]
+    for j in jogos:  # "Witcher" dentro de "The Witcher 3: Wild Hunt"
+        if norm(nome) in norm(j["nome"]) or norm(j["nome"]) in norm(nome):
+            return j["chave"]
+    return None
+
+
+def planejar(cenas, banco, jogos):
+    """Cada cena usa material do jogo de que ela fala; cenas gerais usam o jogo principal.
+
+    Regra do Danilo: imagem de outro jogo só aparece quando aquele jogo está sendo falado.
+    """
+    chaves = [chave_do_jogo(c.get("assunto"), jogos) for c in cenas]
+    contagem = {}
+    for ch in chaves:
+        if ch:
+            contagem[ch] = contagem.get(ch, 0) + 1
+    principal = max(contagem, key=contagem.get) if contagem else (jogos[0]["chave"] if jogos else None)
+    fila = {}
+    for j in jogos:  # intercala 2 trechos de trailer : 1 imagem, sem repetir até esgotar
+        vs = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "v"]
+        im = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "i"]
+        seq = []
+        while vs or im:
+            for _ in range(2):
+                if vs:
+                    seq.append(vs.pop(0))
+            if im:
+                seq.append(im.pop(0))
+        fila[j["chave"]] = {"seq": seq, "pos": 0}
+    for k, c in enumerate(cenas):
+        ch = chaves[k] or principal
+        c["jogo"] = ch
+        f = fila.get(ch)
+        if not f or not f["seq"]:
+            c["midias"] = []
+            continue
+        escolha = []
+        if k == 0:  # gancho: abre com uma imagem limpa (screenshot) do jogo principal
+            img = next((m for m in f["seq"] if banco[m]["tipo"] == "i"), None)
+            if img:
+                escolha.append(img)
+        while len(escolha) < 6:
+            m = f["seq"][f["pos"] % len(f["seq"])]
+            f["pos"] += 1
+            if m not in escolha:
+                escolha.append(m)
+            if len(escolha) >= len(f["seq"]):
+                break
+        c["midias"] = escolha
+    return cenas
+
+
+def garantir_assets(nomes):
+    jogos = []
+    for nome in nomes:
+        try:
+            info = assets.baixar_jogo(nome, RAW)
+            if info:
+                jogos.append(info)
+        except Exception as e:
+            print(f"aviso: falhou ao buscar '{nome}': {e}")
+    if not jogos:
+        raise RuntimeError("Não encontrei material na Steam para nenhum dos jogos do roteiro.")
+    return jogos
+
+
+def preparar(pasta, st):
+    job = ler(os.path.join(pasta, "job.json"))
+    cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto")}
+             for c in job["cenas"] if c.get("texto", "").strip()]
+    nomes = job.get("jogos") or [c["assunto"] for c in cenas if c.get("assunto")]
+    nomes = list(dict.fromkeys(n for n in nomes if n))
+
+    st.etapa("Buscando trailers e imagens oficiais", 5)
+    jogos = garantir_assets(nomes)
+
+    st.etapa("Escolhendo os melhores trechos dos trailers", 18)
+    banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"))
+    sprite = assets.sprite(banco, RAW, os.path.join(pasta, "cenas.jpg"))
+
+    modo = job.get("voz", {}).get("modo", "gravada")
+    if modo == "ia":
+        st.etapa("Gerando a narração por IA", 30)
+        texto = " ".join(c["texto"] for c in cenas)
+        audio = os.path.join(pasta, "voz_ia.mp3")
+        palavras = fala.voz_ia(texto, audio, job.get("voz", {}).get("voz_ia") or "pt-BR-AntonioNeural")
+    else:
+        audio = os.path.join(pasta, job["voz"]["arquivo"])
+        st.etapa("Transcrevendo a sua gravação", 30)
+        dicas = ", ".join(j["nome"] for j in jogos)
+        palavras = fala.transcrever(audio, MODELO_WHISPER, dicas)
+    st.etapa("Cortando erros e repetições", 55)
+    palavras, faltando = fala.editar(palavras, cenas, [j["nome"] for j in jogos])
+    if modo == "ia":
+        for w in palavras:
+            w["manter"] = True
+
+    cenas = planejar(cenas, banco, jogos)
+    projeto = {
+        "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
+        "voz": {"modo": modo, "arquivo": os.path.basename(audio), "reducao_ruido": "auto"},
+        "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
+        "nomes_busca": nomes, "cenas": cenas, "palavras": palavras, "faltando": faltando,
+        "banco": banco, "sprite": sprite,
+    }
+    finalizar(pasta, projeto, audio, st, 62)
+
+
+def rerender(pasta, st):
+    projeto = ler(os.path.join(pasta, "projeto.json"))
+    st.etapa("Preparando o material", 5)
+    falta = [m for m in projeto["banco"].values() if not os.path.exists(os.path.join(RAW, m["arquivo"]))]
+    if falta:
+        garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
+    projeto["versao"] = int(projeto.get("versao", 1)) + 1
+    finalizar(pasta, projeto, os.path.join(pasta, projeto["voz"]["arquivo"]), st, 20)
+
+
+def finalizar(pasta, projeto, audio, st, p0):
+    st.etapa("Tratando a voz", p0)
+    escolha = projeto["voz"].get("reducao_ruido", "auto")
+    forcar = None if escolha == "auto" else escolha == "sim"
+    wav = os.path.join(pasta, "voz_final.wav")
+    info = voz.montar(audio, projeto["palavras"], wav, MODELO_RNN, projeto["voz"]["modo"], forcar)
+    projeto["duracao_voz"] = info["duracao"]
+    projeto["voz"].update({"ruido_db": info["ruido_db"], "reducao_aplicada": info["reducao_ruido"]})
+
+    st.etapa("Montando cenas, transições e legenda", p0 + 8)
+    faixa = 100 - (p0 + 8) - 6
+
+    def prog(i, n):
+        st.etapa(f"Montando cenas ({i}/{n})", p0 + 8 + int(faixa * i / n))
+    usados, total = render.renderizar(projeto, projeto["banco"], RAW, wav, pasta, os.path.join(pasta, "final.mp4"),
+                                      FONTES, prog)
+    projeto["timeline"] = usados
+    projeto["duracao"] = round(total, 2)
+    gravar(os.path.join(pasta, "projeto.json"), projeto)
+    pub = publicador()
+    if pub:
+        st.etapa("Publicando o vídeo", 97)
+        arquivos = [os.path.join(pasta, x) for x in ("final.mp4", "projeto.json", "cenas.jpg", "voz_ia.mp3")
+                    if os.path.exists(os.path.join(pasta, x))]
+        pub(*arquivos)
+    st.pronto({"versao": projeto["versao"], "duracao": projeto["duracao"]})
+
+
+def main():
+    fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
+    pub = publicador()
+    st = Status(pasta, fase, (lambda p: pub(p)) if pub else None)
+    try:
+        (preparar if fase == "preparar" else rerender)(pasta, st)
+    except Exception as e:
+        traceback.print_exc()
+        st.erro(str(e)[:400])
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

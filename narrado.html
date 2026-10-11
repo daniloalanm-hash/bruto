@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bruto — Modo Narrado</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Anton&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="narrado.css">
+</head>
+<body class="nr">
+  <header class="topbar">
+    <a class="brand" href="/" title="Voltar ao editor do Bruto"><span class="mark" aria-hidden="true"></span>Bruto</a>
+    <span class="mode-name">Modo Narrado</span>
+    <nav class="actions">
+      <details class="menu" id="menuVideos">
+        <summary class="btn">Meus vídeos</summary>
+        <div class="menu-pop" id="listaVideos"><p class="muted small">Carregando…</p></div>
+      </details>
+      <button id="btnNovo" class="btn">Novo vídeo</button>
+      <button id="btnConfig" class="btn icon" title="Configurações" aria-label="Configurações">⚙</button>
+    </nav>
+  </header>
+
+  <ol class="trilha" aria-label="Etapas">
+    <li data-passo="pauta">1 · Pauta</li>
+    <li data-passo="roteiro">2 · Roteiro</li>
+    <li data-passo="voz">3 · Voz</li>
+    <li data-passo="video">4 · Vídeo</li>
+  </ol>
+
+  <main class="nr-main">
+    <!-- 1. Pauta -->
+    <section class="passo" id="passo-pauta">
+      <div class="cartao">
+        <h2>De onde vem o vídeo?</h2>
+        <p class="muted">Cole o link de uma notícia (do blog da Loja dos Gifts ou de qualquer site). O roteiro é escrito a partir dela.</p>
+        <div class="row">
+          <input id="urlMateria" type="text" placeholder="https://lojadosgifts.com.br/blog/…" inputmode="url">
+          <button id="btnBuscar" class="btn primary">Buscar matéria</button>
+        </div>
+        <details class="box" id="boxTexto">
+          <summary>Ou cole o texto / descreva o tema</summary>
+          <div class="box-body">
+            <textarea id="textoMateria" rows="8" placeholder="Cole aqui o texto da matéria ou escreva o tema do vídeo…"></textarea>
+          </div>
+        </details>
+        <div id="previaMateria" class="previa" hidden></div>
+        <div class="row fim">
+          <label class="field curto"><span>Duração</span>
+            <select id="duracao">
+              <option value="35">~35 s</option>
+              <option value="50" selected>~50 s</option>
+              <option value="70">~70 s</option>
+            </select>
+          </label>
+          <button id="btnRoteiro" class="btn primary" disabled>Escrever roteiro com IA</button>
+          <button id="btnRoteiroVazio" class="link">ou escrever eu mesmo</button>
+        </div>
+        <p id="statusRoteiro" class="muted small"></p>
+      </div>
+    </section>
+
+    <!-- 2. Roteiro -->
+    <section class="passo" id="passo-roteiro" hidden>
+      <div class="cartao">
+        <div class="cab">
+          <div>
+            <h2>Roteiro</h2>
+            <p class="muted small">Cada bloco é um tópico: troca de assunto = transição no vídeo. Em <b>Jogo na tela</b>, escolha de qual jogo aparecem as imagens enquanto aquele trecho é falado.</p>
+          </div>
+          <div class="estimativa"><b id="estimativa">0 s</b><span class="muted small">estimado</span></div>
+        </div>
+        <label class="field"><span>Título</span><input id="titulo" type="text"></label>
+        <label class="field"><span>Jogos do vídeo (de onde vêm trailers e imagens oficiais da Steam) — um por linha</span>
+          <textarea id="jogos" rows="3" placeholder="The Witcher 3: Wild Hunt"></textarea>
+        </label>
+        <div id="cenas" class="cenas"></div>
+        <div class="row">
+          <button id="btnAddCena" class="btn small">+ Tópico</button>
+          <button id="btnRefazerRoteiro" class="btn small">Reescrever com IA</button>
+          <button id="btnCopiar" class="btn small">Copiar texto para ler</button>
+        </div>
+        <div class="row fim">
+          <button class="btn" data-ir="pauta">Voltar</button>
+          <button id="btnIrVoz" class="btn primary">Roteiro pronto → voz</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Voz -->
+    <section class="passo" id="passo-voz" hidden>
+      <div class="cartao">
+        <h2>Voz</h2>
+        <div class="tabs vozes" role="tablist">
+          <button class="mode-tab" data-voz="gravar" aria-pressed="true">Gravar aqui</button>
+          <button class="mode-tab" data-voz="arquivo" aria-pressed="false">Enviar arquivo</button>
+          <button class="mode-tab" data-voz="ia" aria-pressed="false">Voz de IA</button>
+        </div>
+
+        <div data-painel="gravar">
+          <div class="teleprompter" id="teleprompter"></div>
+          <ul class="dicas muted small">
+            <li>Celular costuma captar melhor que headset. Fale um pouco acima do tom normal.</li>
+            <li>Errou? Pausa e repete a frase inteira — o sistema fica com a última versão.</li>
+            <li>Comece com 3 segundos de silêncio (ajuda a medir o ruído do ambiente).</li>
+          </ul>
+          <div class="gravador">
+            <button id="btnGravar" class="rec" aria-label="Gravar"><span></span></button>
+            <div class="grav-info">
+              <b id="tempoGrav">0:00</b>
+              <div class="medidor"><i id="nivel"></i></div>
+              <span id="statusGrav" class="muted small">Pronto para gravar</span>
+            </div>
+          </div>
+          <audio id="ouvirGrav" controls hidden></audio>
+        </div>
+
+        <div data-painel="arquivo" hidden>
+          <label class="soltar" id="soltarAudio">
+            <input type="file" id="arqAudio" accept="audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac" hidden>
+            <span>Clique ou arraste o áudio (m4a, mp3, wav…)</span>
+          </label>
+          <audio id="ouvirArq" controls hidden></audio>
+        </div>
+
+        <div data-painel="ia" hidden>
+          <label class="field curto"><span>Voz</span>
+            <select id="vozIa">
+              <option value="pt-BR-AntonioNeural">Antônio (masculina)</option>
+              <option value="pt-BR-FranciscaNeural">Francisca (feminina)</option>
+              <option value="pt-BR-ThalitaMultilingualNeural">Thalita (feminina)</option>
+            </select>
+          </label>
+          <p class="muted small">A narração é gerada no servidor de render, já sincronizada com cenas e legenda.</p>
+        </div>
+
+        <div class="row fim">
+          <button class="btn" data-ir="roteiro">Voltar</button>
+          <button id="btnGerar" class="btn primary">Gerar vídeo</button>
+        </div>
+        <p id="statusEnvio" class="muted small"></p>
+      </div>
+    </section>
+
+    <!-- 4. Vídeo -->
+    <section class="passo" id="passo-video" hidden>
+      <div class="video-grid">
+        <div class="tela-video">
+          <div class="moldura">
+            <video id="player" controls playsinline hidden></video>
+            <div id="aguarde" class="aguarde">
+              <div class="spinner" aria-hidden="true"></div>
+              <b id="etapa">Na fila…</b>
+              <div class="bar"><i id="progresso"></i></div>
+              <span class="muted small">Leva de 4 a 8 minutos. Pode fechar a página: o vídeo fica em “Meus vídeos”.</span>
+            </div>
+          </div>
+          <div class="row">
+            <a id="btnBaixar" class="btn primary" hidden download>Baixar vídeo</a>
+            <button id="btnAplicar" class="btn accent" disabled>Aplicar ajustes</button>
+          </div>
+          <p id="infoVideo" class="muted small"></p>
+        </div>
+
+        <div class="ajustes" id="ajustes" hidden>
+          <div class="tabs" role="tablist">
+            <button class="mode-tab" data-aba="fala" aria-pressed="true">Fala e legenda</button>
+            <button class="mode-tab" data-aba="cenas" aria-pressed="false">Cenas</button>
+          </div>
+          <div data-aba-painel="fala">
+            <p class="muted small">Riscado = cortado. Clique numa palavra para cortar/voltar; clique numa linha cinza para trazer uma tomada descartada. Duplo clique edita o texto da legenda.</p>
+            <div id="avisoFalta" class="aviso" hidden></div>
+            <div id="tomadas" class="tomadas"></div>
+            <label class="field curto"><span>Redução de ruído</span>
+              <select id="ruido">
+                <option value="auto">Automática</option>
+                <option value="sim">Sempre ligada</option>
+                <option value="nao">Desligada</option>
+              </select>
+            </label>
+          </div>
+          <div data-aba-painel="cenas" hidden>
+            <p class="muted small">Imagens de cada tópico, na ordem em que aparecem. Clique numa para trocar; arraste para reordenar.</p>
+            <div id="listaCenas" class="lista-cenas"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dlgTroca">
+    <form method="dialog" class="dlg-head">
+      <h2>Trocar imagem</h2>
+      <button class="btn icon" aria-label="Fechar">✕</button>
+    </form>
+    <div class="dlg-body">
+      <div class="row wrap" id="filtroJogos"></div>
+      <div id="gradeMidias" class="grade-midias"></div>
+      <div class="row">
+        <button id="btnRemoverMidia" class="btn small danger">Remover desta cena</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dlgConfig">
+    <form method="dialog" class="dlg-head">
+      <h2>Configurações</h2>
+      <button class="btn icon" aria-label="Fechar">✕</button>
+    </form>
+    <div class="dlg-body">
+      <label class="field"><span>Chave do Gemini (grátis em aistudio.google.com/apikey) — a mesma do editor do Bruto, salva só neste navegador</span>
+        <input id="cfgGemini" type="text" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="field"><span>Senha do Modo Narrado (definida no Vercel em NARRADO_SENHA)</span>
+        <input id="cfgSenha" type="text" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="row"><button id="btnSalvarCfg" class="btn primary">Salvar</button></div>
+    </div>
+  </dialog>
+
+  <div id="toasts" aria-live="polite"></div>
+  <script src="narrado.js"></script>
+</body>
+</html>

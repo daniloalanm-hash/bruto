@@ -53,3 +53,24 @@ Espaço reproduz/pausa · I marca entrada · O marca saída · A adiciona o trec
 
 - `index.html`, `styles.css`, `app.js`: a aplicação inteira, sem build.
 - `vendor/ffmpeg/`: wrapper do ffmpeg.wasm (@ffmpeg/ffmpeg 0.12.15, MIT). O núcleo (@ffmpeg/core 0.12.10) vem do jsDelivr.
+
+## Modo Narrado (`/narrado`)
+
+Vídeo vertical "narração sem rosto" a partir de uma notícia: roteiro com IA, sua voz (ou voz de IA), cenas oficiais dos jogos que acompanham o assunto falado, transição a cada troca de tópico e legenda dinâmica sincronizada.
+
+1. **Pauta**: cole o link (sites WordPress, como o blog da Loja dos Gifts, são lidos direto pelo navegador) ou cole o texto.
+2. **Roteiro**: o Gemini (mesma chave gratuita do editor) escreve os tópicos; em cada um você escolhe o **jogo na tela**. Imagem de um jogo só aparece quando ele está sendo falado.
+3. **Voz**: grave no próprio navegador, envie um áudio ou use a voz de IA. Errou? Pause e repita a frase: fica a última versão.
+4. **Vídeo**: o render roda no GitHub Actions (grátis). Depois dá para cortar/trazer tomadas, corrigir a legenda (duplo clique), trocar as imagens de cada tópico e escolher a redução de ruído — e gerar a nova versão.
+
+O que o render faz sozinho: busca screenshots e trailers oficiais na Steam, descarta trechos com logo, tela escura ou texto, transcreve por trechos (Whisper), mantém a última tomada de cada frase, encurta pausas, **equaliza a voz para ficar encorpada** e aplica **redução de ruído só quando o fundo pede**, monta cortes de ~1,7 s com zoom, transição no início de cada tópico e legenda em blocos com destaques em amarelo.
+
+### Configuração (uma vez)
+
+- **GitHub**: o workflow `.github/workflows/narrado.yml` já vem no repositório. Cada vídeo vira uma release `narrado-<id>` (pode apagar as antigas quando quiser).
+- **Vercel → Settings → Environment Variables**:
+  - `GH_TOKEN`: token *fine-grained* do GitHub só para este repositório, com **Contents: Read and write** e **Actions: Read and write**.
+  - `NARRADO_SENHA`: uma senha qualquer; a tela pede uma vez (⚙) e guarda no navegador. Sem ela, qualquer pessoa com o link poderia disparar renders.
+- Na tela, em ⚙, informe a chave do Gemini (se ainda não usou no editor) e a senha.
+
+Arquivos: `narrado.html/js/css` (tela), `api/` (funções do Vercel), `narrado/` (motor em Python que roda no Actions).

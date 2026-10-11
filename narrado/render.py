@@ -1,0 +1,157 @@
+"""Render vertical 1080x1920: cortes dinâmicos por assunto, transição a cada tópico e legenda em blocos."""
+import os
+import re
+import shutil
+
+from comum import FPS, W, H, ffmpeg, norm, run
+
+CUT = 1.7        # duração alvo de cada corte (s)
+TRANS = 0.25     # transição de tópico: flash + punch de zoom + desfoque que some
+FONTE = "Anton"
+TAM_LEGENDA = 168
+Y_LEGENDA = 1180
+
+_crops = {}
+
+
+def area_util(src, t):
+    """Detecta tarjas pretas (letterbox) do trailer para recortar só a imagem útil."""
+    k = (src, int(t))
+    if k not in _crops:
+        r = run(["ffmpeg", "-hide_banner", "-ss", f"{t:.2f}", "-i", src, "-t", "1.5", "-vf",
+                 "cropdetect=limit=24:round=2:reset=0", "-f", "null", "-"])
+        m = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", r.stderr)
+        _crops[k] = m[-1] if m else None
+    return _crops[k]
+
+
+def _fx_transicao(ativo):
+    if not ativo:
+        return ""
+    return (f",gblur=sigma=18:enable='lt(t,{TRANS * 0.5})',gblur=sigma=7:enable='between(t,{TRANS * 0.5},{TRANS})'"
+            f",fade=t=in:st=0:d={TRANS * 0.6}:color=white")
+
+
+def seg_video(src, t0, dur, out, zoom_in, trans):
+    z = f"1+0.07*t/{dur:.3f}" if zoom_in else f"1.07-0.07*t/{dur:.3f}"
+    if trans:
+        z = f"({z})+0.22*max(0\\,1-t/{TRANS})"
+    c = area_util(src, t0)
+    pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    vf = (f"{pre}crop=ih*9/16:ih,scale={W}:{H},"
+          f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
+          f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _fx_transicao(trans))
+    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur:.3f}", "-vf", vf, "-an",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
+
+
+def seg_imagem(src, dur, out, k, trans):
+    n = max(1, int(round(dur * FPS)))
+    pans = ["x='iw/2-(iw/zoom/2)'", f"x='(iw-iw/zoom)*on/{n}'", f"x='(iw-iw/zoom)*(1-on/{n})'"]
+    punch = f"+0.22*max(0\\,1-on/{int(TRANS * FPS)})" if trans else ""
+    vf = (f"scale=-2:2400,crop=1350:2400,"
+          f"zoompan=z='1.05+0.10*on/{n}{punch}':{pans[k % 3]}:y='ih/2-(ih/zoom/2)':d={n}:s={W}x{H}:fps={FPS},"
+          f"setsar=1,eq=contrast=1.05:saturation=1.1" + _fx_transicao(trans))
+    ffmpeg("-loop", 1, "-i", src, "-frames:v", n, "-vf", vf,
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
+
+
+def linha_tempo(projeto):
+    """Início/fim de cada cena na timeline final, a partir das palavras mantidas."""
+    mant = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w]
+    total = projeto["duracao_voz"] + 0.6
+    inicios = {}
+    for w in mant:
+        inicios.setdefault(w["cena"], w["ns"])
+    cenas = sorted(inicios)
+    faixas = []
+    for k, c in enumerate(cenas):
+        a = 0.0 if k == 0 else inicios[c]
+        b = inicios[cenas[k + 1]] if k + 1 < len(cenas) else total
+        faixas.append((c, a, b))
+    return faixas, total
+
+
+def _ts(t):
+    h, m, s = int(t // 3600), int(t % 3600 // 60), t % 60
+    return f"{h}:{m:02d}:{s:05.2f}"
+
+
+def legenda_ass(projeto, destino):
+    AMARELO, BRANCO = r"{\c&H00D4FF&}", r"{\c&HFFFFFF&}"
+    linhas = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}", "WrapStyle: 0", "",
+              "[V4+ Styles]",
+              "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
+              "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
+              "MarginR, MarginV, Encoding",
+              f"Style: Cap,{FONTE},{TAM_LEGENDA},&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,0,0,0,0,100,100,1,0,1,11,6,5,40,40,0,1",
+              "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    destaques = {k: {norm(x) for x in c.get("destaques", [])} for k, c in enumerate(projeto["cenas"])}
+    pal = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and str(w.get("legenda", "")).strip()]
+    blocos, cur = [], []
+    for k, w in enumerate(pal):
+        if cur and (w["cena"] != cur[-1]["cena"] or w["ns"] - cur[-1]["ne"] > 0.6):
+            blocos.append(cur); cur = []
+        cur.append(w)
+        fim = bool(re.search(r"[.,:;?!…]$", w["legenda"]))
+        txt = " ".join(x["legenda"] for x in cur)
+        if len(cur) == 3 or fim or (len(cur) == 2 and len(txt) > 11):
+            blocos.append(cur); cur = []
+    if cur:
+        blocos.append(cur)
+    for bi, b in enumerate(blocos):
+        ini = b[0]["ns"]
+        fim = blocos[bi + 1][0]["ns"] if bi + 1 < len(blocos) and blocos[bi + 1][0]["ns"] - b[-1]["ne"] < 0.6 \
+            else b[-1]["ne"] + 0.35
+        partes = []
+        for w in b:
+            t = re.sub(r"[.,:;…]+$", "", w["legenda"]).upper()
+            partes.append((AMARELO if norm(w["legenda"]) in destaques.get(w["cena"], ()) else BRANCO) + t)
+        pop = r"{\an5\pos(540," + str(Y_LEGENDA) + r")\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)}"
+        linhas.append(f"Dialogue: 0,{_ts(ini)},{_ts(fim)},Cap,,0,0,0,,{pop}{' '.join(partes)}")
+    with open(destino, "w", encoding="utf-8") as f:
+        f.write("\n".join(linhas))
+
+
+def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fontes, progresso=None):
+    pasta_trab = os.path.abspath(pasta_trab)
+    seg_dir = os.path.join(pasta_trab, "seg")
+    shutil.rmtree(seg_dir, ignore_errors=True)
+    os.makedirs(seg_dir)
+    faixas, total = linha_tempo(projeto)
+    lista, k = [], 0
+    usados_cena = []
+    for fi, (c, a, b) in enumerate(faixas):
+        dur = b - a
+        n = max(1, round(dur / CUT))
+        midias = [m for m in projeto["cenas"][c].get("midias", []) if m in banco] or list(banco)[:1]
+        usados_cena.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": []})
+        for j in range(n):
+            mid = midias[j % len(midias)]
+            m = banco[mid]
+            rep = j // len(midias)
+            d = dur / n
+            out = os.path.join(seg_dir, f"{k:04d}.mp4")
+            trans = j == 0 and fi > 0
+            src = os.path.join(pasta_raw, m["arquivo"])
+            if m["tipo"] == "v":
+                seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, trans)
+            else:
+                seg_imagem(src, d, out, k, trans)
+            usados_cena[-1]["cortes"].append(mid)
+            lista.append(out)
+            k += 1
+        if progresso:
+            progresso(fi + 1, len(faixas))
+    lst = os.path.join(pasta_trab, "lista.txt")
+    with open(lst, "w") as f:
+        f.writelines(f"file '{p}'\n" for p in lista)
+    visual = os.path.join(pasta_trab, "visual.mp4")
+    ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c", "copy", visual)
+    ass = os.path.join(pasta_trab, "legenda.ass")
+    legenda_ass(projeto, ass)
+    ffmpeg("-i", visual, "-i", voz_wav, "-filter_complex",
+           f"[0:v]subtitles={ass}:fontsdir={pasta_fontes},fade=t=in:st=0:d=0.15[v];[1:a]apad[a]",
+           "-map", "[v]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", 20,
+           "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", destino)
+    return usados_cena, total

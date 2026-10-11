@@ -46,6 +46,7 @@ p { margin: 0; }
   white-space: nowrap;
 }
 .btn:hover { border-color: #56636f; }
+a.btn { text-decoration: none; display: inline-block; }
 .btn.small { padding: 4px 9px; font-size: 12px; }
 .btn.icon { padding: 5px 9px; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
