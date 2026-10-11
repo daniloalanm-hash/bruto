@@ -9,8 +9,8 @@ import re
 
 from comum import ffmpeg, run
 
-PAD_IN, PAD_OUT = 0.10, 0.28   # até onde se procura o som real antes/depois de cada trecho
-FOLGA_IN, FOLGA_OUT = 0.03, 0.05  # folga mínima depois do fim real do som (não come consoante)
+PAD_IN, PAD_OUT = 0.12, 0.40   # até onde se procura o som real antes/depois de cada trecho
+FOLGA_IN, FOLGA_OUT = 0.03, 0.06  # folga mínima depois do fim real do som (não come consoante)
 GAP_KEEP = 0.30                # pausas menores que isso ficam como estão (respiro natural dentro da frase)
 GAP_NEW = 0.06                 # pausas maiores viram isso (ritmo de vídeo curto)
 RUIDO_LIMITE = -58             # dB médio nos silêncios acima do qual a redução de ruído liga
@@ -45,22 +45,39 @@ def envelope(src, passo=0.01):
     return db, passo
 
 
+SEGURA = 0.12   # quedas de volume menores que isso não encerram a palavra (o "s" de "três", o "e" final de "sete")
+
+
 def bordas_reais(db, passo, s, e):
-    """(início, fim) do som da fala em torno de [s, e]: estende enquanto ainda há voz, até PAD_IN/PAD_OUT."""
+    """(início, fim) do som da fala em torno de [s, e], até PAD_IN/PAD_OUT além do que a transcrição marcou.
+
+    Finais de palavra costumam ser baixos (sibilante, vogal átona) e vir depois de uma pequena queda;
+    por isso o fim é o último trecho com voz antes de um silêncio de pelo menos SEGURA.
+    """
     import numpy as np
     piso = float(np.percentile(db, 10))
-    limiar = max(piso + 12, -52.0)
-    k = min(int(e / passo), len(db) - 1)
-    fim = int(min((e + PAD_OUT) / passo, len(db) - 1))
-    while k < fim and db[k] > limiar:
-        k += 1
-    ce = k * passo
-    k = max(int(s / passo), 0)
-    ini = int(max((s - PAD_IN) / passo, 0))
-    while k > ini and db[k - 1] > limiar:
-        k -= 1
-    cs = k * passo
-    return cs, ce
+    limiar = max(piso + 14, -58.0)
+    segura = max(int(SEGURA / passo), 1)
+
+    def varre(k, fim, passo_k):
+        ultimo, abaixo = k, 0
+        while k != fim:
+            if db[k] > limiar:
+                ultimo, abaixo = k, 0
+            else:
+                abaixo += 1
+                if abaixo >= segura:
+                    break
+            k += passo_k
+        return ultimo
+
+    k_e = min(int(e / passo), len(db) - 1)
+    k_fim = int(min((e + PAD_OUT) / passo, len(db) - 1))
+    ce = (varre(k_e, k_fim, 1) + 1) * passo
+    k_s = max(int(s / passo), 0)
+    k_ini = int(max((s - PAD_IN) / passo, 0))
+    cs = varre(k_s, k_ini, -1) * passo
+    return min(cs, s), max(ce, e)
 
 
 def cadeia_tratamento(ruido, modelo_rnn, modo="gravada", forcar_nr=None):
