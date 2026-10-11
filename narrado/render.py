@@ -25,9 +25,56 @@ def area_util(src, t):
     return _crops[k]
 
 
+LEAK_DUR = 0.9    # light leak na saída do gancho: ~0,9s, pico logo depois do corte
+LEAK_ANTES = 0.30  # começa um pouco antes do corte (cobre o fim do gancho)
+
+
+def light_leak(destino, dur=LEAK_DUR, semente=7):
+    """Gera um light leak (vazamento de luz quente) que começa e termina preto.
+
+    Aplicado com mistura "screen": preto não muda nada, as manchas clareiam a imagem por baixo.
+    """
+    import numpy as np
+    from PIL import Image
+    from tempfile import mkdtemp
+    rng = np.random.default_rng(semente)
+    w, h = 270, 480
+    n = max(2, int(round(dur * FPS)))
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    cores = np.array([[255, 95, 20], [235, 40, 70], [255, 170, 50], [255, 120, 40]], np.float32) / 255
+    manchas = []
+    for k in range(4):
+        manchas.append({
+            "x0": rng.uniform(-0.4, 0.2) * w, "x1": rng.uniform(0.8, 1.4) * w,
+            "y": rng.uniform(0.1, 0.9) * h, "r": rng.uniform(0.35, 0.7) * w,
+            "cor": cores[k % len(cores)], "fase": rng.uniform(0, 0.25),
+        })
+    pasta = mkdtemp()
+    for i in range(n):
+        p = i / (n - 1)
+        # envelope: sobe rápido, pico em ~35%, some suave; primeiro e último quadro pretos
+        env = np.sin(np.pi * min(p / 0.35, 1) / 2) if p < 0.35 else np.cos(np.pi / 2 * (p - 0.35) / 0.65)
+        env = 0.0 if i in (0, n - 1) else float(env) ** 1.3
+        img = np.zeros((h, w, 3), np.float32)
+        for m in manchas:
+            q = min(max(p + m["fase"], 0), 1)
+            cx = m["x0"] + (m["x1"] - m["x0"]) * q
+            d2 = ((xx - cx) ** 2 + ((yy - m["y"]) * 0.6) ** 2) / (m["r"] ** 2)
+            img += np.exp(-d2)[..., None] * m["cor"]
+        img = np.clip(img * 0.62 * env, 0, 1)
+        Image.fromarray((img * 255).astype(np.uint8)).save(os.path.join(pasta, f"{i:03d}.png"))
+    ffmpeg("-framerate", FPS, "-i", os.path.join(pasta, "%03d.png"), "-vf",
+           f"scale={W}:{H}:flags=bicubic,gblur=sigma=20,format=yuv420p",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 16, destino)
+    shutil.rmtree(pasta, ignore_errors=True)
+    return destino
+
+
 def _fx_transicao(ativo):
     if not ativo:
         return ""
+    if ativo == "leak":  # o light leak entra por cima depois; aqui só o desfoque que some
+        return f",gblur=sigma=10:enable='lt(t,{TRANS * 0.6})'"
     return (f",gblur=sigma=18:enable='lt(t,{TRANS * 0.5})',gblur=sigma=7:enable='between(t,{TRANS * 0.5},{TRANS})'"
             f",fade=t=in:st=0:d={TRANS * 0.6}:color=white")
 
@@ -56,7 +103,7 @@ def seg_imagem(src, dur, out, k, trans):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
 
 
-QUADROS_JL = 4     # padrão do J-cut/L-cut: a voz adianta ou atrasa ~4 quadros em relação à troca de imagem
+QUADROS_JL = 8     # padrão do J-cut/L-cut: a voz adianta ou atrasa ~8 quadros em relação à troca de imagem
 MIN_CENA = 1.0    # nenhuma cena fica com menos que isso por causa do deslocamento
 
 
@@ -154,6 +201,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     shutil.rmtree(seg_dir, ignore_errors=True)
     os.makedirs(seg_dir)
     faixas, total, tipos = linha_tempo(projeto)
+    usar_leak = len(faixas) > 1 and projeto.get("leak_gancho", True)
     lista, k = [], 0
     usados_cena = []
     for fi, (c, a, b) in enumerate(faixas):
@@ -168,7 +216,8 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             rep = j // len(midias)
             d = dur / n
             out = os.path.join(seg_dir, f"{k:04d}.mp4")
-            trans = j == 0 and fi > 0
+            # 1ª troca (saída do gancho) ganha light leak; as outras, flash + desfoque
+            trans = (j == 0 and fi > 0) and ("leak" if fi == 1 and usar_leak else True)
             src = os.path.join(pasta_raw, m["arquivo"])
             if m["tipo"] == "v":
                 seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, trans)
@@ -186,8 +235,16 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c", "copy", visual)
     ass = os.path.join(pasta_trab, "legenda.ass")
     legenda_ass(projeto, ass)
-    ffmpeg("-i", visual, "-i", voz_wav, "-filter_complex",
-           f"[0:v]subtitles={ass}:fontsdir={pasta_fontes},fade=t=in:st=0:d=0.15[v];[1:a]apad[a]",
+    entradas, base = ["-i", visual, "-i", voz_wav], "[0:v]"
+    if usar_leak:
+        # light leak por cima (mistura screen) começando um pouco antes do corte do gancho
+        leak = light_leak(os.path.join(pasta_trab, "leak.mp4"))
+        ini_leak = max(faixas[1][1] - LEAK_ANTES, 0.0)
+        entradas += ["-i", leak]
+        base = (f"[2:v]tpad=start_duration={ini_leak:.3f}:start_mode=add:color=black,format=gbrp[lk];"
+                f"[0:v]format=gbrp[vb];[vb][lk]blend=all_mode=screen:shortest=0,format=yuv420p[vl];[vl]")
+    ffmpeg(*entradas, "-filter_complex",
+           f"{base}subtitles={ass}:fontsdir={pasta_fontes},fade=t=in:st=0:d=0.15[v];[1:a]apad[a]",
            "-map", "[v]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", 20,
            "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", destino)
     return usados_cena, total
