@@ -594,6 +594,12 @@ function renderCenas() {
   const box = $('#listaCenas');
   box.replaceChildren();
   const usados = new Map((p.timeline || []).map((t) => [t.cena, t.cortes.length]));
+  // quanto a voz adianta (J-cut) ou a imagem adianta (L-cut) nas trocas de tópico
+  const selJL = h('select', {
+    onchange: (e) => { p.jl_quadros = Number(e.target.value); marcarSujo(); },
+  }, ...[4, 8, 12].map((q) => h('option', { value: String(q) }, `${q} quadros (~${(q / 30).toFixed(2).replace('.', ',')}s)`)));
+  selJL.value = String(p.jl_quadros || 4);
+  box.append(h('label', { class: 'entrada-lbl' }, 'J-cut / L-cut: ', selJL));
   p.cenas.forEach((c, ci) => {
     if (!c.texto) return;
     const tira = h('div', { class: 'tiras' });
