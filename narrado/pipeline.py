@@ -18,7 +18,7 @@ import assets  # noqa: E402
 import fala  # noqa: E402
 import render  # noqa: E402
 import voz  # noqa: E402
-from comum import Status, gravar, ler, norm  # noqa: E402
+from comum import Status, ffmpeg, gravar, ler, norm  # noqa: E402
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 RAW = os.environ.get("NARRADO_RAW", os.path.join(RAIZ, "..", ".narrado-cache", "raw"))
@@ -134,7 +134,7 @@ def preparar(pasta, st):
         audio = os.path.join(pasta, job["voz"]["arquivo"])
         st.etapa("Transcrevendo a sua gravação", 30)
         dicas = ", ".join(j["nome"] for j in jogos)
-        palavras = fala.transcrever(audio, MODELO_WHISPER, dicas)
+        palavras = fala.transcrever(audio_limpo(audio), MODELO_WHISPER, dicas)
     st.etapa("Cortando erros e repetições", 55)
     palavras, faltando = fala.editar(palavras, cenas, [j["nome"] for j in jogos])
     if modo == "ia":
@@ -152,6 +152,18 @@ def preparar(pasta, st):
     finalizar(pasta, projeto, audio, st, 62)
 
 
+def audio_limpo(audio):
+    """Converte a gravação para WAV PCM antes de tudo.
+
+    A gravação feita no navegador (WebM/Opus do MediaRecorder) não tem índice nem duração no cabeçalho;
+    cortes e detecção de silêncio direto nela saem desalinhados (trechos sobrepostos, palavras duplicadas).
+    """
+    destino = os.path.splitext(audio)[0] + ".src.wav"
+    if not os.path.exists(destino) or os.path.getmtime(destino) < os.path.getmtime(audio):
+        ffmpeg("-i", audio, "-vn", "-ac", 1, "-ar", 48000, "-c:a", "pcm_s16le", destino)
+    return destino
+
+
 def rerender(pasta, st):
     projeto = ler(os.path.join(pasta, "projeto.json"))
     st.etapa("Preparando o material", 5)
@@ -167,7 +179,7 @@ def finalizar(pasta, projeto, audio, st, p0):
     escolha = projeto["voz"].get("reducao_ruido", "auto")
     forcar = None if escolha == "auto" else escolha == "sim"
     wav = os.path.join(pasta, "voz_final.wav")
-    info = voz.montar(audio, projeto["palavras"], wav, MODELO_RNN, projeto["voz"]["modo"], forcar)
+    info = voz.montar(audio_limpo(audio), projeto["palavras"], wav, MODELO_RNN, projeto["voz"]["modo"], forcar)
     projeto["duracao_voz"] = info["duracao"]
     projeto["voz"].update({"ruido_db": info["ruido_db"], "reducao_aplicada": info["reducao_ruido"]})
 
