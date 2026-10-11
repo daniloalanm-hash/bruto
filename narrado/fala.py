@@ -239,6 +239,32 @@ def editar(palavras, cenas, nomes=()):
             elif k < a and w["idx"] is None and k == a - 1:
                 w["manter"] = True  # palavra de ligação no começo da tomada ("Mas e pra você")
 
+    # 3b) improviso curto entre duas partes mantidas ("Mas e você?" no lugar de "Você"): se traz uma
+    #     palavra do roteiro que ficou faltando exatamente naquele ponto, o trecho inteiro fica
+    ditos_ate_aqui = {w["idx"] for w in palavras if w["manter"] and w["idx"] is not None}
+    for c, ws in sorted(por_trecho.items(), key=lambda kv: kv[1][0]["s"]):
+        if len(ws) > 5 or any(w["manter"] for w in ws):
+            continue
+        antes = [w for w in palavras if w["manter"] and w["idx"] is not None and w["e"] <= ws[0]["s"] + 0.05]
+        depois = [w for w in palavras if w["manter"] and w["idx"] is not None and w["s"] >= ws[-1]["e"] - 0.05]
+        if not antes or not depois:
+            continue
+        lacuna = [x for x in range(antes[-1]["idx"] + 1, depois[0]["idx"]) if x not in ditos_ate_aqui]
+        achou = None
+        for w in ws:
+            for x in lacuna:
+                if sim(norm(w["w"]), S[x][0]) >= 0.75:
+                    achou = (w, x)
+                    break
+            if achou:
+                break
+        if achou:
+            w, x = achou
+            w["idx"] = x
+            ditos_ate_aqui.add(x)
+            for o in ws:
+                o["manter"] = True
+
     # 4) cena de cada palavra + texto da legenda com a grafia do roteiro
     ultima_cena = 0
     mantidas = [w for w in palavras if w["manter"]]
