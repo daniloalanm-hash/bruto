@@ -83,6 +83,8 @@ audio { width: 100%; }
 .lista-cenas { display: flex; flex-direction: column; gap: 14px; }
 .lc-cena b { font-size: 13px; }
 .lc-cena p { font-size: 12px; color: var(--muted); margin: 2px 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entrada-lbl { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.entrada-lbl select { width: auto; max-width: 100%; font-size: 12px; padding: 3px 6px; }
 .tiras { display: flex; gap: 6px; flex-wrap: wrap; }
 .mini { width: 54px; height: 96px; border-radius: 4px; outline: 1px solid var(--line); background-color: #0d1013; background-repeat: no-repeat; cursor: pointer; position: relative; border: 0; padding: 0; }
 .mini:hover { outline-color: var(--accent); }

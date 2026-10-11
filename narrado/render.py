@@ -56,20 +56,54 @@ def seg_imagem(src, dur, out, k, trans):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
 
 
+J_OFFSET = 0.45   # J-cut: a fala do tópico novo começa e a imagem troca ~0,45s depois (no início de uma palavra)
+L_OFFSET = 0.40   # L-cut: a imagem do tópico novo entra ~0,4s antes da fala dele
+MIN_CENA = 1.0    # nenhuma cena fica com menos que isso por causa do deslocamento
+
+
+def tipo_entrada(projeto, cena, ordem):
+    """J, L ou seco para a troca de tópico. 'auto' alterna J e L (começando por J)."""
+    escolha = str(projeto["cenas"][cena].get("entrada") or "auto").upper()
+    if escolha in ("J", "L", "SECO"):
+        return escolha.lower() if escolha == "SECO" else escolha
+    return "J" if ordem % 2 == 1 else "L"
+
+
 def linha_tempo(projeto):
-    """Início/fim de cada cena na timeline final, a partir das palavras mantidas."""
+    """Início/fim de cada cena na timeline final, a partir das palavras mantidas, com J-cut/L-cut nas trocas."""
     mant = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w]
     total = projeto["duracao_voz"] + 0.6
     inicios = {}
     for w in mant:
         inicios.setdefault(w["cena"], w["ns"])
     cenas = sorted(inicios)
+    # ponto de corte da imagem em cada troca de tópico
+    cortes, tipos = {}, {}
+    for k in range(1, len(cenas)):
+        c, ant = cenas[k], cenas[k - 1]
+        fala = inicios[c]
+        lim_a = (cortes.get(ant, 0.0) if k > 1 else 0.0) + MIN_CENA   # a cena anterior não pode encolher demais
+        prox = inicios[cenas[k + 1]] if k + 1 < len(cenas) else total
+        lim_b = prox - MIN_CENA                                       # nem a cena nova
+        tipo = tipo_entrada(projeto, c, k)
+        t = fala
+        if tipo == "J":
+            # troca a imagem no começo da primeira palavra do tópico que vem depois de ~0,45s de fala
+            alvo = fala + J_OFFSET
+            seguinte = next((w["ns"] for w in mant if w["cena"] == c and w["ns"] >= alvo - 0.08), alvo)
+            t = min(seguinte, fala + 0.9)
+        elif tipo == "L":
+            t = fala - L_OFFSET
+        t = min(max(t, lim_a), max(lim_b, lim_a))
+        if (tipo == "J" and t <= fala + 0.05) or (tipo == "L" and t >= fala - 0.05):
+            tipo, t = "seco", fala  # sem espaço para deslocar: corte seco
+        cortes[c], tipos[c] = t, tipo
     faixas = []
     for k, c in enumerate(cenas):
-        a = 0.0 if k == 0 else inicios[c]
-        b = inicios[cenas[k + 1]] if k + 1 < len(cenas) else total
+        a = 0.0 if k == 0 else cortes[c]
+        b = cortes[cenas[k + 1]] if k + 1 < len(cenas) else total
         faixas.append((c, a, b))
-    return faixas, total
+    return faixas, total, tipos
 
 
 def _ts(t):
@@ -118,14 +152,15 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     seg_dir = os.path.join(pasta_trab, "seg")
     shutil.rmtree(seg_dir, ignore_errors=True)
     os.makedirs(seg_dir)
-    faixas, total = linha_tempo(projeto)
+    faixas, total, tipos = linha_tempo(projeto)
     lista, k = [], 0
     usados_cena = []
     for fi, (c, a, b) in enumerate(faixas):
         dur = b - a
         n = max(1, round(dur / CUT))
         midias = [m for m in projeto["cenas"][c].get("midias", []) if m in banco] or list(banco)[:1]
-        usados_cena.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": []})
+        usados_cena.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": [],
+                            "entrada": tipos.get(c, "inicio")})
         for j in range(n):
             mid = midias[j % len(midias)]
             m = banco[mid]

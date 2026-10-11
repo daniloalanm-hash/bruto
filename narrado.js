@@ -614,10 +614,26 @@ function renderCenas() {
     });
     tira.append(h('button', { class: 'mini mais', title: 'Adicionar imagem', onclick: () => abrirTroca(ci, (c.midias || []).length) }, '+'));
     const n = usados.get(ci);
+    // troca de tópico: J-cut (fala entra antes da imagem), L-cut (imagem entra antes da fala) ou corte seco
+    let entrada = null;
+    if (ci > (p.cenas.findIndex((x) => x.texto))) {
+      const aplicado = (p.timeline || []).find((t) => t.cena === ci)?.entrada;
+      const nomes = { J: 'J-cut', L: 'L-cut', seco: 'corte seco' };
+      const sel = h('select', {
+        class: 'entrada', title: 'Como a imagem entra na troca de tópico',
+        onchange: (e) => { c.entrada = e.target.value; marcarSujo(); },
+      },
+      h('option', { value: 'auto' }, `Automático${aplicado && nomes[aplicado] ? ` (${nomes[aplicado]})` : ''}`),
+      h('option', { value: 'J' }, 'J-cut · a fala entra antes da imagem'),
+      h('option', { value: 'L' }, 'L-cut · a imagem entra antes da fala'),
+      h('option', { value: 'seco' }, 'Corte seco'));
+      sel.value = c.entrada || 'auto';
+      entrada = h('label', { class: 'entrada-lbl' }, 'Entrada: ', sel);
+    }
     box.append(h('div', { class: 'lc-cena' },
       h('b', {}, `Tópico ${ci + 1} · ${nomeJogo(c.jogo)}`),
       h('p', {}, `${n ? `${n} cortes · ` : ''}${c.texto}`),
-      tira));
+      entrada, tira));
   });
 }
 
