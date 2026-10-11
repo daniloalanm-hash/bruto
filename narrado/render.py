@@ -70,6 +70,44 @@ def light_leak(destino, dur=LEAK_DUR, semente=7):
     return destino
 
 
+PAN_DUR = 0.30     # whip pan para a direita na saída do gancho
+WOOSH_DUR = 0.55   # woosh: sobe até o corte e some logo depois
+WOOSH_GANHO = 0.5  # volume do woosh em relação à voz (a voz já sai em -14 LUFS)
+
+
+def woosh(destino, dur=WOOSH_DUR, sr=48000, semente=3):
+    """Gera um woosh (ruído com filtro que varre do grave ao agudo) em WAV mono, pico em ~55% da duração."""
+    import wave
+    import numpy as np
+    rng = np.random.default_rng(semente)
+    n = int(dur * sr)
+    ruido = rng.standard_normal(n + 2048).astype(np.float64)
+    janela, passo = 2048, 512
+    hann = np.hanning(janela)
+    saida = np.zeros(n + janela)
+    soma = np.zeros(n + janela)
+    freqs = np.fft.rfftfreq(janela, 1 / sr)
+    for ini in range(0, n, passo):
+        p = ini / n
+        centro = 250 * (14 ** p)                 # varre de ~250 Hz a ~3,5 kHz
+        largura = centro * 0.9
+        filtro = np.exp(-0.5 * ((freqs - centro) / largura) ** 2) + 0.15 * np.exp(-0.5 * (freqs / 400) ** 2)
+        bloco = np.fft.irfft(np.fft.rfft(ruido[ini:ini + janela] * hann) * filtro)
+        saida[ini:ini + janela] += bloco * hann
+        soma[ini:ini + janela] += hann ** 2
+    saida = saida[:n] / np.maximum(soma[:n], 1e-6)
+    t = np.linspace(0, 1, n)
+    env = np.where(t < 0.55, (t / 0.55) ** 2.2, np.exp(-((t - 0.55) / 0.12)))
+    saida *= env
+    saida = saida / (np.abs(saida).max() + 1e-9) * 0.9
+    with wave.open(destino, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((saida * 32767).astype(np.int16).tobytes())
+    return destino
+
+
 def _fx_transicao(ativo):
     if not ativo:
         return ""
@@ -201,7 +239,12 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     shutil.rmtree(seg_dir, ignore_errors=True)
     os.makedirs(seg_dir)
     faixas, total, tipos = linha_tempo(projeto)
-    usar_leak = len(faixas) > 1 and projeto.get("leak_gancho", True)
+    # transição na saída do gancho (1ª troca de tópico): "pan" (whip pan à direita + woosh), "leak" ou "pan_leak"
+    estilo = str(projeto.get("transicao_gancho") or "pan")
+    if len(faixas) < 2:
+        estilo = "nenhuma"
+    usar_leak = estilo in ("leak", "pan_leak")
+    usar_pan = estilo in ("pan", "pan_leak")
     lista, k = [], 0
     usados_cena = []
     for fi, (c, a, b) in enumerate(faixas):
@@ -217,7 +260,10 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             d = dur / n
             out = os.path.join(seg_dir, f"{k:04d}.mp4")
             # 1ª troca (saída do gancho) ganha light leak; as outras, flash + desfoque
-            trans = (j == 0 and fi > 0) and ("leak" if fi == 1 and usar_leak else True)
+            if j == 0 and fi == 1 and estilo != "nenhuma":
+                trans = "leak" if usar_leak else False  # o pan é feito depois, sobre o vídeo montado
+            else:
+                trans = j == 0 and fi > 0
             src = os.path.join(pasta_raw, m["arquivo"])
             if m["tipo"] == "v":
                 seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, trans)
@@ -235,16 +281,40 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c", "copy", visual)
     ass = os.path.join(pasta_trab, "legenda.ass")
     legenda_ass(projeto, ass)
-    entradas, base = ["-i", visual, "-i", voz_wav], "[0:v]"
+    entradas = ["-i", visual, "-i", voz_wav]
+    grafo, v, a = [], "[0:v]", "[1:a]apad"
+    corte = faixas[1][1] if len(faixas) > 1 else 0.0
+    if usar_pan:
+        # whip pan para a direita: a imagem do gancho sai pela esquerda e a nova entra pela direita,
+        # com desfoque de movimento horizontal; cada lado congela meio pan para cobrir a sobreposição
+        meio = PAN_DUR / 2
+        grafo.append(f"{v}split[pa][pb]")
+        grafo.append(f"[pa]trim=0:{corte:.3f},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={meio:.3f}[ga]")
+        grafo.append(f"[pb]trim=start={corte:.3f},setpts=PTS-STARTPTS,tpad=start_mode=clone:start_duration={meio:.3f}[gb]")
+        grafo.append(f"[ga][gb]xfade=transition=slideleft:duration={PAN_DUR:.3f}:offset={corte - meio:.3f},"
+                     f"gblur=sigma=40:sigmaV=0.01:enable='between(t,{corte - meio:.3f},{corte + meio:.3f})'[vp]")
+        v = "[vp]"
+        # woosh com o pico (55% do som) no corte
+        som = woosh(os.path.join(pasta_trab, "woosh.wav"))
+        entradas += ["-i", som]
+        atraso = max(int((corte - WOOSH_DUR * 0.55) * 1000), 0)
+        grafo.append(f"[2:a]volume={WOOSH_GANHO},adelay={atraso}:all=1,apad[sw]")
+        grafo.append("[1:a]apad[vz];[vz][sw]amix=inputs=2:duration=first:normalize=0[am]")
+        a = "[am]"
     if usar_leak:
         # light leak por cima (mistura screen) começando um pouco antes do corte do gancho
         leak = light_leak(os.path.join(pasta_trab, "leak.mp4"))
-        ini_leak = max(faixas[1][1] - LEAK_ANTES, 0.0)
+        idx = len(entradas) // 2
         entradas += ["-i", leak]
-        base = (f"[2:v]tpad=start_duration={ini_leak:.3f}:start_mode=add:color=black,format=gbrp[lk];"
-                f"[0:v]format=gbrp[vb];[vb][lk]blend=all_mode=screen:shortest=0,format=yuv420p[vl];[vl]")
-    ffmpeg(*entradas, "-filter_complex",
-           f"{base}subtitles={ass}:fontsdir={pasta_fontes},fade=t=in:st=0:d=0.15[v];[1:a]apad[a]",
-           "-map", "[v]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", 20,
+        grafo.append(f"[{idx}:v]tpad=start_duration={max(corte - LEAK_ANTES, 0.0):.3f}:start_mode=add:color=black,"
+                     f"format=gbrp[lk]")
+        grafo.append(f"{v}format=gbrp[vb];[vb][lk]blend=all_mode=screen:shortest=0,format=yuv420p[vl]")
+        v = "[vl]"
+    grafo.append(f"{v}subtitles={ass}:fontsdir={pasta_fontes},fade=t=in:st=0:d=0.15[v]")
+    if a.endswith("apad"):
+        grafo.append(f"{a}[a]")
+        a = "[a]"
+    ffmpeg(*entradas, "-filter_complex", ";".join(grafo),
+           "-map", "[v]", "-map", a, "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", 20,
            "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", destino)
     return usados_cena, total

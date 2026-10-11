@@ -600,6 +600,15 @@ function renderCenas() {
   }, ...[4, 8, 12].map((q) => h('option', { value: String(q) }, `${q} quadros (~${(q / 30).toFixed(2).replace('.', ',')}s)`)));
   selJL.value = String(p.jl_quadros || 8);
   box.append(h('label', { class: 'entrada-lbl' }, 'J-cut / L-cut: ', selJL));
+  // transição na saída do gancho (1ª troca de tópico)
+  const selGancho = h('select', {
+    onchange: (e) => { p.transicao_gancho = e.target.value; marcarSujo(); },
+  },
+  h('option', { value: 'pan' }, 'Pan para a direita + woosh'),
+  h('option', { value: 'leak' }, 'Light leak'),
+  h('option', { value: 'pan_leak' }, 'Pan + woosh + light leak'));
+  selGancho.value = p.transicao_gancho || 'pan';
+  box.append(h('label', { class: 'entrada-lbl' }, 'Saída do gancho: ', selGancho));
   p.cenas.forEach((c, ci) => {
     if (!c.texto) return;
     const tira = h('div', { class: 'tiras' });
