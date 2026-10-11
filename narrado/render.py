@@ -56,8 +56,9 @@ def seg_imagem(src, dur, out, k, trans):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
 
 
-J_OFFSET = 0.45   # J-cut: a fala do tópico novo começa e a imagem troca ~0,45s depois (no início de uma palavra)
-L_OFFSET = 0.40   # L-cut: a imagem do tópico novo entra ~0,4s antes da fala dele
+QUADROS_JL = 4     # J-cut/L-cut: a voz adianta ou atrasa ~4 quadros em relação à troca de imagem
+J_OFFSET = QUADROS_JL / FPS   # J: a fala do tópico novo começa e a imagem troca 4 quadros depois
+L_OFFSET = QUADROS_JL / FPS   # L: a imagem do tópico novo entra 4 quadros antes da fala
 MIN_CENA = 1.0    # nenhuma cena fica com menos que isso por causa do deslocamento
 
 
@@ -88,14 +89,11 @@ def linha_tempo(projeto):
         tipo = tipo_entrada(projeto, c, k)
         t = fala
         if tipo == "J":
-            # troca a imagem no começo da primeira palavra do tópico que vem depois de ~0,45s de fala
-            alvo = fala + J_OFFSET
-            seguinte = next((w["ns"] for w in mant if w["cena"] == c and w["ns"] >= alvo - 0.08), alvo)
-            t = min(seguinte, fala + 0.9)
+            t = fala + J_OFFSET
         elif tipo == "L":
             t = fala - L_OFFSET
         t = min(max(t, lim_a), max(lim_b, lim_a))
-        if (tipo == "J" and t <= fala + 0.05) or (tipo == "L" and t >= fala - 0.05):
+        if (tipo == "J" and t <= fala + 0.02) or (tipo == "L" and t >= fala - 0.02):
             tipo, t = "seco", fala  # sem espaço para deslocar: corte seco
         cortes[c], tipos[c] = t, tipo
     faixas = []

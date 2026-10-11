@@ -9,9 +9,10 @@ import re
 
 from comum import ffmpeg, run
 
-PAD_IN, PAD_OUT = 0.10, 0.28   # folga para não comer consoantes no começo/fim de cada trecho
-GAP_KEEP = 0.65                # pausas menores que isso ficam como estão (fala natural)
-GAP_NEW = 0.20                 # pausas maiores viram isso (ritmo de vídeo curto)
+PAD_IN, PAD_OUT = 0.10, 0.28   # até onde se procura o som real antes/depois de cada trecho
+FOLGA_IN, FOLGA_OUT = 0.03, 0.05  # folga mínima depois do fim real do som (não come consoante)
+GAP_KEEP = 0.30                # pausas menores que isso ficam como estão (respiro natural dentro da frase)
+GAP_NEW = 0.06                 # pausas maiores viram isso (ritmo de vídeo curto)
 RUIDO_LIMITE = -58             # dB médio nos silêncios acima do qual a redução de ruído liga
 
 
@@ -27,6 +28,39 @@ def ruido_de_fundo(src, palavras=None):
     if len(niveis) < 20:
         return -90.0
     return niveis[len(niveis) // 10]
+
+
+def envelope(src, passo=0.01):
+    """Nível (dB) do áudio a cada 10 ms, para achar onde a fala começa e termina de verdade."""
+    import subprocess
+    import numpy as np
+    bruto = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+                           capture_output=True).stdout
+    x = np.frombuffer(bruto, dtype=np.float32)
+    n = int(16000 * passo)
+    if len(x) < n:
+        return np.array([-90.0]), passo
+    x = x[: len(x) // n * n].reshape(-1, n)
+    db = 20 * np.log10(np.sqrt((x ** 2).mean(axis=1)) + 1e-9)
+    return db, passo
+
+
+def bordas_reais(db, passo, s, e):
+    """(início, fim) do som da fala em torno de [s, e]: estende enquanto ainda há voz, até PAD_IN/PAD_OUT."""
+    import numpy as np
+    piso = float(np.percentile(db, 10))
+    limiar = max(piso + 12, -52.0)
+    k = min(int(e / passo), len(db) - 1)
+    fim = int(min((e + PAD_OUT) / passo, len(db) - 1))
+    while k < fim and db[k] > limiar:
+        k += 1
+    ce = k * passo
+    k = max(int(s / passo), 0)
+    ini = int(max((s - PAD_IN) / passo, 0))
+    while k > ini and db[k - 1] > limiar:
+        k -= 1
+    cs = k * passo
+    return cs, ce
 
 
 def cadeia_tratamento(ruido, modelo_rnn, modo="gravada", forcar_nr=None):
@@ -67,11 +101,13 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
             b["pal"].append(w)
         else:
             blocos.append({"s": w["s"], "e": w["e"], "primeiro": k, "ultimo": k, "pal": [w]})
-    for b in blocos:  # folgas sem invadir a palavra vizinha (que pode ser uma tomada descartada)
+    db, passo = envelope(src)
+    for b in blocos:  # corta onde o som realmente começa/acaba, sem invadir a palavra vizinha
         ant = todas[b["primeiro"] - 1]["e"] if b["primeiro"] > 0 else 0.0
         prox = todas[b["ultimo"] + 1]["s"] if b["ultimo"] + 1 < len(todas) else b["e"] + 1
-        b["cs"] = max(ant + 0.02, b["s"] - PAD_IN, 0.0)
-        b["ce"] = min(prox - 0.02, b["e"] + PAD_OUT)
+        som_s, som_e = bordas_reais(db, passo, b["s"], b["e"])
+        b["cs"] = max(ant + 0.02, som_s - FOLGA_IN, 0.0)
+        b["ce"] = min(prox - 0.02, som_e + FOLGA_OUT)
 
     filt, partes, t = [], [], 0.0
     for bi, b in enumerate(blocos):
