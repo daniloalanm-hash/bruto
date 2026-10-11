@@ -100,35 +100,93 @@ def medir_quadro(video, t):
     return float(y.group(1)) if y else 0, float(s.group(1)) if s else 0
 
 
+EAST_URL = "https://raw.githubusercontent.com/oyyd/frozen_east_text_detection.pb/master/frozen_east_text_detection.pb"
+_east = []
+
+
+def _rede_east():
+    """Detector de texto EAST (OpenCV). Acha cartelas estilizadas que o Tesseract não consegue ler."""
+    if _east:
+        return _east[0]
+    rede = None
+    try:
+        import cv2
+        caminho = os.path.expanduser("~/.cache/narrado/east.pb")
+        if not os.path.exists(caminho) or os.path.getsize(caminho) < 1_000_000:
+            os.makedirs(os.path.dirname(caminho), exist_ok=True)
+            with open(caminho + ".tmp", "wb") as f:
+                f.write(_get(EAST_URL, timeout=180))
+            os.replace(caminho + ".tmp", caminho)
+        rede = cv2.dnn.readNet(caminho)
+    except Exception as e:  # sem OpenCV/modelo: fica só o Tesseract
+        print(f"aviso: detector EAST indisponível ({e})")
+    _east.append(rede)
+    return rede
+
+
+def _fracao_texto_east(png):
+    """Fração da imagem marcada como texto pelo EAST (0 a 1)."""
+    rede = _rede_east()
+    if rede is None:
+        return 0.0
+    import cv2
+    img = cv2.imread(png)
+    if img is None:
+        return 0.0
+    h, w = img.shape[:2]
+    nw = 384
+    nh = max(32, int(round(h * nw / w / 32)) * 32)
+    blob = cv2.dnn.blobFromImage(cv2.resize(img, (nw, nh)), 1.0, (nw, nh), (123.68, 116.78, 103.94), True, False)
+    rede.setInput(blob)
+    s = rede.forward("feature_fusion/Conv_7/Sigmoid")[0, 0]
+    return float((s >= 0.8).mean())
+
+
+def _palavras_fortes(tsv):
+    """Palavras que o Tesseract leu com segurança (descarta o "ruído" de folhagem, fagulhas etc.)."""
+    fortes, grandes = 0, 0
+    for linha in tsv.splitlines()[1:]:
+        cols = linha.split("\t")
+        if len(cols) < 12 or not cols[11].strip():
+            continue
+        conf = float(cols[10] or -1)
+        nucleo = re.sub(r"^[^A-Za-z]+|[^A-Za-z]+$", "", cols[11].strip())
+        if len(nucleo) >= 3 and nucleo.isalpha() and conf >= 70 and (nucleo.isupper() or nucleo.istitle()):
+            fortes += 1
+            if len(nucleo) >= 4 and nucleo.isupper() and conf >= 88:
+                grandes += 1
+    return fortes, grandes
+
+
 def tem_texto(origem, t=None, limite=2):
-    """True se o quadro tiver texto legível (cartela de trailer, legenda, menu). Usa o Tesseract se houver."""
+    """True se a parte que aparece no vídeo (centro 9:16) tiver texto: cartela de trailer, legenda, menu.
+
+    Combina o detector EAST (acha a região de texto, mesmo estilizado) com uma leitura do Tesseract.
+    """
     import shutil
     import subprocess
     import tempfile
-    if not shutil.which("tesseract"):
-        return False
-    with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+    with tempfile.TemporaryDirectory() as tmp:
+        cor = os.path.join(tmp, "q.png")
         args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
         if t is not None:
             args += ["-ss", f"{t:.2f}"]
-        args += ["-i", origem, "-frames:v", "1", "-vf", "scale=1280:-2,format=gray", tmp.name]
-        if subprocess.run(args).returncode != 0:
+        # mesmo recorte do render: centro vertical 9:16
+        args += ["-i", origem, "-frames:v", "1", "-vf", "crop='min(iw,ih*9/16)':ih,scale=720:-2", cor]
+        if subprocess.run(args).returncode != 0 or not os.path.exists(cor):
             return False
-        r = subprocess.run(["tesseract", tmp.name, "-", "--psm", "11", "-l", "eng", "tsv"],
-                           capture_output=True, text=True)
-    palavras = 0
-    soltas = {}  # letras espaçadas ("E X P A N D E D"): o Tesseract lê letra por letra
-    for linha in r.stdout.splitlines()[1:]:
-        cols = linha.split("\t")
-        if len(cols) >= 12 and cols[11].strip():
-            txt, conf = cols[11].strip(), float(cols[10] or -1)
-            letras = sum(ch.isalpha() for ch in txt)
-            if conf >= 50 and letras >= 3:
-                palavras += 1
-            elif conf >= 40 and 1 <= letras <= 2:
-                chave = (cols[2], cols[3], cols[4])  # bloco, parágrafo, linha
-                soltas[chave] = soltas.get(chave, 0) + 1
-    return palavras >= limite or any(n >= 5 for n in soltas.values())
+        if _fracao_texto_east(cor) >= 0.0018 * limite / 2:
+            return True
+        if not shutil.which("tesseract"):
+            return False
+        # legenda/letreiro comum: uma leitura do Tesseract, contando só palavras lidas com segurança
+        cinza = os.path.join(tmp, "g.png")
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", cor, "-vf", "format=gray", cinza])
+        r = subprocess.run(["tesseract", cinza, "-", "--psm", "11", "-l", "eng", "tsv"], capture_output=True, text=True)
+        fortes, grandes = _palavras_fortes(r.stdout)
+        if fortes >= limite or grandes >= 1:
+            return True
+    return False
 
 
 def trechos_bons(video):
