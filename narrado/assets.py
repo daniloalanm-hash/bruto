@@ -153,6 +153,37 @@ def _youtube(nome, chave, pasta, n=2):
     return saida
 
 
+def baixar_imagens_materia(urls, pasta):
+    """Imagens da própria matéria (mostram a novidade de verdade). Converte tudo para JPG e descarta
+    miniaturas. Devolve entradas de banco {id: {...}}."""
+    import hashlib
+    os.makedirs(pasta, exist_ok=True)
+    banco = {}
+    for u in (urls or [])[:8]:
+        h = hashlib.sha1(u.encode()).hexdigest()[:10]
+        destino = os.path.join(pasta, f"materia_{h}.jpg")
+        try:
+            if not os.path.exists(destino):
+                bruto = destino + ".orig"
+                with open(bruto, "wb") as f:
+                    f.write(_get(u, timeout=40))
+                ffmpeg("-i", bruto, "-frames:v", 1, "-q:v", 2, destino)
+                os.remove(bruto)
+            from PIL import Image
+            with Image.open(destino) as im:
+                w, hh = im.size
+            if w < 480 or hh < 270:
+                continue
+            # com texto (arte de capa com título) ou formato estranho: mostra inteira sobre fundo desfocado
+            inteira = tem_texto(destino, limite=3) or not (1.2 <= w / hh <= 2.0)
+            banco[f"materia_{h}"] = {"tipo": "i", "jogo": "materia", "arquivo": os.path.basename(destino),
+                                     "encaixar": bool(inteira), "url": u}
+        except Exception as e:
+            print(f"aviso: imagem da matéria não baixou ({u[:80]}): {e}")
+    print(f"matéria: {len(banco)} imagens usáveis")
+    return banco
+
+
 def baixar_jogo(nome, pasta):
     """Material oficial do jogo: Steam; se não tiver (ou não tiver trailer), App Store e YouTube."""
     os.makedirs(pasta, exist_ok=True)

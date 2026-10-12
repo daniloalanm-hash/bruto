@@ -52,7 +52,7 @@ def chave_do_jogo(nome, jogos):
 
 # aparência padrão de um vídeo novo (a tela pode mudar cada uma; o job pode trazer as preferências salvas)
 ESTILO_PADRAO = {
-    "jl_quadros": 8, "transicao_gancho": "pan", "legenda_estilo": "classico", "legenda_cor": "amarelo",
+    "jl_quadros": 8, "transicao_gancho": "pan", "titulo_estilo": "manchete", "legenda_estilo": "classico", "legenda_cor": "amarelo",
     "legenda_altura": 0.615, "sfx": True, "zoom_enfase": True, "emoji": True,
 }
 
@@ -88,6 +88,7 @@ def planejar(cenas, banco, jogos):
             if im:
                 seq.append(im.pop(0))
         fila[j["chave"]] = {"seq": seq, "pos": 0}
+    materia = [m for m, d in banco.items() if d.get("jogo") == "materia"]
     for k, c in enumerate(cenas):
         ch = chaves[k] or principal
         c["jogo"] = ch
@@ -117,10 +118,27 @@ def planejar(cenas, banco, jogos):
         cortes = max(1, round(len(c.get("texto", "").split()) / 2.6 / 1.7))
         f["pos"] = inicio + min(cortes, len(escolha))
         c["midias"] = escolha
+    # imagens da matéria: são as que mostram a novidade. Entram como 1ª mídia dos tópicos sobre o jogo
+    # principal (ou gerais), uma por tópico, sem repetir; no gancho, depois do plano de impacto.
+    fila_m = list(materia)
+    for k, c in enumerate(cenas):
+        if not fila_m:
+            break
+        if (chaves[k] or principal) != principal or not c.get("midias"):
+            continue
+        mid = fila_m.pop(0)
+        midias = c.setdefault("midias", [])
+        tem_video = any(banco[m]["tipo"] == "v" for m in midias if m in banco)
+        midias.insert(1 if (k == 0 and tem_video) else 0, mid)
+    # tópico sem nada (jogo sem material): usa as imagens da matéria em rodízio
+    if materia:
+        for k, c in enumerate(cenas):
+            if not c.get("midias"):
+                c["midias"] = [materia[(k + i) % len(materia)] for i in range(min(3, len(materia)))]
     return cenas
 
 
-def garantir_assets(nomes):
+def garantir_assets(nomes, permitir_vazio=False):
     jogos = []
     for nome in nomes:
         try:
@@ -129,7 +147,7 @@ def garantir_assets(nomes):
                 jogos.append(info)
         except Exception as e:
             print(f"aviso: falhou ao buscar '{nome}': {e}")
-    if not jogos:
+    if not jogos and not permitir_vazio:
         raise RuntimeError("Não encontrei material (Steam, App Store ou YouTube) para nenhum dos jogos do roteiro.")
     return jogos
 
@@ -143,10 +161,11 @@ def preparar(pasta, st):
     nomes = list(dict.fromkeys(n for n in nomes if n))
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
-    jogos = garantir_assets(nomes)
+    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia")))
 
     st.etapa("Escolhendo os melhores trechos dos trailers", 18)
     banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"))
+    banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
     sprite = assets.sprite(banco, RAW, os.path.join(pasta, "cenas.jpg"))
 
     modo = job.get("voz", {}).get("modo", "gravada")
@@ -199,8 +218,11 @@ def rerender(pasta, st):
     projeto = ler(os.path.join(pasta, "projeto.json"))
     st.etapa("Preparando o material", 5)
     falta = [m for m in projeto["banco"].values() if not os.path.exists(os.path.join(RAW, m["arquivo"]))]
-    if falta:
-        garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
+    if any(m.get("jogo") not in ("materia", "proprio") for m in falta):
+        garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]], permitir_vazio=True)
+    urls = [m["url"] for m in falta if m.get("jogo") == "materia" and m.get("url")]
+    if urls:
+        assets.baixar_imagens_materia(urls, RAW)
     projeto["versao"] = int(projeto.get("versao", 1)) + 1
     finalizar(pasta, projeto, os.path.join(pasta, projeto["voz"]["arquivo"]), st, 20)
 

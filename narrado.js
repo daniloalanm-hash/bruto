@@ -36,7 +36,7 @@ const K = {
   estilo: 'bruto:narrado:estilo', lote: 'bruto:narrado:lote', post: 'bruto:narrado:post:',
 };
 // aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
-const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji'];
+const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji'];
 function estiloSalvo() { try { return JSON.parse(ls.get(K.estilo) || '{}'); } catch { return {}; } }
 function salvarEstilo(p) {
   const e = {};
@@ -178,6 +178,37 @@ function textoDeHtml(html) {
     return /^H/.test(n.tagName) ? `## ${t}` : t;
   }).filter((t) => t.length > 25 && !/compartilhe|leia também|newsletter/i.test(t)).join('\n');
 }
+// Imagens da matéria (são as que mostram de fato a novidade): destaque + imagens do corpo, sem ícones/logos
+function imagensDeHtml(html, base) {
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  const urls = [];
+  for (const img of doc.querySelectorAll('img')) {
+    let src = img.getAttribute('data-orig-file') || img.getAttribute('data-src') || img.getAttribute('src') || '';
+    const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
+    if (srcset) { // maior versão do srcset
+      const maior = srcset.split(',').map((x) => x.trim().split(/\s+/)).sort((a, b) => parseInt(b[1] || 0, 10) - parseInt(a[1] || 0, 10))[0];
+      if (maior?.[0]) src = maior[0];
+    }
+    const w = parseInt(img.getAttribute('width') || '0', 10);
+    if (w && w < 300) continue;
+    urls.push(src);
+  }
+  return limparImagens(urls, base);
+}
+function limparImagens(urls, base) {
+  const vistos = new Set();
+  const saida = [];
+  for (let u of urls) {
+    try { u = new URL(u, base).href; } catch { continue; }
+    if (!/^https?:/.test(u) || /\.(svg|gif)(\?|$)/i.test(u) || /logo|avatar|icon|emoji|gravatar|pixel|banner-ad|placeholder/i.test(u)) continue;
+    const chave = u.split('?')[0].replace(/-\d+x\d+(?=\.\w+$)/, '').replace(/^https?:\/\/i\d\.wp\.com\//, '');
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    saida.push(u);
+  }
+  return saida.slice(0, 8);
+}
+
 async function materiaWordPress(url) {
   const u = new URL(url);
   const partes = u.pathname.split('/').filter(Boolean);
@@ -195,7 +226,9 @@ async function materiaWordPress(url) {
       if (!r.ok) continue;
       const [post] = await r.json();
       if (!post) continue;
+      const imagens = limparImagens([post.jetpack_featured_media_url, ...imagensDeHtml(post.content?.rendered, post.link || url)].filter(Boolean), post.link || url);
       return {
+        imagens,
         titulo: new DOMParser().parseFromString(post.title?.rendered || '', 'text/html').body.textContent.trim(),
         resumo: new DOMParser().parseFromString(post.excerpt?.rendered || '', 'text/html').body.textContent.trim().slice(0, 300),
         texto: textoDeHtml(post.content?.rendered).slice(0, 14000),
@@ -219,7 +252,10 @@ $('#btnBuscar').addEventListener('click', async () => {
     const p = $('#previaMateria');
     p.replaceChildren(
       m.imagem ? h('img', { src: m.imagem, alt: '' }) : h('div'),
-      h('div', {}, h('b', {}, m.titulo), h('span', { class: 'muted small' }, `${m.texto.split(/\s+/).length} palavras lidas · ${m.resumo || ''}`)),
+      h('div', {}, h('b', {}, m.titulo), h('span', { class: 'muted small' }, `${m.texto.split(/\s+/).length} palavras lidas · ${m.resumo || ''}`),
+        (m.imagens || []).length ? h('div', { class: 'fotos-materia' },
+          h('span', { class: 'muted small' }, `${m.imagens.length} imagens da matéria entram nas cenas:`),
+          ...m.imagens.map((u) => h('img', { src: u, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }))) : null),
     );
     p.hidden = false;
     $('#textoMateria').value = m.texto;
@@ -525,6 +561,7 @@ $('#btnGerar').addEventListener('click', async () => {
       jogos: r.jogos,
       cenas: r.cenas.filter((c) => c.texto.trim()),
       post: r.post || null,
+      imagens_materia: state.materia?.imagens || [],
       voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
     };
     st.textContent = 'Criando o vídeo…';
@@ -778,7 +815,7 @@ function trazerTomada(g) {
 }
 
 /* ---------------- 4c. ajustes: cenas ---------------- */
-const nomeJogo = (chave) => (chave === 'proprio' ? 'Suas mídias' : state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
+const nomeJogo = (chave) => ({ proprio: 'Suas mídias', materia: 'Imagens da matéria' }[chave] || state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
 function mini(mid, extra = {}) {
   const p = state.projeto, m = p.banco[mid], sp = p.sprite;
   const k = m?.sprite ?? 0;
@@ -829,7 +866,9 @@ function renderAparencia() {
       h('label', { class: 'field' }, h('span', {}, 'Altura da legenda'), altura, alturaTxt),
       campoSel('J-cut / L-cut', p.jl_quadros || 8, [4, 8, 12].map((q) => [q, `${q} quadros (~${(q / 30).toFixed(2).replace('.', ',')}s)`]), muda('jl_quadros', Number)),
       campoSel('Saída do gancho', p.transicao_gancho || 'pan', [['pan', 'Pan para a direita + woosh'], ['leak', 'Light leak'], ['pan_leak', 'Pan + woosh + light leak']], muda('transicao_gancho'))),
-    h('label', { class: 'field' }, h('span', {}, 'Título na tela (gancho)'), tit),
+    h('div', { class: 'grade-ap' },
+      h('label', { class: 'field', style: { gridColumn: 'span 2' } }, h('span', {}, 'Chamada na tela (gancho)'), tit),
+      campoSel('Estilo da chamada', p.titulo_estilo || 'manchete', [['manchete', 'Manchete (linhas gigantes + adesivo)'], ['faixa', 'Faixa colorida'], ['simples', 'Simples (texto no topo)']], muda('titulo_estilo'))),
     h('div', { class: 'row wrap' },
       campoChk('Título no início', p.titulo_gancho !== false && !!p.titulo_tela, (v) => { p.titulo_gancho = v; marcarSujo(); }),
       campoChk('Efeitos sonoros (woosh, pop, impacto)', p.sfx !== false, muda('sfx')),
@@ -950,6 +989,7 @@ function abrirTroca(ci, pos) {
 function renderGrade() {
   const p = state.projeto;
   const grupos = [...p.jogos];
+  if (Object.values(p.banco).some((m) => m.jogo === 'materia')) grupos.push({ chave: 'materia', nome: 'Imagens da matéria' });
   if (Object.values(p.banco).some((m) => m.jogo === 'proprio')) grupos.push({ chave: 'proprio', nome: 'Suas mídias' });
   $('#filtroJogos').replaceChildren(...grupos.map((j) => h('button', {
     class: `btn small${j.chave === filtroJogo ? ' accent' : ''}`, onclick: () => { filtroJogo = j.chave; renderGrade(); },
@@ -963,7 +1003,7 @@ function renderGrade() {
         const c = p.cenas[troca.cena];
         c.midias = c.midias || [];
         if (troca.pos < c.midias.length) c.midias[troca.pos] = id; else c.midias.push(id);
-        if (p.banco[id].jogo !== c.jogo && p.banco[id].jogo !== 'proprio') c.jogo = p.banco[id].jogo;
+        if (p.banco[id].jogo !== c.jogo && !['proprio', 'materia'].includes(p.banco[id].jogo)) c.jogo = p.banco[id].jogo;
         $('#dlgTroca').close(); marcarSujo(); renderCenas();
       },
     },
@@ -1118,21 +1158,50 @@ function desenharPrevia(t) {
     const w = W * z, hh = H * z;
     g.drawImage(img, sx, sy, sp.largura, sp.altura, (W - w) / 2, (H - hh) / 2, w, hh);
   }
-  // título do gancho
-  if (p.titulo_gancho !== false && p.titulo_tela && t < 2.2) {
-    g.font = '40px Anton'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-    g.lineWidth = 6; g.strokeStyle = '#000'; g.fillStyle = '#fff';
+  // chamada do gancho (manchete/faixa: fundo escuro, linhas ocupando a largura, linha-chave em destaque)
+  const fimTit = Math.min(2.4, Math.max((pl.cenas[1]?.inicio ?? 3) - 0.05, 1.3));
+  if (p.titulo_gancho !== false && p.titulo_tela && t < fimTit) {
+    const estilo = p.titulo_estilo || 'manchete';
+    const cor = CORES_LEG[p.legenda_cor] || CORES_LEG.amarelo;
     const linhas = []; let l = '';
-    for (const pal of p.titulo_tela.toUpperCase().split(/\s+/)) { if (l && (l + ' ' + pal).length > 14) { linhas.push(l); l = pal; } else l = (l + ' ' + pal).trim(); }
+    const max = estilo === 'simples' ? 14 : 12;
+    for (const pal of p.titulo_tela.toUpperCase().split(/\s+/)) { if (l && (l + ' ' + pal).length > max) { linhas.push(l); l = pal; } else l = (l + ' ' + pal).trim(); }
     if (l) linhas.push(l);
-    linhas.slice(0, 3).forEach((tx, i, arr) => {
-      const y = H * 0.25 + (i - (arr.length - 1) / 2) * 46;
-      g.fillStyle = i === arr.length - 1 && arr.length > 1 ? (CORES_LEG[p.legenda_cor] || CORES_LEG.amarelo) : '#fff';
-      g.strokeText(tx, W / 2, y); g.fillText(tx, W / 2, y);
-    });
+    const ls = linhas.slice(0, 3);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    if (estilo === 'simples') {
+      g.font = '40px Anton'; g.lineWidth = 6; g.strokeStyle = '#000';
+      ls.forEach((tx, i, arr) => {
+        const y = H * 0.25 + (i - (arr.length - 1) / 2) * 46;
+        g.fillStyle = i === arr.length - 1 && arr.length > 1 ? cor : '#fff';
+        g.strokeText(tx, W / 2, y); g.fillText(tx, W / 2, y);
+      });
+    } else {
+      g.fillStyle = 'rgba(0,0,0,.38)'; g.fillRect(0, 0, W, H);
+      const tamanhos = ls.map((tx, i) => { g.font = '100px Anton'; const w = g.measureText(tx).width; return Math.min(Math.max(100 * (W * (i === ls.length - 1 ? 0.83 : 0.89)) / w, 40), 150); });
+      const caps = tamanhos.map((s) => s * 0.72);
+      let y = H * 0.42 - (caps.reduce((a, b) => a + b, 0) + 16 * (ls.length - 1) + 20) / 2;
+      ls.forEach((tx, i) => {
+        const chave = i === ls.length - 1;
+        const entra = Math.min(1, Math.max(0, (t - 0.11 * i) / 0.15));
+        if (entra <= 0) { y += caps[i] + 16; return; }
+        const esc = 1 + 0.45 * (1 - entra);
+        if (chave) y += 10;
+        const yc = y + caps[i] / 2;
+        g.save(); g.translate(W / 2, yc); g.scale(esc, esc); g.globalAlpha = entra;
+        g.font = `${tamanhos[i]}px Anton`;
+        const w = g.measureText(tx).width;
+        if (chave && estilo === 'faixa') { g.fillStyle = cor; g.fillRect(-W, -caps[i] / 2 - 10, 2 * W, caps[i] + 20); g.fillStyle = '#000'; g.fillText(tx, 0, 2); }
+        else if (chave) { g.rotate(-0.05); g.fillStyle = cor; g.fillRect(-w / 2 - 12, -caps[i] / 2 - 10, w + 24, caps[i] + 20); g.fillStyle = '#000'; g.fillText(tx, 0, 2); }
+        else { g.lineWidth = 8; g.strokeStyle = '#000'; g.strokeText(tx, 0, 2); g.fillStyle = '#fff'; g.fillText(tx, 0, 2); }
+        g.restore();
+        y += caps[i] + 16;
+      });
+    }
   }
+  const escondeLeg = p.titulo_gancho !== false && p.titulo_tela && (p.titulo_estilo || 'manchete') !== 'simples' && t < fimTit;
   // legenda
-  const leg = pl.legs.find((x) => t >= x.ini && t < x.fim);
+  const leg = escondeLeg ? null : pl.legs.find((x) => t >= x.ini && t < x.fim);
   if (leg) {
     const fonte = p.legenda_estilo === 'moderna' ? 'Montserrat' : 'Anton';
     const peso = p.legenda_estilo === 'moderna' ? '900 ' : '';

@@ -141,3 +141,5 @@ audio { width: 100%; }
 #boxPost { margin-top: 10px; }
 #textoPost { width: 100%; }
 #passo-pauta:not([hidden]) { display: grid; gap: 16px; }
+.fotos-materia { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.fotos-materia img { width: 64px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }

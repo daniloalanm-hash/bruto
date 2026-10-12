@@ -53,6 +53,32 @@ module.exports = (req, res) => responder(res, async () => {
     return m;
   });
   const texto = [...new Set(blocos)].join('\n').slice(0, 14000);
+  // imagens: destaque (og:image) + imagens do corpo da matéria, sem ícones/logos/miniaturas
+  const vistos = new Set();
+  const imagens = [];
+  const add = (u) => {
+    if (!u) return;
+    let abs;
+    try { abs = new URL(u.replace(/&amp;/g, '&'), url).href; } catch { return; }
+    if (!/^https?:/.test(abs) || /\.(svg|gif)(\?|$)/i.test(abs) || /logo|avatar|icon|emoji|gravatar|pixel|placeholder/i.test(abs)) return;
+    const chave = abs.split('?')[0].replace(/-\d+x\d+(?=\.\w+$)/, '');
+    if (vistos.has(chave)) return;
+    vistos.add(chave);
+    imagens.push(abs);
+  };
+  add(imagem);
+  corpo.replace(/<img\b[^>]*>/gi, (tag) => {
+    const w = parseInt((tag.match(/\bwidth=["']?(\d+)/i) || [])[1] || '0', 10);
+    if (w && w < 300) return tag;
+    const srcset = (tag.match(/\b(?:data-)?srcset=["']([^"']+)["']/i) || [])[1];
+    let src = (tag.match(/\b(?:data-orig-file|data-src|src)=["']([^"']+)["']/i) || [])[1];
+    if (srcset) {
+      const maior = srcset.split(',').map((x) => x.trim().split(/\s+/)).sort((a, b) => parseInt(b[1] || 0, 10) - parseInt(a[1] || 0, 10))[0];
+      if (maior && maior[0]) src = maior[0];
+    }
+    add(src);
+    return tag;
+  });
   if (texto.length < 200) throw httpError(422, 'Não consegui ler o texto dessa página. Cole o texto da matéria no campo abaixo.');
-  return { titulo, resumo, texto, imagem, url };
+  return { titulo, resumo, texto, imagem, imagens: imagens.slice(0, 8), url };
 });

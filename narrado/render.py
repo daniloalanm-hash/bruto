@@ -301,8 +301,12 @@ def legenda_ass(projeto, destino, corte_gancho):
               f"Style: Cap,{fonte},{tam},&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,0,0,0,0,100,100,1,0,1,"
               f"{contorno},{sombra},5,40,40,0,1",
               f"Style: Tit,Anton,132,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,10,0,5,60,60,0,1",
+              f"Style: TitG,Anton,{TIT_TAM},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,1,0,1,13,8,5,30,30,0,1",
+              f"Style: TitBox,Anton,{TIT_TAM},&H00000000,&H00000000,&H00{cor},&H00{cor},0,0,0,0,100,100,1,0,3,20,0,5,30,30,0,1",
+              "Style: Fundo,Anton,10,&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
               "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     marcadas = {id(projeto["palavras"][i]) for i in marcar_destaques(projeto)}
+    esconde_ate = fim_titulo(projeto, corte_gancho) if projeto.get("titulo_estilo", "manchete") != "simples" else None
     blocos = blocos_legenda(projeto)
     for b in blocos:
         partes = []
@@ -312,23 +316,108 @@ def legenda_ass(projeto, destino, corte_gancho):
         b["palavras_destaque"] = [norm(w["legenda"]) for w in b["pal"] if id(w) in marcadas]
         b["destaque"] = bool(b["palavras_destaque"])
         pop = rf"{{\an5\pos(540,{y})\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)}}"
-        linhas.append(f"Dialogue: 0,{_ts(b['ini'])},{_ts(b['fim'])},Cap,,0,0,0,,{pop}{' '.join(partes)}")
-    # título grande do gancho nos primeiros ~2 s (acima da legenda)
-    titulo = str(projeto.get("titulo_tela") or "").strip()
-    if projeto.get("titulo_gancho", True) and titulo:
-        fim_tit = min(2.3, max(corte_gancho - 0.1, 1.2))
-        ls = _quebra_titulo(titulo.upper())
+        ini = b["ini"]
+        if esconde_ate:
+            if b["fim"] <= esconde_ate + 0.15:
+                continue  # a chamada ocupa a tela: a legenda falada desse trecho não aparece
+            ini = max(ini, esconde_ate)
+        linhas.append(f"Dialogue: 0,{_ts(ini)},{_ts(b['fim'])},Cap,,0,0,0,,{pop}{' '.join(partes)}")
+    # chamada dos primeiros ~2 s
+    fim_tit = fim_titulo(projeto, corte_gancho)
+    if fim_tit:
+        linhas += titulo_ass(str(projeto.get("titulo_estilo") or "manchete"), str(projeto["titulo_tela"]).strip(), cor, fim_tit)
+    with open(destino, "w", encoding="utf-8") as f:
+        f.write("\n".join(linhas))
+    return blocos, y
+
+
+def fim_titulo(projeto, corte_gancho):
+    """Até quando a chamada do gancho fica na tela (None se não houver chamada)."""
+    if not (projeto.get("titulo_gancho", True) and str(projeto.get("titulo_tela") or "").strip()):
+        return None
+    return min(2.4, max(corte_gancho - 0.05, 1.3))
+
+
+TIT_TAM = 176   # tamanho-base da chamada do gancho (px); cada linha é escalada para ocupar a largura
+FONTES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fontes")
+
+
+def _largura_texto(texto, tam=TIT_TAM, fonte="Anton-Regular.ttf"):
+    """Largura do texto como o libass desenha (calibrado: Anton sai a ~58% da medida do Pillow)."""
+    try:
+        from PIL import ImageFont
+        return ImageFont.truetype(os.path.join(FONTES_DIR, fonte), tam).getlength(texto) * 0.583
+    except Exception:
+        return len(texto) * tam * 0.27
+
+
+CAPS = 0.5     # altura das maiúsculas do Anton no libass = 0,5 × tamanho
+DESVIO = 0.0625  # com \an5 as maiúsculas ficam ~6% do tamanho abaixo do ponto: compensa
+
+
+def titulo_ass(estilo, titulo, cor, fim):
+    """Eventos ASS da chamada do gancho (o fundo desfocado/escuro é feito no ffmpeg).
+
+    manchete: linhas gigantes ocupando a largura da tela, entrando "batendo" uma após a outra com tremida;
+              a linha-chave num adesivo na cor de destaque, levemente inclinado;
+    faixa:    faixa colorida de ponta a ponta atravessa a tela com a linha-chave; o resto em branco gigante;
+    simples:  texto menor no topo (estilo antigo).
+    """
+    ls = _quebra_titulo(titulo.upper(), 12 if estilo != "simples" else 14)
+    if estilo == "simples":
         y_tit = int(H * 0.25)
         texto = r"\N".join(ls)
-        # destaque: a última linha na cor da legenda
         if len(ls) > 1:
             texto = r"\N".join(ls[:-1]) + rf"\N{{\c&H{cor}&}}" + ls[-1]
         anim = (rf"{{\an5\pos(540,{y_tit})\fscx60\fscy60\alpha&HFF&\t(0,120,\alpha&H00&\fscx106\fscy106)"
                 rf"\t(120,220,\fscx100\fscy100)\fad(0,180)}}")
-        linhas.append(f"Dialogue: 1,{_ts(0.05)},{_ts(fim_tit)},Tit,,0,0,0,,{anim}{texto}")
-    with open(destino, "w", encoding="utf-8") as f:
-        f.write("\n".join(linhas))
-    return blocos, y
+        return [f"Dialogue: 1,{_ts(0.05)},{_ts(fim)},Tit,,0,0,0,,{anim}{texto}"]
+    ev = []
+    chave = len(ls) - 1  # linha-chave: a última (é onde costuma estar o nome/fato)
+    largura_alvo = [900 if i == chave else 960 for i in range(len(ls))]
+    escalas = [min(max(largura_alvo[i] / max(_largura_texto(l), 1), 0.9), 2.6) for i, l in enumerate(ls)]
+    caps = [TIT_TAM * CAPS * e for e in escalas]
+    pad = 34
+    gaps = 46
+    total = sum(caps) + gaps * (len(ls) - 1) + 2 * pad
+    y = H * 0.42 - total / 2
+    sai = int((fim - 0.05) * 1000)
+    for i, linha in enumerate(ls):
+        if i == chave:
+            y += pad
+        yc = int(y + caps[i] / 2)
+        y += caps[i] + gaps
+        e = escalas[i]
+        ep = int(e * 100)
+        yt = int(yc - TIT_TAM * DESVIO * e)  # ponto do texto para as maiúsculas ficarem centradas em yc
+        d = 110 * i
+        larg = _largura_texto(linha) * e
+        if estilo == "faixa" and i == chave:
+            alt = int(caps[i] + 2 * pad)
+            ev.append(rf"Dialogue: 2,{_ts(0.02 + d / 1000)},{_ts(fim)},Fundo,,0,0,0,,"
+                      rf"{{\an7\move(-{W},{yc - alt // 2},0,{yc - alt // 2},0,170)\p1\1c&H{cor}&\1a&H00&\bord0\shad0\fad(0,150)}}"
+                      rf"m 0 0 l {W} 0 {W} {alt} 0 {alt}{{\p0}}")
+            ev.append(rf"Dialogue: 3,{_ts(0.02 + d / 1000)},{_ts(fim)},TitG,,0,0,0,,"
+                      rf"{{\an5\q2\move(-600,{yt},540,{yt},0,170)\fscx{ep}\fscy{ep}\1c&H000000&\bord0\shad0\fad(0,150)}}{linha}")
+            continue
+        if i == chave:
+            # adesivo: retângulo do tamanho da palavra, na cor de destaque, inclinado; texto preto por cima
+            bw, bh = int(larg + 2 * pad + 20), int(caps[i] + 2 * pad)
+            comum = rf"\org(540,{yc})\frz3\alpha&HFF&\t({d},{d + 70},\alpha&H00&)\t({sai - 160},{sai},\alpha&HFF&)"
+            slam = rf"\fscx145\fscy145\t({d},{d + 160},\fscx100\fscy100)"
+            ev.append(rf"Dialogue: 2,{_ts(0.02)},{_ts(fim)},Fundo,,0,0,0,,"
+                      rf"{{\an5\pos(540,{yc}){comum}{slam}\p1\1c&H{cor}&\bord0\shad0}}"
+                      rf"m 0 0 l {bw} 0 {bw} {bh} 0 {bh}{{\p0}}")
+            ev.append(rf"Dialogue: 3,{_ts(0.02)},{_ts(fim)},TitG,,0,0,0,,"
+                      rf"{{\an5\q2\pos(540,{yt}){comum}\fscx{int(ep * 1.45)}\fscy{int(ep * 1.45)}"
+                      rf"\t({d},{d + 160},\fscx{ep}\fscy{ep})\1c&H000000&\bord0\shad0}}{linha}")
+            continue
+        tremida = (rf"\t({d + 150},{d + 185},\frz{2.5 if i % 2 else -2.5})"
+                   rf"\t({d + 185},{d + 225},\frz{-1.5 if i % 2 else 1.5})\t({d + 225},{d + 260},\frz0)")
+        ev.append(rf"Dialogue: 2,{_ts(0.02)},{_ts(fim)},TitG,,0,0,0,,"
+                  rf"{{\an5\q2\pos(540,{yt})\fscx{int(ep * 1.45)}\fscy{int(ep * 1.45)}\alpha&HFF&\t({d},{d + 70},\alpha&H00&)"
+                  rf"\t({d},{d + 150},\fscx{ep}\fscy{ep}){tremida}\t({sai - 160},{sai},\alpha&HFF&)}}{linha}")
+    return ev
 
 
 def escolher_emojis(projeto, blocos):
@@ -423,7 +512,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             elif m["tipo"] == "v":
                 seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)
             else:
-                seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio")), pre=_recorte(m))
+                seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio") or m.get("encaixar")), pre=_recorte(m))
             usados_cena[-1]["cortes"].append(mid)
             lista.append(out)
             k += 1
@@ -495,6 +584,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             grafo.append(f"{v}scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,crop={W}:{H}[vz]")
             v = "[vz]"
 
+    # chamada do gancho: fundo desfocado e escuro enquanto ela está na tela (o texto salta aos olhos)
+    fim_tit = fim_titulo(projeto, corte_gancho)
+    if fim_tit and projeto.get("titulo_estilo", "manchete") != "simples":
+        grafo.append(f"{v}boxblur=14:2:enable='lt(t,{fim_tit - 0.18:.2f})',"
+                     f"boxblur=5:1:enable='between(t,{fim_tit - 0.18:.2f},{fim_tit:.2f})',"
+                     f"eq=brightness=-0.16:saturation=0.75:enable='lt(t,{fim_tit:.2f})'[vt]")
+        v = "[vt]"
+
     # legenda + título
     grafo.append(f"{v}subtitles={ass}:fontsdir={pasta_fontes}[vs]")
     v = "[vs]"
@@ -524,6 +621,10 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 eventos.append((cortes[c], nome, ganho))
         for t in tempos_destaque:
             eventos.append((t, "pop", 0.28))
+        if fim_tit and projeto.get("titulo_estilo", "manchete") != "simples":
+            n_linhas = len(_quebra_titulo(str(projeto["titulo_tela"]).upper(), 12))
+            for i in range(1, n_linhas):  # cada linha da chamada "bate" com um som
+                eventos.append((0.02 + 0.11 * i + 0.12, "pop", 0.32))
         sfx = efeitos.trilha_efeitos(eventos, total, os.path.join(pasta_trab, "efeitos.wav"))
         idx = nova_entrada(sfx)
         a = (f"[1:a]apad[vz0];[{idx}:a]apad[fx0];[vz0][fx0]amix=inputs=2:duration=first:normalize=0,"
