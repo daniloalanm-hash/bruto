@@ -58,6 +58,25 @@ ESTILO_PADRAO = {
 }
 
 
+def completar_cenas(palavras):
+    """Toda palavra mantida precisa de tópico (cena): herda da vizinha mais próxima."""
+    ult = None
+    for w in palavras:
+        if w.get("manter"):
+            if w.get("cena") is None:
+                w["cena"] = ult
+            ult = w["cena"] if w.get("cena") is not None else ult
+    prox = None
+    for w in reversed(palavras):
+        if w.get("manter"):
+            if w.get("cena") is None:
+                w["cena"] = prox if prox is not None else 0
+            prox = w["cena"]
+    for w in palavras:
+        if w.get("manter") and not str(w.get("legenda") or "").strip():
+            w["legenda"] = w["w"]
+
+
 def impacto_plano(banco):
     """Nota de impacto de um trecho: movimento entre quadros, cor e duração suficiente para o gancho."""
     def nota(mid):
@@ -221,8 +240,11 @@ def preparar(pasta, st):
     st.etapa("Cortando erros e repetições", 55)
     palavras, faltando = fala.editar(palavras, cenas, [j["nome"] for j in jogos])
     if modo == "ia":
+        # voz de IA lê exatamente o roteiro: tudo fica; palavra que o alinhamento deixou sem tópico
+        # herda o tópico da anterior (ou da seguinte, no começo)
         for w in palavras:
             w["manter"] = True
+        completar_cenas(palavras)
 
     cenas = planejar(cenas, banco, jogos)
     projeto = {
@@ -308,6 +330,7 @@ def voz_previa(audio, pasta):
 
 
 def finalizar(pasta, projeto, audio, st, p0):
+    completar_cenas(sorted(projeto["palavras"], key=lambda w: w["s"]))
     integrar_proprias(pasta, projeto)
     st.etapa("Tratando a voz", p0)
     escolha = projeto["voz"].get("reducao_ruido", "auto")

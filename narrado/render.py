@@ -159,7 +159,7 @@ def tipo_entrada(projeto, cena, ordem):
 
 def linha_tempo(projeto):
     """Início/fim de cada cena na timeline final, a partir das palavras mantidas, com J-cut/L-cut nas trocas."""
-    mant = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w]
+    mant = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None]
     total = projeto["duracao_voz"] + 0.6
     inicios = {}
     for w in mant:
@@ -245,7 +245,8 @@ def marcar_destaques(projeto):
 
 
 def blocos_legenda(projeto):
-    pal = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and str(w.get("legenda", "")).strip()]
+    pal = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and str(w.get("legenda", "")).strip()
+           and w.get("cena") is not None]
     blocos, cur = [], []
     for w in pal:
         if cur and (w["cena"] != cur[-1]["cena"] or w["ns"] - cur[-1]["ne"] > 0.6):
