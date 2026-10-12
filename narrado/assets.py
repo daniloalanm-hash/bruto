@@ -353,31 +353,56 @@ def tem_texto(origem, t=None, limite=2):
     return False
 
 
+def _avaliar(video, a2, b2, conta, checar_pontas=True):
+    """Trecho [a2, b2] serve como cena? Devolve o candidato ou None (e conta o motivo)."""
+    meio = (a2 + b2) / 2
+    y, s = medir_quadro(video, meio)
+    if y < 38:            # escuro demais para celular
+        conta["escuro"] += 1
+        return None
+    if s < 10 and y < 70:  # cartela de texto (fundo escuro sem cor)
+        conta["cartela"] += 1
+        return None
+    pontos = (a2 + 0.3, meio, b2 - 0.3) if checar_pontas else (meio,)
+    if any(tem_texto(video, x) for x in pontos):
+        conta["texto"] += 1
+        return None
+    return {"t": round(a2, 2), "dur": round(b2 - a2, 2), "y": y, "s": s, "mov": movimento(video, meio - 0.5)}
+
+
 def trechos_bons(video):
-    """Escolhe trechos de trailer que funcionam como cena: planos com 1,6s+ fora de abertura/encerramento."""
+    """Escolhe trechos de trailer que funcionam como cena, fora de abertura/encerramento.
+
+    1º: planos inteiros (entre cortes) com 1,2 s ou mais. Trailer de edição muito rápida (corrida, ação)
+    quase não tem plano tão longo: aí completa com janelas de 1,8 s ao longo do trailer — cortes rápidos
+    dentro de um trecho ficam naturais no vídeo.
+    """
     dur = duracao(video)
     marcas = [0.0] + cortes_de_cena(video) + [dur]
     ini, fim = dur * 0.07, dur * 0.86  # abertura (classificação etária/logos) e encerramento (logo/data)
+    conta = {"escuro": 0, "cartela": 0, "texto": 0}
     candidatos = []
     for a, b in zip(marcas, marcas[1:]):
-        a2, b2 = max(a, ini) + 0.15, min(b, fim) - 0.1
-        if b2 - a2 < 1.6:
+        a2, b2 = max(a, ini) + 0.1, min(b, fim) - 0.08
+        if b2 - a2 < 1.2:
             continue
-        meio = (a2 + b2) / 2
-        y, s = medir_quadro(video, meio)
-        if y < 38:            # escuro demais para celular
-            continue
-        if s < 10 and y < 70:  # cartela de texto (fundo escuro sem cor)
-            continue
-        # cartela ("EXPANDED PHOTO MODE"), legenda ou interface: confere começo, meio e fim do plano
-        if any(tem_texto(video, x) for x in (a2 + 0.3, meio, b2 - 0.3)):
-            continue
-        candidatos.append({"t": round(a2, 2), "dur": round(b2 - a2, 2), "y": y, "s": s,
-                           "mov": movimento(video, meio - 0.5)})
-    # prioriza planos mais longos e coloridos, mantendo a ordem do trailer
+        c = _avaliar(video, a2, b2, conta)
+        if c:
+            candidatos.append(c)
+    n_planos = len(candidatos)
+    if len(candidatos) < 6 and fim - ini > 4:
+        t = ini
+        while t + 1.8 <= fim and len(candidatos) < MAX_SHOTS_POR_TRAILER:
+            if all(abs(t - c["t"]) > 1.8 for c in candidatos):
+                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False)
+                if c:
+                    candidatos.append(c)
+            t += 3.0
+    print(f"trailer {os.path.basename(video)}: {dur:.0f}s, {len(marcas) - 1} planos, {n_planos} planos bons, "
+          f"{len(candidatos) - n_planos} janelas; descartes {conta}")
+    # prioriza trechos mais longos e coloridos, mantendo a ordem do trailer
     candidatos.sort(key=lambda c: -(min(c["dur"], 4) + c["s"] / 40))
-    escolhidos = sorted(candidatos[:MAX_SHOTS_POR_TRAILER], key=lambda c: c["t"])
-    return escolhidos
+    return sorted(candidatos[:MAX_SHOTS_POR_TRAILER], key=lambda c: c["t"])
 
 
 def montar_banco(jogos_info, pasta_thumbs):
