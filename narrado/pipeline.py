@@ -275,6 +275,25 @@ def audio_limpo(audio):
     return destino
 
 
+def so_legenda(pasta, st):
+    """Ajuste que só mexe na legenda/chamada/emojis: reaproveita o vídeo limpo do último render."""
+    projeto = ler(os.path.join(pasta, "projeto.json"))
+    limpo = os.path.join(pasta, "limpo.mp4")
+    if not os.path.exists(limpo):
+        raise RuntimeError("Este vídeo ainda não tem a versão sem legenda guardada. Use “Aplicar ajustes” "
+                           "completo uma vez (os próximos ajustes de legenda ficam rápidos).")
+    completar_cenas(sorted(projeto["palavras"], key=lambda w: w["s"]))
+    st.etapa("Atualizando só a legenda", 30)
+    render.legendar(projeto, limpo, os.path.join(pasta, "trab"), os.path.join(pasta, "final.mp4"), FONTES)
+    projeto["versao"] = int(projeto.get("versao", 1)) + 1
+    gravar(os.path.join(pasta, "projeto.json"), projeto)
+    pub = publicador()
+    if pub:
+        st.etapa("Publicando o vídeo", 90)
+        pub(os.path.join(pasta, "final.mp4"), os.path.join(pasta, "projeto.json"))
+    st.pronto({"versao": projeto["versao"], "duracao": projeto.get("duracao")})
+
+
 def rerender(pasta, st):
     projeto = ler(os.path.join(pasta, "projeto.json"))
     st.etapa("Preparando o material", 5)
@@ -358,7 +377,7 @@ def finalizar(pasta, projeto, audio, st, p0):
         except Exception as e:
             print(f"aviso: prévia de voz não gerada: {e}")
         arquivos = [os.path.join(pasta, x) for x in ("final.mp4", "projeto.json", "cenas.jpg", "voz_ia.mp3",
-                                                     "voz_previa.mp3")
+                                                     "voz_previa.mp3", "limpo.mp4")
                     if os.path.exists(os.path.join(pasta, x))]
         pub(*arquivos)
     st.pronto({"versao": projeto["versao"], "duracao": projeto["duracao"]})
@@ -369,7 +388,7 @@ def main():
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub else None)
     try:
-        (preparar if fase == "preparar" else rerender)(pasta, st)
+        {"preparar": preparar, "legenda": so_legenda}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])

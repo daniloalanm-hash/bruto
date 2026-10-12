@@ -632,7 +632,7 @@ function abrirVideo(tag) {
   $('#player').hidden = true;
   $('#player').removeAttribute('src');
   $('#btnBaixar').hidden = true;
-  $('#btnAplicar').disabled = true;
+  atualizarBotaoAplicar();
   $('#aguarde').hidden = false;
   $('#aguarde').classList.remove('erro');
   $('#etapa').textContent = 'Na fila…';
@@ -684,6 +684,7 @@ function mostrarVideo(s) {
   a.hidden = false;
   state.cenasImg = s.cenas;
   state.temPrevia = !!s.temPrevia;
+  state.temLimpo = !!s.temLimpo;
 }
 
 async function carregarProjeto() {
@@ -697,9 +698,11 @@ async function carregarProjeto() {
   $('#ruido').value = p.voz?.reducao_ruido || 'auto';
   $('#ajustes').hidden = false;
   $('#btnPrevia').hidden = !state.temPrevia;
+  state.baseEstrutura = assinaturaEstrutural(p);
   state.sujo = false;
-  $('#btnAplicar').disabled = true;
+  atualizarBotaoAplicar();
   renderTomadas();
+  renderBlocosLegenda();
   renderCenas();
   renderPost();
   renderLinhaTempo();
@@ -739,7 +742,33 @@ ROTEIRO DO VÍDEO: ${texto}`);
   } catch (e) { toast(e.message, 'warn', 7000); } finally { btn.classList.remove('busy'); }
 });
 
-function marcarSujo() { state.sujo = true; $('#btnAplicar').disabled = false; }
+$$('[data-vista]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-vista]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  $$('[data-vista-painel]').forEach((p) => { p.hidden = p.dataset.vistaPainel !== b.dataset.vista; });
+  if (b.dataset.vista === 'legenda') renderBlocosLegenda();
+}));
+
+// O que muda o vídeo "por baixo" (cenas, cortes de fala, efeitos). O resto (texto e destaques da legenda,
+// estilo/cor/altura, texto da chamada, emojis) só pede para queimar a legenda de novo: ajuste rápido.
+function assinaturaEstrutural(p) {
+  return JSON.stringify({
+    palavras: p.palavras.map((w) => [w.manter ? 1 : 0, w.cena]),
+    cenas: p.cenas.map((c) => [c.midias, c.entrada || 'auto', c.transicao || 'auto', c.jogo]),
+    voz: p.voz?.reducao_ruido,
+    outros: [p.jl_quadros, p.transicao_gancho, p.sfx, p.zoom_enfase, p.titulo_estilo, !!(p.titulo_gancho !== false && p.titulo_tela)],
+    proprias: (p.proprias || []).map((x) => [x.id, x.cena]),
+  });
+}
+function soLegenda() {
+  return !!(state.projeto && state.temLimpo && state.baseEstrutura === assinaturaEstrutural(state.projeto));
+}
+function atualizarBotaoAplicar() {
+  const b = $('#btnAplicar');
+  b.disabled = !state.sujo;
+  b.textContent = !state.sujo ? 'Aplicar ajustes' : soLegenda() ? 'Aplicar ajustes · rápido (só legenda)' : 'Aplicar ajustes · refaz o vídeo';
+}
+
+function marcarSujo() { state.sujo = true; atualizarBotaoAplicar(); }
 $('#ruido').addEventListener('change', (e) => { if (state.projeto) { state.projeto.voz.reducao_ruido = e.target.value; marcarSujo(); } });
 
 /* ---------------- 4b. ajustes: fala e legenda ---------------- */
@@ -779,23 +808,75 @@ function renderTomadas() {
       span.addEventListener('click', (e) => {
         e.stopPropagation();
         if (!mantida) { trazerTomada(g); return; }
-        w.manter = !w.manter;
-        marcarSujo(); renderTomadas();
-      });
-      span.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        if (!w.manter) return;
-        const inp = h('input', { type: 'text', value: w.legenda || '', size: Math.max(4, (w.legenda || '').length + 2) });
-        const fim = () => { w.legenda = inp.value.trim(); marcarSujo(); renderTomadas(); };
-        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') renderTomadas(); });
-        inp.addEventListener('blur', fim);
-        span.replaceChildren(inp); inp.focus(); inp.select();
+        editarPalavra(w, span);
       });
       linha.append(span, ' ');
     }
     if (!mantida) linha.addEventListener('click', () => trazerTomada(g));
     box.append(linha);
   }
+}
+
+// Caixinha de edição de uma palavra: corrigir o texto da legenda ou cortar/restaurar a fala
+function fecharPop() { $('#popPalavra')?.remove(); }
+function editarPalavra(w, ancora) {
+  fecharPop();
+  const inp = h('input', { type: 'text', value: w.manter ? (w.legenda || w.w) : (w.legenda || w.w), 'aria-label': 'Texto da legenda' });
+  const salvar = () => {
+    const v = inp.value.trim();
+    if (v !== (w.legenda || '')) { w.legenda = v; marcarSujo(); }
+    fecharPop(); renderTomadas(); renderBlocosLegenda();
+  };
+  const pop = h('div', { class: 'pop-palavra', id: 'popPalavra', role: 'dialog' },
+    h('div', { class: 'muted small' }, `Falado: “${w.w}”`),
+    w.manter ? inp : null,
+    h('div', { class: 'row' },
+      w.manter ? h('button', { class: 'btn small primary', onclick: salvar }, 'Corrigir legenda') : null,
+      h('button', { class: `btn small${w.manter ? ' danger' : ' primary'}`, onclick: () => { w.manter = !w.manter; marcarSujo(); fecharPop(); renderTomadas(); renderBlocosLegenda(); } },
+        w.manter ? '✂ Cortar esta fala' : 'Restaurar fala'),
+      h('button', { class: 'btn small', onclick: fecharPop }, 'Cancelar')),
+    w.manter ? h('div', { class: 'muted small' }, 'Corrigir só muda o texto (render rápido). Cortar muda o áudio (refaz o vídeo).') : null);
+  inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') salvar(); if (ev.key === 'Escape') fecharPop(); });
+  document.body.append(pop);
+  const r = ancora.getBoundingClientRect();
+  pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.left + window.scrollX - 10))}px`;
+  pop.style.top = `${r.bottom + window.scrollY + 6}px`;
+  if (w.manter) { inp.focus(); inp.select(); }
+}
+document.addEventListener('mousedown', (e) => { const p = $('#popPalavra'); if (p && !p.contains(e.target) && !e.target.closest('.w')) fecharPop(); });
+
+// Legenda como texto, bloco a bloco (como na timeline de um editor): edita a frase inteira
+function blocosLegendaTela(p) {
+  const mant = [...p.palavras].filter((w) => w.manter && w.cena != null).sort((a, b) => a.s - b.s);
+  const blocos = []; let cur = [];
+  const fecha = () => { if (cur.length) blocos.push(cur); cur = []; };
+  for (const w of mant) {
+    const ult = cur[cur.length - 1];
+    if (ult && (w.cena !== ult.cena || w.s - ult.e > 0.9)) fecha();
+    cur.push(w);
+    const txt = cur.map((x) => x.legenda || x.w).join(' ');
+    if (cur.length === 3 || /[.,:;?!…]$/.test(w.legenda || w.w) || (cur.length === 2 && txt.length > 11)) fecha();
+  }
+  fecha();
+  return blocos;
+}
+function renderBlocosLegenda() {
+  const box = $('#blocosLegenda');
+  if (!box || !state.projeto) return;
+  const blocos = blocosLegendaTela(state.projeto);
+  box.replaceChildren(...blocos.map((b) => {
+    const inp = h('input', { type: 'text', value: b.map((w) => w.legenda ?? w.w).filter(Boolean).join(' ') });
+    inp.addEventListener('change', () => {
+      // distribui o texto novo pelas palavras do bloco (o tempo de cada uma continua o da fala)
+      const toks = inp.value.trim().split(/\s+/).filter(Boolean);
+      b.forEach((w, i) => {
+        if (i < b.length - 1) w.legenda = toks[i] || '';
+        else w.legenda = toks.slice(i).join(' ');
+      });
+      marcarSujo(); renderTomadas();
+    });
+    return h('label', { class: 'bloco-leg' }, h('span', { class: 't' }, fmtT(b[0].s)), inp);
+  }));
 }
 
 // Usar uma tomada descartada: ela entra no lugar das palavras do mesmo trecho do roteiro.
@@ -1023,8 +1104,9 @@ $('#btnAplicar').addEventListener('click', async () => {
   btn.classList.add('busy');
   try {
     const p = { ...state.projeto };
-    delete p.timeline;
-    await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'projeto', tag: state.tag, projeto: p }) });
+    const rapido = soLegenda();
+    const r = await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'projeto', tag: state.tag, projeto: p, fase: rapido ? 'legenda' : 'render' }) });
+    if (r.fase === 'legenda') toast('Ajuste rápido: só a legenda vai ser refeita (cerca de 2 minutos).');
     state.sujo = false;
     btn.disabled = true;
     $('#aguarde').hidden = false;

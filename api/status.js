@@ -64,5 +64,6 @@ module.exports = (req, res) => responder(res, async () => {
     cenas: link('cenas.jpg'),
     temProjeto: !!asset('projeto.json'),
     temPrevia: !!asset('voz_previa.mp3'),
+    temLimpo: !!asset('limpo.mp4'),
   };
 });

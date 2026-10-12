@@ -482,6 +482,49 @@ def expr_zoom_enfase(tempos, amp=0.05):
 
 # ---------------------------------------------------------------- render
 
+def blocos_com_destaque(projeto):
+    """Blocos da legenda com a marcação de destaque (para zoom/pop), sem gerar o ASS."""
+    marcadas = {id(projeto["palavras"][i]) for i in marcar_destaques(projeto)}
+    blocos = blocos_legenda(projeto)
+    for b in blocos:
+        b["palavras_destaque"] = [norm(w["legenda"]) for w in b["pal"] if id(w) in marcadas]
+        b["destaque"] = bool(b["palavras_destaque"])
+    return blocos
+
+
+def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=None, total=None):
+    """Queima legenda, chamada do gancho e emojis sobre o vídeo limpo (o áudio é copiado).
+
+    É o único passo de um ajuste "só de legenda": não refaz cenas, voz nem efeitos.
+    """
+    pasta_trab = os.path.abspath(pasta_trab)
+    os.makedirs(pasta_trab, exist_ok=True)
+    tl = projeto.get("timeline") or []
+    if total is None:
+        total = float(projeto.get("duracao") or (projeto["duracao_voz"] + 0.6))
+    if corte_gancho is None:
+        corte_gancho = tl[1]["inicio"] if len(tl) > 1 else total
+    ass = os.path.join(pasta_trab, "legenda.ass")
+    blocos, y_leg = legenda_ass(projeto, ass, corte_gancho)
+    entradas, grafo, v = ["-i", limpo], [], "[0:v]"
+    grafo.append(f"{v}subtitles={ass}:fontsdir={pasta_fontes}[vs]")
+    v = "[vs]"
+    for i, e in enumerate(escolher_emojis(projeto, blocos)):
+        png = emoji_png(e["emoji"], os.path.join(pasta_trab, f"emoji{i}.png"))
+        if not png:
+            continue
+        entradas += ["-i", png]
+        idx = entradas.count("-i") - 1
+        a0, a1 = e["ini"], e["fim"]
+        y_emo = y_leg - 285
+        grafo.append(f"{v}[{idx}:v]overlay=x=(W-w)/2:y='{y_emo}-36*max(0\\,1-(t-{a0:.3f})/0.16)':"
+                     f"enable='between(t\\,{a0:.3f}\\,{a1:.3f})'[ve{i}]")
+        v = f"[ve{i}]"
+    grafo.append(f"{v}fade=t=in:st=0:d=0.15[v]")
+    ffmpeg(*entradas, "-filter_complex", ";".join(grafo), "-map", "[v]", "-map", "0:a", "-t", f"{total:.2f}",
+           "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-c:a", "copy", "-movflags", "+faststart", destino)
+
+
 def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fontes, progresso=None):
     pasta_trab = os.path.abspath(pasta_trab)
     seg_dir = os.path.join(pasta_trab, "seg")
@@ -526,8 +569,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c", "copy", visual)
 
     corte_gancho = faixas[1][1] if len(faixas) > 1 else total
-    ass = os.path.join(pasta_trab, "legenda.ass")
-    blocos, y_leg = legenda_ass(projeto, ass, corte_gancho)
+    blocos = blocos_com_destaque(projeto)
     cortes = {c: a for c, a, b in faixas[1:]}
 
     entradas = ["-i", visual, "-i", voz_wav]
@@ -593,22 +635,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                      f"eq=brightness=-0.16:saturation=0.75:enable='lt(t,{fim_tit:.2f})'[vt]")
         v = "[vt]"
 
-    # legenda + título
-    grafo.append(f"{v}subtitles={ass}:fontsdir={pasta_fontes}[vs]")
-    v = "[vs]"
-
-    # emojis acima da legenda, com pulinho de entrada
-    for i, e in enumerate(escolher_emojis(projeto, blocos)):
-        png = emoji_png(e["emoji"], os.path.join(pasta_trab, f"emoji{i}.png"))
-        if not png:
-            continue
-        idx = nova_entrada(png)
-        a0, a1 = e["ini"], e["fim"]
-        y_emo = y_leg - 285
-        grafo.append(f"{v}[{idx}:v]overlay=x=(W-w)/2:y='{y_emo}-36*max(0\\,1-(t-{a0:.3f})/0.16)':"
-                     f"enable='between(t\\,{a0:.3f}\\,{a1:.3f})'[ve{i}]")
-        v = f"[ve{i}]"
-    grafo.append(f"{v}fade=t=in:st=0:d=0.15[v]")
+    grafo.append(f"{v}null[vlimpo]")
 
     # áudio: voz + trilha de efeitos
     a = "[1:a]apad[a]"
@@ -632,7 +659,12 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
              f"alimiter=limit=0.95:level=disabled[a]")
     grafo.append(a)
 
+    # 1) vídeo "limpo": cenas, transições, efeitos e áudio — sem legenda/chamada/emojis.
+    #    Fica guardado: ajuste que só mexe na legenda reaproveita ele (render rápido, sem refazer cenas).
+    limpo = os.path.join(os.path.dirname(os.path.abspath(destino)), "limpo.mp4")
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo),
-           "-map", "[v]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", 20,
-           "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", destino)
+           "-map", "[vlimpo]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "veryfast",
+           "-crf", 17, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", limpo)
+    # 2) legenda, chamada e emojis por cima
+    legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho, total)
     return usados_cena, total

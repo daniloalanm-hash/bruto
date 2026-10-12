@@ -205,9 +205,17 @@
             <button class="mode-tab" data-aba="cenas" aria-pressed="false">Cenas</button>
           </div>
           <div data-aba-painel="fala">
-            <p class="muted small">Riscado = cortado. Clique numa palavra para cortar/voltar; clique numa linha cinza para trazer uma tomada descartada. Duplo clique edita o texto da legenda.</p>
+            <div class="tabs vista-fala" role="tablist">
+              <button class="mode-tab" data-vista="fala" aria-pressed="true">Fala (cortes)</button>
+              <button class="mode-tab" data-vista="legenda" aria-pressed="false">Legenda (texto)</button>
+            </div>
+            <p class="muted small" data-vista-painel="fala">Clique numa palavra para <b>corrigir o texto</b> da legenda ou <b>cortar</b> a fala. Riscado = cortado. Linha cinza = tomada descartada (clique para usar).</p>
+            <div data-vista-painel="legenda" hidden>
+              <p class="muted small">A legenda como aparece no vídeo, bloco a bloco. Edite o texto à vontade: corrigir legenda é um ajuste rápido (não refaz o vídeo).</p>
+              <div id="blocosLegenda" class="blocos-legenda"></div>
+            </div>
             <div id="avisoFalta" class="aviso" hidden></div>
-            <div id="tomadas" class="tomadas"></div>
+            <div id="tomadas" class="tomadas" data-vista-painel="fala"></div>
             <label class="field curto"><span>Redução de ruído</span>
               <select id="ruido">
                 <option value="auto">Automática</option>

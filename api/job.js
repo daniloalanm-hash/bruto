@@ -2,7 +2,8 @@
 //   { acao: "criar", job }                       -> { tag }
 //   { acao: "parte", tag, n, base64 }            -> sobe voz.part<n> (cada parte até ~3 MB)
 //   { acao: "iniciar", tag, fase }               -> dispara o GitHub Actions (fase: preparar | render)
-//   { acao: "projeto", tag, projeto }            -> salva o projeto ajustado na tela e dispara o re-render
+//   { acao: "projeto", tag, projeto, fase }      -> salva o projeto ajustado e dispara o re-render
+//                                                 (fase "legenda": só a legenda mudou → render rápido)
 //   { acao: "midia", tag, nome, n, base64 }      -> sobe parte de uma imagem/clipe próprio (pm-<id>.<ext>.part<n>)
 const { gh, REPO, releasePorTag, subirAsset, disparar, checarSenha, responder, lerCorpo, httpError } = require('./_gh');
 
@@ -60,12 +61,13 @@ module.exports = (req, res) => responder(res, async () => {
     if (!corpo.projeto || !Array.isArray(corpo.projeto.palavras)) throw httpError(400, 'Projeto inválido.');
     const rel = await releasePorTag(tag);
     await subirAsset(rel, 'projeto.json', JSON.stringify(corpo.projeto), 'application/json');
+    const fase = corpo.fase === 'legenda' && rel.assets.some((a) => a.name === 'limpo.mp4') ? 'legenda' : 'render';
     await subirAsset(rel, 'status.json', JSON.stringify({
-      estado: 'processando', fase: 'render', etapa: 'Na fila do servidor de render', progresso: 1,
+      estado: 'processando', fase, etapa: 'Na fila do servidor de render', progresso: 1,
       atualizado: Math.floor(Date.now() / 1000),
     }), 'application/json');
-    await disparar(tag, 'render');
-    return { ok: true };
+    await disparar(tag, fase);
+    return { ok: true, fase };
   }
 
   if (acao === 'iniciar') {

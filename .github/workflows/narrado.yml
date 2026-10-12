@@ -9,7 +9,7 @@ on:
         description: "Release do vídeo (narrado-...)"
         required: true
       fase:
-        description: "preparar (1ª versão) ou render (após ajustes na tela)"
+        description: "preparar (1ª versão), render (após ajustes na tela) ou legenda (só a legenda mudou: rápido)"
         required: true
         default: preparar
 
@@ -46,6 +46,7 @@ jobs:
           cache-dependency-path: narrado/requirements.txt
 
       - name: Cache do modelo de transcrição
+        if: inputs.fase != 'legenda'
         uses: actions/cache@v4
         with:
           path: |
@@ -54,6 +55,7 @@ jobs:
           key: whisper-medium-east-v1
 
       - name: Cache do material dos jogos
+        if: inputs.fase != 'legenda'
         uses: actions/cache@v4
         with:
           path: .narrado-cache/raw
@@ -65,12 +67,22 @@ jobs:
       - name: Instalar ffmpeg e dependências
         run: |
           # ffmpeg (corte, voz, render) e tesseract (descarta trechos de trailer com texto na tela)
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr tesseract-ocr-eng fonts-noto-color-emoji
-          pip install -q -r narrado/requirements.txt
+          if [ "${{ inputs.fase }}" = "legenda" ]; then
+            # só queimar legenda: ffmpeg + fonte de emoji + Pillow (bem mais rápido)
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-noto-color-emoji
+            pip install -q pillow numpy
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr tesseract-ocr-eng fonts-noto-color-emoji
+            pip install -q -r narrado/requirements.txt
+          fi
 
       - name: Baixar o pedido da tela
         run: |
-          gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" -p "cenas.jpg" -p "pm-*" || true
+          if [ "${{ inputs.fase }}" = "legenda" ]; then
+            gh release download "$NARRADO_TAG" -D job --clobber -p "projeto.json" -p "limpo.mp4" || true
+          else
+            gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" -p "cenas.jpg" -p "pm-*" || true
+          fi
           # o áudio chega em partes (limite de upload do Vercel); junta de volta
           if ls job/voz.part* >/dev/null 2>&1; then
             nome=$(python -c "import json;print(json.load(open('job/job.json'))['voz']['arquivo'])")
