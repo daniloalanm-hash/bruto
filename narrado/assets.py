@@ -249,6 +249,60 @@ def _rede_east():
     return rede
 
 
+def _mapa_east(png):
+    """Mapa booleano (células de 4 px na imagem reduzida) do que o EAST marcou como texto."""
+    rede = _rede_east()
+    if rede is None:
+        return None
+    import cv2
+    img = cv2.imread(png)
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    nw = 384
+    nh = max(32, int(round(h * nw / w / 32)) * 32)
+    blob = cv2.dnn.blobFromImage(cv2.resize(img, (nw, nh)), 1.0, (nw, nh), (123.68, 116.78, 103.94), True, False)
+    rede.setInput(blob)
+    return rede.forward("feature_fusion/Conv_7/Sigmoid")[0, 0] >= 0.8
+
+
+def _quadro_central(origem, t, destino):
+    """Extrai o quadro no recorte que aparece no vídeo (centro 9:16), 720 px de largura."""
+    import subprocess
+    args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+    if t is not None:
+        args += ["-ss", f"{t:.2f}"]
+    args += ["-i", origem, "-frames:v", "1", "-vf", "crop='min(iw,ih*9/16)':ih,scale=720:-2", destino]
+    return subprocess.run(args).returncode == 0 and os.path.exists(destino)
+
+
+def mascara_persistente(video, ini, fim, amostras=12):
+    """Texto que fica no MESMO lugar o trailer todo (marca d'água "Captured on PS5", classificação, HUD fixo).
+    Devolve o mapa dessas células (para serem ignoradas) ou None."""
+    import tempfile
+    import numpy as np
+    mapas = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for i in range(amostras):
+            t = ini + (fim - ini) * (i + 0.5) / amostras
+            png = os.path.join(tmp, f"m{i}.png")
+            if _quadro_central(video, t, png):
+                m = _mapa_east(png)
+                if m is not None:
+                    mapas.append(m)
+    if len(mapas) < 6 or len({m.shape for m in mapas}) != 1:
+        return None
+    freq = np.mean(mapas, axis=0)
+    masc = freq >= 0.5
+    if not masc.any():
+        return None
+    # margem de 2 células em volta (o texto treme um pouco com a compressão)
+    from numpy.lib.stride_tricks import sliding_window_view
+    pad = np.pad(masc, 2)
+    masc = sliding_window_view(pad, (5, 5)).any(axis=(2, 3))
+    return masc
+
+
 def _fracao_texto_east(png):
     """Fração da imagem marcada como texto pelo EAST (0 a 1)."""
     rede = _rede_east()
@@ -322,7 +376,7 @@ def movimento(video, t, dur=1.0):
     return round(sum(v) / len(v), 2) if v else 0.0
 
 
-def tem_texto(origem, t=None, limite=2):
+def tem_texto(origem, t=None, limite=2, mascara=None):
     """True se a parte que aparece no vídeo (centro 9:16) tiver texto: cartela de trailer, legenda, menu.
 
     Combina o detector EAST (acha a região de texto, mesmo estilizado) com uma leitura do Tesseract.
@@ -339,6 +393,11 @@ def tem_texto(origem, t=None, limite=2):
         args += ["-i", origem, "-frames:v", "1", "-vf", "crop='min(iw,ih*9/16)':ih,scale=720:-2", cor]
         if subprocess.run(args).returncode != 0 or not os.path.exists(cor):
             return False
+        if mascara is not None:
+            # trailer com marca d'água fixa: só conta texto FORA dela; o Tesseract leria a marca d'água
+            m = _mapa_east(cor)
+            if m is not None and m.shape == mascara.shape:
+                return float((m & ~mascara).mean()) >= 0.0018 * limite / 2
         if _fracao_texto_east(cor) >= 0.0018 * limite / 2:
             return True
         if not shutil.which("tesseract"):
@@ -353,7 +412,7 @@ def tem_texto(origem, t=None, limite=2):
     return False
 
 
-def _avaliar(video, a2, b2, conta, checar_pontas=True):
+def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None):
     """Trecho [a2, b2] serve como cena? Devolve o candidato ou None (e conta o motivo)."""
     meio = (a2 + b2) / 2
     y, s = medir_quadro(video, meio)
@@ -364,7 +423,7 @@ def _avaliar(video, a2, b2, conta, checar_pontas=True):
         conta["cartela"] += 1
         return None
     pontos = (a2 + 0.3, meio, b2 - 0.3) if checar_pontas else (meio,)
-    if any(tem_texto(video, x) for x in pontos):
+    if any(tem_texto(video, x, mascara=mascara) for x in pontos):
         conta["texto"] += 1
         return None
     return {"t": round(a2, 2), "dur": round(b2 - a2, 2), "y": y, "s": s, "mov": movimento(video, meio - 0.5)}
@@ -381,12 +440,13 @@ def trechos_bons(video):
     marcas = [0.0] + cortes_de_cena(video) + [dur]
     ini, fim = dur * 0.07, dur * 0.86  # abertura (classificação etária/logos) e encerramento (logo/data)
     conta = {"escuro": 0, "cartela": 0, "texto": 0}
+    mascara = mascara_persistente(video, ini, fim) if fim - ini > 6 else None
     candidatos = []
     for a, b in zip(marcas, marcas[1:]):
         a2, b2 = max(a, ini) + 0.1, min(b, fim) - 0.08
         if b2 - a2 < 1.2:
             continue
-        c = _avaliar(video, a2, b2, conta)
+        c = _avaliar(video, a2, b2, conta, mascara=mascara)
         if c:
             candidatos.append(c)
     n_planos = len(candidatos)
@@ -394,12 +454,12 @@ def trechos_bons(video):
         t = ini
         while t + 1.8 <= fim and len(candidatos) < MAX_SHOTS_POR_TRAILER:
             if all(abs(t - c["t"]) > 1.8 for c in candidatos):
-                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False)
+                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False, mascara=mascara)
                 if c:
                     candidatos.append(c)
             t += 3.0
     print(f"trailer {os.path.basename(video)}: {dur:.0f}s, {len(marcas) - 1} planos, {n_planos} planos bons, "
-          f"{len(candidatos) - n_planos} janelas; descartes {conta}")
+          f"{len(candidatos) - n_planos} janelas; descartes {conta}; marca d'água fixa: {mascara is not None}")
     # prioriza trechos mais longos e coloridos, mantendo a ordem do trailer
     candidatos.sort(key=lambda c: -(min(c["dur"], 4) + c["s"] / 40))
     return sorted(candidatos[:MAX_SHOTS_POR_TRAILER], key=lambda c: c["t"])
