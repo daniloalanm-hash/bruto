@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Anton&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Anton&family=Montserrat:wght@900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="narrado.css">
 </head>
@@ -62,6 +62,17 @@
         </div>
         <p id="statusRoteiro" class="muted small"></p>
       </div>
+
+      <div class="cartao">
+        <h2>Vários vídeos de uma vez</h2>
+        <p class="muted">Cole um link por linha (até 6). A IA escreve todos os roteiros e eles ficam salvos aqui para você gravar um atrás do outro.</p>
+        <textarea id="linksLote" rows="4" placeholder="https://lojadosgifts.com.br/blog/…&#10;https://…"></textarea>
+        <div class="row fim">
+          <button id="btnLote" class="btn primary">Gerar roteiros</button>
+        </div>
+        <p id="statusLote" class="muted small"></p>
+        <ul id="listaLote" class="lista-lote"></ul>
+      </div>
     </section>
 
     <!-- 2. Roteiro -->
@@ -74,8 +85,11 @@
           </div>
           <div class="estimativa"><b id="estimativa">0 s</b><span class="muted small">estimado</span></div>
         </div>
-        <label class="field"><span>Título</span><input id="titulo" type="text"></label>
-        <label class="field"><span>Jogos do vídeo (de onde vêm trailers e imagens oficiais da Steam) — um por linha</span>
+        <div class="row2">
+          <label class="field"><span>Título</span><input id="titulo" type="text"></label>
+          <label class="field"><span>Texto grande na tela nos 2 primeiros segundos (gancho)</span><input id="tituloTela" type="text" placeholder="Ex.: O FIM DO RAINBOW SIX MOBILE"></label>
+        </div>
+        <label class="field"><span>Jogos do vídeo (trailers e imagens oficiais: Steam, App Store ou YouTube) — um por linha</span>
           <textarea id="jogos" rows="3" placeholder="The Witcher 3: Wild Hunt"></textarea>
         </label>
         <div id="cenas" class="cenas"></div>
@@ -102,6 +116,11 @@
         </div>
 
         <div data-painel="gravar">
+          <div class="tp-controles row wrap">
+            <label class="chk"><input type="checkbox" id="tpAuto" checked><span>Rolagem automática enquanto você fala</span></label>
+            <label class="field curto tp-vel"><span>Velocidade</span><input type="range" id="tpVel" min="1.6" max="3.6" step="0.1" value="2.6"></label>
+            <span class="muted small">Clique numa palavra para voltar o marcador até ela.</span>
+          </div>
           <div class="teleprompter" id="teleprompter"></div>
           <ul class="dicas muted small">
             <li>Celular costuma captar melhor que headset. Fale um pouco acima do tom normal.</li>
@@ -152,6 +171,7 @@
         <div class="tela-video">
           <div class="moldura">
             <video id="player" controls playsinline hidden></video>
+            <canvas id="telaPrevia" width="360" height="640" hidden></canvas>
             <div id="aguarde" class="aguarde">
               <div class="spinner" aria-hidden="true"></div>
               <b id="etapa">Na fila…</b>
@@ -159,11 +179,24 @@
               <span class="muted small">Leva de 4 a 8 minutos. Pode fechar a página: o vídeo fica em “Meus vídeos”.</span>
             </div>
           </div>
-          <div class="row">
+          <div id="linhaTempo" class="linha-tempo" hidden></div>
+          <div class="row wrap">
             <a id="btnBaixar" class="btn primary" hidden download>Baixar vídeo</a>
+            <button id="btnPrevia" class="btn" hidden title="Ouça e veja os cortes, cenas e legendas com os seus ajustes, sem esperar o render">▶ Prévia rápida</button>
             <button id="btnAplicar" class="btn accent" disabled>Aplicar ajustes</button>
           </div>
+          <p id="avisoPrevia" class="muted small" hidden>Prévia simplificada: cortes, ordem das cenas e legenda. Transições, efeitos e zoom aparecem só no vídeo final.</p>
           <p id="infoVideo" class="muted small"></p>
+          <details class="box" id="boxPost" hidden>
+            <summary>Legenda do post e hashtags</summary>
+            <div class="box-body">
+              <textarea id="textoPost" rows="5"></textarea>
+              <div class="row">
+                <button id="btnCopiarPost" class="btn small primary">Copiar</button>
+                <button id="btnGerarPost" class="btn small">Gerar de novo com IA</button>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="ajustes" id="ajustes" hidden>
@@ -184,6 +217,23 @@
             </label>
           </div>
           <div data-aba-painel="cenas" hidden>
+            <details class="box" id="boxAparencia" open>
+              <summary>Aparência e efeitos</summary>
+              <div class="box-body" id="aparencia"></div>
+            </details>
+            <details class="box" id="boxProprias">
+              <summary>Enviar imagem ou clipe seu</summary>
+              <div class="box-body">
+                <p class="muted small">Print de tweet, foto da notícia, gameplay seu… Entra como 1ª imagem do tópico escolhido no próximo “Aplicar ajustes”. Prints aparecem inteiros, sem cortar as laterais.</p>
+                <div class="row wrap">
+                  <label class="field curto"><span>Tópico</span><select id="propriaCena"></select></label>
+                  <label class="btn" for="arqPropria">Escolher arquivo</label>
+                  <input type="file" id="arqPropria" accept="image/*,video/*" hidden>
+                </div>
+                <p id="statusPropria" class="muted small"></p>
+                <ul id="listaProprias" class="lista-proprias"></ul>
+              </div>
+            </details>
             <p class="muted small">Imagens de cada tópico, na ordem em que aparecem. Clique numa para trocar; arraste para reordenar.</p>
             <div id="listaCenas" class="lista-cenas"></div>
           </div>

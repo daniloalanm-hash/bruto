@@ -3,6 +3,7 @@
 //   { acao: "parte", tag, n, base64 }            -> sobe voz.part<n> (cada parte até ~3 MB)
 //   { acao: "iniciar", tag, fase }               -> dispara o GitHub Actions (fase: preparar | render)
 //   { acao: "projeto", tag, projeto }            -> salva o projeto ajustado na tela e dispara o re-render
+//   { acao: "midia", tag, nome, n, base64 }      -> sobe parte de uma imagem/clipe próprio (pm-<id>.<ext>.part<n>)
 const { gh, REPO, releasePorTag, subirAsset, disparar, checarSenha, responder, lerCorpo, httpError } = require('./_gh');
 
 module.exports = (req, res) => responder(res, async () => {
@@ -40,6 +41,18 @@ module.exports = (req, res) => responder(res, async () => {
     if (!buf.length) throw httpError(400, 'Parte vazia.');
     const rel = await releasePorTag(tag);
     await subirAsset(rel, `voz.part${String(n).padStart(3, '0')}`, buf);
+    return { ok: true };
+  }
+
+  if (acao === 'midia') {
+    const nome = String(corpo.nome || '').toLowerCase();
+    if (!/^pm-[a-z0-9]{4,20}\.(jpg|jpeg|png|webp|mp4|mov|webm|m4v)$/.test(nome)) throw httpError(400, 'Arquivo inválido.');
+    const n = Number(corpo.n);
+    if (!Number.isInteger(n) || n < 0 || n > 80) throw httpError(400, 'Parte inválida (arquivo grande demais?).');
+    const buf = Buffer.from(String(corpo.base64 || ''), 'base64');
+    if (!buf.length) throw httpError(400, 'Parte vazia.');
+    const rel = await releasePorTag(tag);
+    await subirAsset(rel, `${nome}.part${String(n).padStart(3, '0')}`, buf);
     return { ok: true };
   }
 

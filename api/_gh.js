@@ -84,10 +84,12 @@ function responder(res, fn) {
   return Promise.resolve()
     .then(fn)
     .then((dados) => {
+      if (res.writableEnded || res.headersSent) return; // a rota já respondeu (ex.: bytes de áudio)
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json(dados);
     })
     .catch((e) => {
+      if (res.writableEnded || res.headersSent) return;
       res.setHeader('Cache-Control', 'no-store');
       res.status(e.status || 500).json({ erro: e.message || 'Erro inesperado.' });
     });

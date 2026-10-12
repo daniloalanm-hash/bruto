@@ -31,7 +31,18 @@ const normal = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[^
 const fmtT = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 /* ---------------- armazenamento local ---------------- */
-const K = { gemini: 'bruto:gemini:key', modelo: 'bruto:gemini:model', senha: 'bruto:narrado:senha', rasc: 'bruto:narrado:rascunho' };
+const K = {
+  gemini: 'bruto:gemini:key', modelo: 'bruto:gemini:model', senha: 'bruto:narrado:senha', rasc: 'bruto:narrado:rascunho',
+  estilo: 'bruto:narrado:estilo', lote: 'bruto:narrado:lote', post: 'bruto:narrado:post:',
+};
+// aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
+const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji'];
+function estiloSalvo() { try { return JSON.parse(ls.get(K.estilo) || '{}'); } catch { return {}; } }
+function salvarEstilo(p) {
+  const e = {};
+  for (const k of CHAVES_ESTILO) if (p[k] !== undefined) e[k] = p[k];
+  ls.set(K.estilo, JSON.stringify(e));
+}
 const ls = {
   get(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* navegador sem armazenamento: segue sem salvar */ } },
@@ -118,11 +129,16 @@ REGRAS
 
 Para cada tópico informe:
 - "texto": o que será falado.
-- "destaques": 2 a 4 palavras do próprio texto (copiadas exatamente) que merecem destaque amarelo na legenda.
+- "destaques": 2 a 4 palavras ou expressões curtas do próprio texto (copiadas exatamente) que merecem destaque colorido na legenda.
 - "assunto": nome do jogo de que esse trecho está falando (para mostrar imagens desse jogo). Use null se for um comentário geral — aí aparece o jogo principal. NUNCA ponha um jogo que não está sendo citado naquele trecho.
+- "emoji": UM emoji que combine com a emoção do tópico (ex.: 💀 fim/morte, 💰 dinheiro, 😱 surpresa, 🔥 hype, 🏆 recorde, ⏳ tempo). Use em no máximo metade dos tópicos; nos outros, null.
+
+Também:
+- "titulo_tela": texto curto e chamativo (3 a 6 palavras) que aparece grande na tela nos 2 primeiros segundos, reforçando o gancho. Ex.: "O FIM DO RAINBOW SIX MOBILE".
+- "post": legenda para publicar o vídeo no TikTok/Reels: {"legenda": "1 a 2 frases que instigam + pergunta", "hashtags": ["#5 a 8 hashtags relevantes, em português quando fizer sentido"]}.
 
 Responda SOMENTE com JSON:
-{"titulo": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "..." }]}
+{"titulo": "...", "titulo_tela": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "emoji": null}], "post": {"legenda": "...", "hashtags": ["#..."]}}
 
 MATÉRIA
 Título: ${materia.titulo || ''}
@@ -214,6 +230,18 @@ $('#btnBuscar').addEventListener('click', async () => {
   } finally { btn.classList.remove('busy'); }
 });
 
+function roteiroDaIA(r, materia) {
+  return {
+    titulo: r.titulo || materia.titulo || '',
+    titulo_tela: String(r.titulo_tela || '').trim(),
+    jogos: (r.jogos || []).filter(Boolean),
+    cenas: (r.cenas || []).filter((c) => c.texto).map((c) => ({
+      texto: c.texto, destaques: c.destaques || [], assunto: c.assunto || null, emoji: c.emoji || null,
+    })),
+    post: r.post && typeof r.post === 'object' ? { legenda: r.post.legenda || '', hashtags: r.post.hashtags || [] } : null,
+  };
+}
+
 async function escreverRoteiro() {
   const texto = $('#textoMateria').value.trim();
   const materia = { ...(state.materia || {}), texto: texto || state.materia?.texto || '' };
@@ -223,11 +251,7 @@ async function escreverRoteiro() {
   $('#btnRoteiro').classList.add('busy');
   try {
     const r = await gemini(promptRoteiro(materia, +$('#duracao').value), (m) => { st.textContent = m; });
-    state.roteiro = {
-      titulo: r.titulo || materia.titulo || '',
-      jogos: (r.jogos || []).filter(Boolean),
-      cenas: (r.cenas || []).filter((c) => c.texto).map((c) => ({ texto: c.texto, destaques: c.destaques || [], assunto: c.assunto || null })),
-    };
+    state.roteiro = roteiroDaIA(r, materia);
     if (!state.roteiro.cenas.length) throw new Error('A IA devolveu um roteiro vazio. Tente de novo.');
     state.materia = materia;
     st.textContent = '';
@@ -246,6 +270,56 @@ $('#btnRoteiroVazio').addEventListener('click', () => {
   irPara('roteiro');
 });
 
+/* ---------------- 1b. roteiros em lote ---------------- */
+function lote() { try { return JSON.parse(ls.get(K.lote) || '[]'); } catch { return []; } }
+function salvarLote(l) { ls.set(K.lote, JSON.stringify(l.slice(0, 20))); }
+function renderLote() {
+  const l = lote();
+  $('#listaLote').replaceChildren(...l.map((d) => h('li', {},
+    h('div', {}, h('b', {}, d.roteiro.titulo || d.materia?.titulo || 'Sem título'),
+      h('span', { class: 'muted small' }, ` · ${d.roteiro.cenas.length} tópicos · ${new Date(d.criado).toLocaleDateString('pt-BR')}`)),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn small primary', onclick: () => abrirDoLote(d.id) }, 'Abrir e gravar'),
+      h('button', { class: 'btn small icon danger', title: 'Excluir', onclick: () => { salvarLote(lote().filter((x) => x.id !== d.id)); renderLote(); } }, '✕')))));
+}
+function abrirDoLote(id) {
+  const d = lote().find((x) => x.id === id);
+  if (!d) return;
+  state.materia = d.materia;
+  state.roteiro = d.roteiro;
+  state.loteId = d.id;
+  if (d.materia) { $('#urlMateria').value = d.materia.url || ''; $('#textoMateria').value = d.materia.texto || ''; }
+  atualizaBotaoRoteiro();
+  irPara('roteiro');
+}
+async function buscarMateria(url) {
+  let m = await materiaWordPress(url).catch(() => null);
+  if (!m || m.texto.length < 200) m = await api(`/api/artigo?url=${encodeURIComponent(url)}`);
+  return m;
+}
+$('#btnLote').addEventListener('click', async () => {
+  const links = [...new Set($('#linksLote').value.split(/\s+/).map((x) => x.trim()).filter((x) => /^https?:\/\//.test(x)))].slice(0, 6);
+  if (!links.length) { toast('Cole pelo menos um link (um por linha).', 'warn'); return; }
+  const st = $('#statusLote'), btn = $('#btnLote');
+  btn.classList.add('busy');
+  let ok = 0;
+  for (const [i, url] of links.entries()) {
+    try {
+      st.textContent = `(${i + 1}/${links.length}) Lendo a matéria…`;
+      const m = await buscarMateria(url);
+      st.textContent = `(${i + 1}/${links.length}) Escrevendo o roteiro: ${m.titulo}`;
+      const r = roteiroDaIA(await gemini(promptRoteiro(m, +$('#duracao').value), (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; }), m);
+      if (!r.cenas.length) throw new Error('roteiro vazio');
+      salvarLote([{ id: Math.random().toString(36).slice(2, 10), criado: Date.now(), materia: m, roteiro: r }, ...lote()]);
+      ok++;
+      renderLote();
+    } catch (e) { toast(`Não consegui fazer o roteiro de ${url}: ${e.message}`, 'warn', 8000); }
+  }
+  st.textContent = `${ok} de ${links.length} roteiros prontos.`;
+  if (ok) $('#linksLote').value = '';
+  btn.classList.remove('busy');
+});
+
 /* ---------------- 2. roteiro ---------------- */
 function nomesJogos() { return $('#jogos').value.split('\n').map((s) => s.trim()).filter(Boolean); }
 function estimativa() {
@@ -255,6 +329,7 @@ function estimativa() {
 function renderRoteiro() {
   const r = state.roteiro;
   $('#titulo').value = r.titulo;
+  $('#tituloTela').value = r.titulo_tela || '';
   $('#jogos').value = r.jogos.join('\n');
   const box = $('#cenas');
   box.replaceChildren();
@@ -268,12 +343,15 @@ function renderRoteiro() {
     txt.addEventListener('input', () => { c.texto = txt.value; estimativa(); salvarRascunho(); });
     const dest = h('input', { type: 'text', value: (c.destaques || []).join(', '), placeholder: 'palavras em destaque, separadas por vírgula' });
     dest.addEventListener('input', () => { c.destaques = dest.value.split(',').map((s) => s.trim()).filter(Boolean); salvarRascunho(); });
+    const emo = h('input', { type: 'text', value: c.emoji || '', placeholder: '—', maxlength: 4, class: 'emoji-in', title: 'Emoji que aparece sobre a legenda deste tópico (vazio = automático)' });
+    emo.addEventListener('input', () => { c.emoji = emo.value.trim() || null; salvarRascunho(); });
     const mover = (d) => { const j = i + d; if (j < 0 || j >= r.cenas.length) return; [r.cenas[i], r.cenas[j]] = [r.cenas[j], r.cenas[i]]; renderRoteiro(); };
     box.append(h('div', { class: 'cena' },
       h('div', { class: 'campos' }, txt,
         h('div', { class: 'linha2' },
           h('label', { class: 'field' }, h('span', {}, 'Destaques na legenda'), dest),
           h('label', { class: 'field' }, h('span', {}, 'Jogo na tela'), sel),
+          h('label', { class: 'field curto' }, h('span', {}, 'Emoji'), emo),
           h('div', { class: 'acoes' },
             h('button', { class: 'btn small icon', title: 'Subir', onclick: () => mover(-1) }, '↑'),
             h('button', { class: 'btn small icon', title: 'Descer', onclick: () => mover(1) }, '↓'),
@@ -283,6 +361,7 @@ function renderRoteiro() {
   salvarRascunho();
 }
 $('#titulo').addEventListener('input', (e) => { state.roteiro.titulo = e.target.value; salvarRascunho(); });
+$('#tituloTela').addEventListener('input', (e) => { state.roteiro.titulo_tela = e.target.value; salvarRascunho(); });
 $('#jogos').addEventListener('change', () => { state.roteiro.jogos = nomesJogos(); renderRoteiro(); });
 $('#btnAddCena').addEventListener('click', () => { state.roteiro.cenas.push({ texto: '', destaques: [], assunto: null }); renderRoteiro(); });
 $('#btnCopiar').addEventListener('click', async () => {
@@ -297,8 +376,53 @@ $('#btnIrVoz').addEventListener('click', () => {
 });
 
 /* ---------------- 3. voz ---------------- */
+// Teleprompter: o marcador avança no ritmo da fala, só enquanto o microfone capta voz; a frase atual fica em destaque.
+const tp = { palavras: [], frases: [], pos: 0, falando: 0, ultimo: 0 };
 function renderTeleprompter() {
-  $('#teleprompter').replaceChildren(...state.roteiro.cenas.filter((c) => c.texto.trim()).map((c) => h('p', {}, c.texto)));
+  tp.palavras = []; tp.frases = []; tp.pos = 0;
+  const paragrafos = state.roteiro.cenas.filter((c) => c.texto.trim()).map((c) => {
+    const p = h('p');
+    for (const frase of c.texto.trim().split(/(?<=[.!?…])\s+/)) {
+      const fi = tp.frases.length;
+      const el = h('span', { class: 'tp-frase' });
+      tp.frases.push({ el, ini: tp.palavras.length });
+      for (const pal of frase.split(/\s+/).filter(Boolean)) {
+        const k = tp.palavras.length;
+        const w = h('span', { class: 'tp-w', onclick: () => { tp.pos = k; atualizarTp(true); } }, pal);
+        tp.palavras.push({ el: w, frase: fi });
+        el.append(w, ' ');
+      }
+      p.append(el, ' ');
+    }
+    return p;
+  });
+  $('#teleprompter').replaceChildren(...paragrafos);
+  atualizarTp(true);
+}
+function atualizarTp(rolar) {
+  const k = Math.min(Math.floor(tp.pos), tp.palavras.length - 1);
+  if (k < 0) return;
+  const fAtual = tp.palavras[k].frase;
+  tp.palavras.forEach((w, i) => { w.el.classList.toggle('lida', i < k); w.el.classList.toggle('agora', i === k); });
+  tp.frases.forEach((f, i) => f.el.classList.toggle('atual', i === fAtual));
+  if (rolar) {
+    const box = $('#teleprompter'), alvo = tp.frases[fAtual].el;
+    const y = alvo.offsetTop - box.clientHeight * 0.35; // .teleprompter é position: relative
+    if (Math.abs(box.scrollTop - y) > 8) box.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+  }
+}
+// chamado pelo medidor do microfone a cada quadro durante a gravação
+function avancarTp(pico) {
+  const agora = performance.now();
+  const dt = tp.ultimo ? Math.min((agora - tp.ultimo) / 1000, 0.1) : 0;
+  tp.ultimo = agora;
+  if (!$('#tpAuto').checked || !tp.palavras.length) return;
+  if (pico > 0.045) tp.falando = agora;
+  if (agora - tp.falando < 350) { // voz agora (ou há menos de 0,35 s): avança no ritmo escolhido
+    const antes = Math.floor(tp.pos);
+    tp.pos = Math.min(tp.pos + dt * Number($('#tpVel').value), tp.palavras.length - 1);
+    if (Math.floor(tp.pos) !== antes) atualizarTp(true);
+  }
 }
 function setVozModo(m) {
   state.voz.modo = m;
@@ -332,6 +456,7 @@ async function iniciarGravacao() {
   };
   grav.rec.start(1000);
   grav.t0 = Date.now();
+  tp.pos = 0; tp.ultimo = 0; atualizarTp(true);
   $('#btnGravar').classList.add('on');
   $('#statusGrav').textContent = 'Gravando… clique de novo para parar.';
   grav.timer = setInterval(() => { $('#tempoGrav').textContent = fmtT((Date.now() - grav.t0) / 1000); }, 250);
@@ -345,6 +470,7 @@ async function iniciarGravacao() {
     let pico = 0;
     for (const v of buf) pico = Math.max(pico, Math.abs(v));
     $('#nivel').style.width = `${Math.min(100, pico * 140)}%`;
+    avancarTp(pico);
     $('#nivel').style.background = pico > 0.95 ? 'var(--warn)' : 'var(--in)';
     grav.raf = requestAnimationFrame(loop);
   };
@@ -394,13 +520,17 @@ $('#btnGerar').addEventListener('click', async () => {
   try {
     const r = state.roteiro;
     const job = {
-      titulo: r.titulo, fonte: state.materia?.url || '',
+      ...estiloSalvo(),
+      titulo: r.titulo, titulo_tela: r.titulo_tela || '', fonte: state.materia?.url || '',
       jogos: r.jogos,
       cenas: r.cenas.filter((c) => c.texto.trim()),
+      post: r.post || null,
       voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
     };
     st.textContent = 'Criando o vídeo…';
     const { tag } = await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'criar', job }) });
+    if (state.loteId) { salvarLote(lote().filter((x) => x.id !== state.loteId)); state.loteId = null; renderLote(); }
+    if (r.post) ls.set(K.post + tag, JSON.stringify(r.post));
     if (modo === 'gravada') {
       const PARTE = 3 * 1024 * 1024; // limite de upload das funções do Vercel
       const total = Math.ceil(state.voz.blob.size / PARTE);
@@ -411,6 +541,7 @@ $('#btnGerar').addEventListener('click', async () => {
       }
     }
     st.textContent = 'Mandando para o servidor de render…';
+    pedirAviso();
     await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'iniciar', tag, fase: 'preparar' }) });
     st.textContent = '';
     abrirVideo(tag);
@@ -419,8 +550,44 @@ $('#btnGerar').addEventListener('click', async () => {
   } finally { btn.classList.remove('busy'); }
 });
 
+/* ---------------- aviso quando o vídeo fica pronto ---------------- */
+function pedirAviso() {
+  state.esperando = true;
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); } catch { /* sem suporte */ }
+}
+const tituloPagina = document.title;
+function avisar(titulo, corpo, ok = true) {
+  if (!state.esperando) return;
+  state.esperando = false;
+  try {
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+      const n = new Notification(titulo, { body: corpo, icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  } catch { /* sem suporte */ }
+  if (document.hidden) {
+    document.title = `${ok ? '✅' : '⚠️'} ${titulo}`;
+    const volta = () => { document.title = tituloPagina; document.removeEventListener('visibilitychange', volta); };
+    document.addEventListener('visibilitychange', volta);
+  }
+  try { // dois bipes curtos
+    const c = new AudioContext();
+    [0, 0.16].forEach((dt, i) => {
+      const o = c.createOscillator(), g = c.createGain();
+      o.frequency.value = ok ? (i ? 1046 : 784) : 330;
+      g.gain.setValueAtTime(0.0001, c.currentTime + dt);
+      g.gain.exponentialRampToValueAtTime(0.18, c.currentTime + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dt + 0.14);
+      o.connect(g).connect(c.destination);
+      o.start(c.currentTime + dt); o.stop(c.currentTime + dt + 0.15);
+    });
+    setTimeout(() => c.close(), 600);
+  } catch { /* sem áudio */ }
+}
+
 /* ---------------- 4. vídeo: acompanhar ---------------- */
 function abrirVideo(tag) {
+  pararPrevia();
   state.tag = tag;
   state.projeto = null;
   state.sujo = false;
@@ -447,6 +614,7 @@ async function acompanhar() {
       $('#infoVideo').textContent = s.titulo;
       const st = s.status || {};
       if (st.estado === 'erro') {
+        avisar('O vídeo deu erro', st.erro || 'Falha no render', false);
         $('#aguarde').classList.add('erro');
         $('#etapa').textContent = `Deu erro: ${st.erro || 'falha no render'}`;
         $('#aguarde').hidden = false;
@@ -454,6 +622,7 @@ async function acompanhar() {
         return;
       }
       if (st.estado === 'pronto' && s.video) {
+        avisar('Vídeo pronto', s.titulo || 'Modo Narrado');
         mostrarVideo(s);
         await carregarProjeto();
         return;
@@ -477,6 +646,7 @@ function mostrarVideo(s) {
   a.setAttribute('download', `${(s.titulo || 'video').replace(/[^\w\- ]+/g, '').trim() || 'video'}.mp4`);
   a.hidden = false;
   state.cenasImg = s.cenas;
+  state.temPrevia = !!s.temPrevia;
 }
 
 async function carregarProjeto() {
@@ -489,11 +659,48 @@ async function carregarProjeto() {
   $('#infoVideo').textContent = `${p.titulo} · ${info.join(' · ')}`;
   $('#ruido').value = p.voz?.reducao_ruido || 'auto';
   $('#ajustes').hidden = false;
+  $('#btnPrevia').hidden = !state.temPrevia;
   state.sujo = false;
   $('#btnAplicar').disabled = true;
   renderTomadas();
   renderCenas();
+  renderPost();
+  renderLinhaTempo();
 }
+
+/* legenda do post (vem do roteiro; dá para editar, copiar ou pedir outra à IA) */
+function textoDoPost(post) {
+  if (!post) return '';
+  return [post.legenda || '', (post.hashtags || []).map((x) => (x.startsWith('#') ? x : `#${x}`)).join(' ')].filter(Boolean).join('\n\n');
+}
+function renderPost() {
+  const p = state.projeto;
+  let post = p?.post && (p.post.legenda || p.post.hashtags?.length) ? p.post : null;
+  if (!post) { try { post = JSON.parse(ls.get(K.post + state.tag) || 'null'); } catch { post = null; } }
+  $('#textoPost').value = textoDoPost(post);
+  $('#boxPost').hidden = false;
+}
+$('#btnCopiarPost').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#textoPost').value); toast('Legenda copiada.'); } catch { toast('Não consegui copiar; selecione o texto.', 'warn'); }
+});
+$('#btnGerarPost').addEventListener('click', async () => {
+  const p = state.projeto;
+  if (!p) return;
+  const btn = $('#btnGerarPost');
+  btn.classList.add('busy');
+  try {
+    const texto = p.cenas.map((c) => c.texto).join(' ');
+    const r = await gemini(`Escreva a legenda para publicar este vídeo curto de games no TikTok/Reels, em português do Brasil.
+1 a 2 frases que instigam + uma pergunta para comentários. Depois 5 a 8 hashtags relevantes.
+Responda SOMENTE com JSON: {"legenda": "...", "hashtags": ["#..."]}
+
+ROTEIRO DO VÍDEO: ${texto}`);
+    const post = { legenda: r.legenda || '', hashtags: r.hashtags || [] };
+    p.post = post;
+    ls.set(K.post + state.tag, JSON.stringify(post));
+    $('#textoPost').value = textoDoPost(post);
+  } catch (e) { toast(e.message, 'warn', 7000); } finally { btn.classList.remove('busy'); }
+});
 
 function marcarSujo() { state.sujo = true; $('#btnAplicar').disabled = false; }
 $('#ruido').addEventListener('change', (e) => { if (state.projeto) { state.projeto.voz.reducao_ruido = e.target.value; marcarSujo(); } });
@@ -571,7 +778,7 @@ function trazerTomada(g) {
 }
 
 /* ---------------- 4c. ajustes: cenas ---------------- */
-const nomeJogo = (chave) => state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave;
+const nomeJogo = (chave) => (chave === 'proprio' ? 'Suas mídias' : state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
 function mini(mid, extra = {}) {
   const p = state.projeto, m = p.banco[mid], sp = p.sprite;
   const k = m?.sprite ?? 0;
@@ -589,26 +796,55 @@ function mini(mid, extra = {}) {
 }
 
 let troca = null; // { cena, pos }
+const NOMES_TRANS = {
+  flash: 'Flash + desfoque', zoom: 'Zoom + woosh', glitch: 'Glitch', pan_dir: 'Pan para a direita',
+  pan_esq: 'Pan para a esquerda', leak: 'Light leak', pan_leak: 'Pan + light leak', seco: 'Corte seco',
+};
+
+function campoSel(rotulo, valor, opcoes, aoMudar) {
+  const sel = h('select', { onchange: (e) => aoMudar(e.target.value) },
+    ...opcoes.map(([v, t]) => h('option', { value: String(v) }, t)));
+  sel.value = String(valor);
+  return h('label', { class: 'field curto' }, h('span', {}, rotulo), sel);
+}
+function campoChk(rotulo, valor, aoMudar) {
+  const c = h('input', { type: 'checkbox', checked: !!valor, onchange: (e) => aoMudar(e.target.checked) });
+  return h('label', { class: 'chk' }, c, h('span', {}, rotulo));
+}
+
+// Aparência do vídeo (vale para este vídeo e vira o padrão dos próximos)
+function renderAparencia() {
+  const p = state.projeto;
+  const muda = (k, conv = (v) => v) => (v) => { p[k] = conv(v); salvarEstilo(p); marcarSujo(); };
+  const altura = h('input', { type: 'range', min: 40, max: 80, step: 1, value: Math.round((p.legenda_altura ?? 0.615) * 100) });
+  const alturaTxt = h('span', { class: 'muted small' }, `${altura.value}% da tela`);
+  altura.addEventListener('input', () => { alturaTxt.textContent = `${altura.value}% da tela`; });
+  altura.addEventListener('change', () => { p.legenda_altura = altura.value / 100; salvarEstilo(p); marcarSujo(); });
+  const tit = h('input', { type: 'text', value: p.titulo_tela || '', placeholder: 'Texto grande nos 2 primeiros segundos' });
+  tit.addEventListener('change', () => { p.titulo_tela = tit.value.trim(); if (p.titulo_tela) p.titulo_gancho = true; marcarSujo(); });
+  $('#aparencia').replaceChildren(
+    h('div', { class: 'grade-ap' },
+      campoSel('Legenda', p.legenda_estilo || 'classico', [['classico', 'Clássica (Anton)'], ['caixa', 'Caixa no destaque'], ['moderna', 'Moderna (Montserrat)']], muda('legenda_estilo')),
+      campoSel('Cor do destaque', p.legenda_cor || 'amarelo', [['amarelo', 'Amarelo'], ['verde', 'Verde'], ['vermelho', 'Vermelho'], ['ciano', 'Ciano'], ['rosa', 'Rosa']], muda('legenda_cor')),
+      h('label', { class: 'field' }, h('span', {}, 'Altura da legenda'), altura, alturaTxt),
+      campoSel('J-cut / L-cut', p.jl_quadros || 8, [4, 8, 12].map((q) => [q, `${q} quadros (~${(q / 30).toFixed(2).replace('.', ',')}s)`]), muda('jl_quadros', Number)),
+      campoSel('Saída do gancho', p.transicao_gancho || 'pan', [['pan', 'Pan para a direita + woosh'], ['leak', 'Light leak'], ['pan_leak', 'Pan + woosh + light leak']], muda('transicao_gancho'))),
+    h('label', { class: 'field' }, h('span', {}, 'Título na tela (gancho)'), tit),
+    h('div', { class: 'row wrap' },
+      campoChk('Título no início', p.titulo_gancho !== false && !!p.titulo_tela, (v) => { p.titulo_gancho = v; marcarSujo(); }),
+      campoChk('Efeitos sonoros (woosh, pop, impacto)', p.sfx !== false, muda('sfx')),
+      campoChk('Zoom nas palavras destacadas', p.zoom_enfase !== false, muda('zoom_enfase')),
+      campoChk('Emojis', p.emoji !== false, muda('emoji'))),
+  );
+}
+
 function renderCenas() {
   const p = state.projeto;
   const box = $('#listaCenas');
   box.replaceChildren();
   const usados = new Map((p.timeline || []).map((t) => [t.cena, t.cortes.length]));
-  // quanto a voz adianta (J-cut) ou a imagem adianta (L-cut) nas trocas de tópico
-  const selJL = h('select', {
-    onchange: (e) => { p.jl_quadros = Number(e.target.value); marcarSujo(); },
-  }, ...[4, 8, 12].map((q) => h('option', { value: String(q) }, `${q} quadros (~${(q / 30).toFixed(2).replace('.', ',')}s)`)));
-  selJL.value = String(p.jl_quadros || 8);
-  box.append(h('label', { class: 'entrada-lbl' }, 'J-cut / L-cut: ', selJL));
-  // transição na saída do gancho (1ª troca de tópico)
-  const selGancho = h('select', {
-    onchange: (e) => { p.transicao_gancho = e.target.value; marcarSujo(); },
-  },
-  h('option', { value: 'pan' }, 'Pan para a direita + woosh'),
-  h('option', { value: 'leak' }, 'Light leak'),
-  h('option', { value: 'pan_leak' }, 'Pan + woosh + light leak'));
-  selGancho.value = p.transicao_gancho || 'pan';
-  box.append(h('label', { class: 'entrada-lbl' }, 'Saída do gancho: ', selGancho));
+  renderAparencia();
+  renderProprias();
   p.cenas.forEach((c, ci) => {
     if (!c.texto) return;
     const tira = h('div', { class: 'tiras' });
@@ -643,7 +879,20 @@ function renderCenas() {
       h('option', { value: 'L' }, 'L-cut · a imagem entra antes da fala'),
       h('option', { value: 'seco' }, 'Corte seco'));
       sel.value = c.entrada || 'auto';
-      entrada = h('label', { class: 'entrada-lbl' }, 'Entrada: ', sel);
+      const primeiro = p.cenas.findIndex((x) => x.texto);
+      const segundo = p.cenas.findIndex((x, i) => i > primeiro && x.texto);
+      let trans;
+      if (ci === segundo) {
+        trans = h('span', { class: 'muted small' }, 'Transição: a da “saída do gancho” (acima)');
+      } else {
+        const feita = (p.timeline || []).find((t) => t.cena === ci)?.transicao;
+        const selT = h('select', { title: 'Efeito na troca para este tópico', onchange: (e) => { c.transicao = e.target.value; marcarSujo(); } },
+          h('option', { value: 'auto' }, `Automática${feita && NOMES_TRANS[feita] ? ` (${NOMES_TRANS[feita]})` : ''}`),
+          ...Object.entries(NOMES_TRANS).filter(([k]) => k !== 'pan_leak').map(([k, v]) => h('option', { value: k }, v)));
+        selT.value = c.transicao || 'auto';
+        trans = h('label', { class: 'entrada-lbl' }, 'Transição: ', selT);
+      }
+      entrada = h('div', { class: 'linha-trans' }, h('label', { class: 'entrada-lbl' }, 'Entrada: ', sel), trans);
     }
     box.append(h('div', { class: 'lc-cena' },
       h('b', {}, `Tópico ${ci + 1} · ${nomeJogo(c.jogo)}`),
@@ -651,6 +900,44 @@ function renderCenas() {
       entrada, tira));
   });
 }
+
+/* mídias próprias (print, foto, clipe) */
+function renderProprias() {
+  const p = state.projeto;
+  const sel = $('#propriaCena');
+  sel.replaceChildren(...p.cenas.map((c, i) => (c.texto ? h('option', { value: String(i) }, `Tópico ${i + 1}`) : null)));
+  const lista = (p.proprias || []).map((it) => h('li', {},
+    `${it.tipo === 'v' ? '🎬' : '🖼️'} ${it.nome || it.arquivo} → Tópico ${(it.cena ?? 0) + 1} `,
+    h('span', { class: 'muted small' }, it.aplicada ? '(no vídeo)' : '(entra no próximo “Aplicar ajustes”)')));
+  $('#listaProprias').replaceChildren(...lista);
+}
+$('#arqPropria').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !state.projeto) return;
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  const ok = { jpg: 'i', jpeg: 'i', png: 'i', webp: 'i', mp4: 'v', mov: 'v', webm: 'v', m4v: 'v' };
+  if (!ok[ext]) { toast('Use JPG, PNG, WEBP, MP4, MOV ou WEBM. (Foto HEIC do iPhone: exporte como JPG.)', 'warn', 7000); return; }
+  if (f.size > 200e6) { toast('Arquivo grande demais (máx. 200 MB).', 'warn'); return; }
+  const id = Math.random().toString(36).slice(2, 10);
+  const nomeArq = `pm-${id}.${ext}`;
+  const st = $('#statusPropria');
+  try {
+    const PARTE = 3 * 1024 * 1024;
+    const total = Math.ceil(f.size / PARTE);
+    for (let n = 0; n < total; n++) {
+      st.textContent = `Enviando ${f.name} (${n + 1}/${total})…`;
+      const base64 = await paraBase64(f.slice(n * PARTE, (n + 1) * PARTE));
+      await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'midia', tag: state.tag, nome: nomeArq, n, base64 }) });
+    }
+    const p = state.projeto;
+    p.proprias = p.proprias || [];
+    p.proprias.push({ id, arquivo: nomeArq, tipo: ok[ext], cena: Number($('#propriaCena').value), nome: f.name.slice(0, 60) });
+    st.textContent = 'Enviado. Clique em “Aplicar ajustes” para gerar a versão com ele.';
+    marcarSujo();
+    renderProprias();
+  } catch (err) { st.textContent = `Erro: ${err.message}`; }
+});
 
 let filtroJogo = null;
 function abrirTroca(ci, pos) {
@@ -662,7 +949,9 @@ function abrirTroca(ci, pos) {
 }
 function renderGrade() {
   const p = state.projeto;
-  $('#filtroJogos').replaceChildren(...p.jogos.map((j) => h('button', {
+  const grupos = [...p.jogos];
+  if (Object.values(p.banco).some((m) => m.jogo === 'proprio')) grupos.push({ chave: 'proprio', nome: 'Suas mídias' });
+  $('#filtroJogos').replaceChildren(...grupos.map((j) => h('button', {
     class: `btn small${j.chave === filtroJogo ? ' accent' : ''}`, onclick: () => { filtroJogo = j.chave; renderGrade(); },
   }, j.nome)));
   const naCena = new Set(p.cenas[troca.cena].midias || []);
@@ -674,7 +963,7 @@ function renderGrade() {
         const c = p.cenas[troca.cena];
         c.midias = c.midias || [];
         if (troca.pos < c.midias.length) c.midias[troca.pos] = id; else c.midias.push(id);
-        if (p.banco[id].jogo !== c.jogo) c.jogo = p.banco[id].jogo;
+        if (p.banco[id].jogo !== c.jogo && p.banco[id].jogo !== 'proprio') c.jogo = p.banco[id].jogo;
         $('#dlgTroca').close(); marcarSujo(); renderCenas();
       },
     },
@@ -689,6 +978,7 @@ $('#btnRemoverMidia').addEventListener('click', () => {
 
 $('#btnAplicar').addEventListener('click', async () => {
   if (!state.projeto) return;
+  pararPrevia();
   const btn = $('#btnAplicar');
   btn.classList.add('busy');
   try {
@@ -703,11 +993,281 @@ $('#btnAplicar').addEventListener('click', async () => {
     $('#progresso').style.width = '1%';
     $('#player').hidden = true;
     $('#ajustes').hidden = true;
+    $('#linhaTempo').hidden = true;
+    $('#btnPrevia').hidden = true;
+    pedirAviso();
     acompanhar();
   } catch (e) {
     toast(e.message, 'warn', 7000);
   } finally { btn.classList.remove('busy'); }
 });
+
+/* ---------------- prévia rápida (no navegador, sem render) ---------------- */
+const CORES_LEG = { amarelo: '#FFD400', verde: '#3AF05A', vermelho: '#FF3B3B', ciano: '#22E5FF', rosa: '#FF4FD8' };
+const previa = { ctx: null, buf: null, tag: '', fontes: [], raf: 0, inicio: 0, desde: 0, plano: null, tocando: false };
+
+// Mesmas regras do servidor (voz.py / render.py), de forma simplificada
+function montarPlano(p) {
+  const todas = [...p.palavras].sort((a, b) => a.s - b.s);
+  const pos = new Map(todas.map((w, i) => [w, i]));
+  const mant = todas.filter((w) => w.manter);
+  const blocos = [];
+  for (const w of mant) {
+    const b = blocos[blocos.length - 1];
+    const k = pos.get(w);
+    if (b && b.ultimo === k - 1 && todas[k - 1].c === w.c && w.s - todas[k - 1].e < 0.30) {
+      b.e = w.e; b.ultimo = k; b.pal.push(w);
+    } else blocos.push({ s: w.s, e: w.e, primeiro: k, ultimo: k, pal: [w] });
+  }
+  let t = 0;
+  const tempo = new Map();
+  for (const b of blocos) {
+    const ant = b.primeiro > 0 ? todas[b.primeiro - 1].e : 0;
+    const prox = b.ultimo + 1 < todas.length ? todas[b.ultimo + 1].s : b.e + 1;
+    b.cs = Math.max(ant + 0.02, b.s - 0.05, 0);
+    b.ce = Math.min(prox - 0.02, b.e + 0.12);
+    b.ns = t;
+    for (const w of b.pal) tempo.set(w, { ns: t + w.s - b.cs, ne: t + w.e - b.cs });
+    t += Math.max(b.ce - b.cs, 0.05) + 0.06;
+  }
+  const total = t + 0.4;
+  // cenas com J/L
+  const inicios = new Map();
+  for (const w of mant) if (w.cena != null && !inicios.has(w.cena)) inicios.set(w.cena, tempo.get(w).ns);
+  const cenas = [...inicios.keys()].sort((a, b) => a - b);
+  const desloc = (p.jl_quadros || 8) / 30;
+  const corte = new Map();
+  cenas.forEach((c, k) => {
+    if (!k) { corte.set(c, 0); return; }
+    const ent = String(p.cenas[c]?.entrada || 'auto').toUpperCase();
+    const tipo = ['J', 'L', 'SECO'].includes(ent) ? ent : (k % 2 ? 'J' : 'L');
+    corte.set(c, inicios.get(c) + (tipo === 'J' ? desloc : tipo === 'L' ? -desloc : 0));
+  });
+  const cortes = [];
+  cenas.forEach((c, k) => {
+    const a = corte.get(c), b = k + 1 < cenas.length ? corte.get(cenas[k + 1]) : total;
+    const midias = (p.cenas[c]?.midias || []).filter((m) => p.banco[m]);
+    const n = Math.max(1, Math.round((b - a) / 1.7));
+    for (let j = 0; j < n; j++) cortes.push({ cena: c, a: a + (b - a) * j / n, b: a + (b - a) * (j + 1) / n, mid: midias[j % Math.max(midias.length, 1)] });
+  });
+  // legenda em blocos + destaques (palavra ou expressão)
+  const marcadas = new Set();
+  const porCena = new Map();
+  for (const w of mant) if (String(w.legenda || '').trim()) { if (!porCena.has(w.cena)) porCena.set(w.cena, []); porCena.get(w.cena).push(w); }
+  for (const [c, seq] of porCena) {
+    const toks = seq.map((w) => normal(w.legenda));
+    for (const frase of p.cenas[c]?.destaques || []) {
+      const alvo = String(frase).split(/\s+/).map(normal).filter(Boolean);
+      for (let k = 0; alvo.length && k + alvo.length <= toks.length; k++) {
+        if (alvo.every((x, i) => toks[k + i] === x)) for (let i = 0; i < alvo.length; i++) marcadas.add(seq[k + i]);
+      }
+    }
+  }
+  const legendas = [];
+  let cur = [];
+  const fecha = () => { if (cur.length) legendas.push(cur); cur = []; };
+  for (const w of mant) {
+    if (!String(w.legenda || '').trim()) continue;
+    const tw = tempo.get(w);
+    const ult = cur[cur.length - 1];
+    if (ult && (w.cena !== ult.cena || tw.ns - tempo.get(ult).ne > 0.6)) fecha();
+    cur.push(w);
+    const txt = cur.map((x) => x.legenda).join(' ');
+    if (cur.length === 3 || /[.,:;?!…]$/.test(w.legenda) || (cur.length === 2 && txt.length > 11)) fecha();
+  }
+  fecha();
+  const legs = legendas.map((b, i) => {
+    const ini = tempo.get(b[0]).ns;
+    const prox = legendas[i + 1];
+    const fimB = tempo.get(b[b.length - 1]).ne;
+    const fim = prox && tempo.get(prox[0]).ns - fimB < 0.6 ? tempo.get(prox[0]).ns : fimB + 0.35;
+    return { ini, fim, partes: b.map((w) => ({ t: w.legenda.replace(/[.,:;…]+$/, '').toUpperCase(), d: marcadas.has(w) })) };
+  });
+  return { blocos, cortes, legs, total, cenas: cenas.map((c) => ({ cena: c, inicio: corte.get(c) })) };
+}
+
+async function carregarAudioPrevia() {
+  if (previa.buf && previa.tag === state.tag) return;
+  const r = await fetch(`/api/status?tag=${encodeURIComponent(state.tag)}&previa=1`, { headers: { 'x-narrado-senha': ls.get(K.senha) } });
+  if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.erro || `Erro ${r.status}`); }
+  previa.ctx = previa.ctx || new AudioContext();
+  previa.buf = await previa.ctx.decodeAudioData(await r.arrayBuffer());
+  previa.tag = state.tag;
+}
+
+let spriteImg = null;
+function imagemSprite() {
+  if (!spriteImg || spriteImg.dataset.src !== state.cenasImg) {
+    spriteImg = new Image(); // sem crossOrigin: só desenhamos (não lemos pixels), então outra origem funciona
+    spriteImg.dataset.src = state.cenasImg;
+    spriteImg.src = state.cenasImg;
+  }
+  return spriteImg;
+}
+
+function desenharPrevia(t) {
+  const p = state.projeto, pl = previa.plano, cv = $('#telaPrevia'), g = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  g.fillStyle = '#0d1013'; g.fillRect(0, 0, W, H);
+  const c = pl.cortes.find((x) => t >= x.a && t < x.b) || pl.cortes[pl.cortes.length - 1];
+  const img = imagemSprite();
+  if (c?.mid && img.complete && img.naturalWidth) {
+    const sp = p.sprite, k = p.banco[c.mid]?.sprite ?? 0;
+    const sx = (k % sp.colunas) * sp.largura, sy = Math.floor(k / sp.colunas) * sp.altura;
+    const z = 1 + 0.06 * Math.min(1, (t - c.a) / Math.max(c.b - c.a, 0.1));
+    const w = W * z, hh = H * z;
+    g.drawImage(img, sx, sy, sp.largura, sp.altura, (W - w) / 2, (H - hh) / 2, w, hh);
+  }
+  // título do gancho
+  if (p.titulo_gancho !== false && p.titulo_tela && t < 2.2) {
+    g.font = '40px Anton'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.lineWidth = 6; g.strokeStyle = '#000'; g.fillStyle = '#fff';
+    const linhas = []; let l = '';
+    for (const pal of p.titulo_tela.toUpperCase().split(/\s+/)) { if (l && (l + ' ' + pal).length > 14) { linhas.push(l); l = pal; } else l = (l + ' ' + pal).trim(); }
+    if (l) linhas.push(l);
+    linhas.slice(0, 3).forEach((tx, i, arr) => {
+      const y = H * 0.25 + (i - (arr.length - 1) / 2) * 46;
+      g.fillStyle = i === arr.length - 1 && arr.length > 1 ? (CORES_LEG[p.legenda_cor] || CORES_LEG.amarelo) : '#fff';
+      g.strokeText(tx, W / 2, y); g.fillText(tx, W / 2, y);
+    });
+  }
+  // legenda
+  const leg = pl.legs.find((x) => t >= x.ini && t < x.fim);
+  if (leg) {
+    const fonte = p.legenda_estilo === 'moderna' ? 'Montserrat' : 'Anton';
+    const peso = p.legenda_estilo === 'moderna' ? '900 ' : '';
+    let tam = p.legenda_estilo === 'moderna' ? 44 : 54;
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    const medir = () => { g.font = `${peso}${tam}px ${fonte}`; return leg.partes.reduce((a, x) => a + g.measureText(x.t + ' ').width, 0); };
+    let larg = medir();
+    while (larg > W - 24 && tam > 20) { tam -= 2; larg = medir(); }
+    const pop = Math.min(1, (t - leg.ini) / 0.09);
+    const esc = 0.75 + 0.25 * pop;
+    const y = H * (p.legenda_altura ?? 0.615);
+    g.save(); g.translate(W / 2, y); g.scale(esc, esc);
+    let x = -larg / 2;
+    const cor = CORES_LEG[p.legenda_cor] || CORES_LEG.amarelo;
+    for (const parte of leg.partes) {
+      const w = g.measureText(parte.t).width;
+      if (p.legenda_estilo === 'caixa' && parte.d) {
+        g.fillStyle = cor; g.fillRect(x - 6, -tam * 0.62, w + 12, tam * 1.2);
+        g.fillStyle = '#000'; g.fillText(parte.t, x, 0);
+      } else {
+        g.lineWidth = Math.max(4, tam * 0.13); g.strokeStyle = '#000'; g.strokeText(parte.t, x, 0);
+        g.fillStyle = parte.d ? cor : '#fff'; g.fillText(parte.t, x, 0);
+      }
+      x += g.measureText(parte.t + ' ').width;
+    }
+    g.restore();
+  }
+  // barra de progresso
+  g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, H - 4, W, 4);
+  g.fillStyle = '#fff'; g.fillRect(0, H - 4, W * Math.min(1, t / pl.total), 4);
+}
+
+function pararPrevia() {
+  previa.tocando = false;
+  cancelAnimationFrame(previa.raf);
+  previa.fontes.forEach((s) => { try { s.stop(); } catch { /* já parou */ } });
+  previa.fontes = [];
+  $('#btnPrevia').textContent = '▶ Prévia rápida';
+  $('#telaPrevia').hidden = true;
+  $('#avisoPrevia').hidden = true;
+  if ($('#player').getAttribute('src') && $('#aguarde').hidden) $('#player').hidden = false;
+  renderLinhaTempo();
+}
+
+async function tocarPrevia(desde = 0) {
+  const btn = $('#btnPrevia');
+  btn.classList.add('busy');
+  try {
+    await carregarAudioPrevia();
+    await Promise.all(['54px Anton', '900 44px Montserrat'].map((f) => document.fonts.load(f).catch(() => null)));
+  } catch (e) { toast(`Prévia indisponível: ${e.message}`, 'warn', 7000); btn.classList.remove('busy'); return; }
+  btn.classList.remove('busy');
+  pararPrevia();
+  $('#player').pause();
+  previa.plano = montarPlano(state.projeto);
+  const ctx = previa.ctx;
+  if (ctx.state === 'suspended') await ctx.resume();
+  const base = ctx.currentTime + 0.12;
+  for (const b of previa.plano.blocos) {
+    const dur = Math.max(b.ce - b.cs, 0.05);
+    if (b.ns + dur <= desde) continue;
+    const pulo = Math.max(0, desde - b.ns);
+    const s = ctx.createBufferSource();
+    s.buffer = previa.buf;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, base + Math.max(b.ns - desde, 0));
+    g.gain.linearRampToValueAtTime(1, base + Math.max(b.ns - desde, 0) + 0.012);
+    s.connect(g).connect(ctx.destination);
+    s.start(base + Math.max(b.ns - desde, 0), b.cs + pulo, dur - pulo);
+    previa.fontes.push(s);
+  }
+  previa.inicio = base;
+  previa.desde = desde;
+  previa.tocando = true;
+  $('#player').hidden = true;
+  $('#telaPrevia').hidden = false;
+  $('#avisoPrevia').hidden = false;
+  btn.textContent = '■ Parar prévia';
+  renderLinhaTempo();
+  const loop = () => {
+    if (!previa.tocando) return;
+    const t = previa.desde + Math.max(0, ctx.currentTime - previa.inicio);
+    desenharPrevia(t);
+    moverCursor(t, previa.plano.total);
+    if (t >= previa.plano.total) { pararPrevia(); return; }
+    previa.raf = requestAnimationFrame(loop);
+  };
+  loop();
+}
+$('#btnPrevia').addEventListener('click', () => (previa.tocando ? pararPrevia() : tocarPrevia(0)));
+
+/* ---------------- linha do tempo (vídeo final ou prévia) ---------------- */
+function renderLinhaTempo() {
+  const p = state.projeto, box = $('#linhaTempo');
+  if (!p) { box.hidden = true; return; }
+  const usarPrevia = previa.tocando && previa.plano;
+  const total = usarPrevia ? previa.plano.total : (p.duracao || 0);
+  const faixas = usarPrevia
+    ? previa.plano.cenas.map((c, i, arr) => ({ cena: c.cena, inicio: c.inicio, fim: arr[i + 1]?.inicio ?? total, mid: p.cenas[c.cena]?.midias?.[0] }))
+    : (p.timeline || []).map((t) => ({ cena: t.cena, inicio: t.inicio, fim: t.fim, mid: t.cortes?.[0] }));
+  if (!total || !faixas.length) { box.hidden = true; return; }
+  const sp = p.sprite;
+  const linhas = Math.ceil(Object.keys(p.banco).length / sp.colunas);
+  const blocos = faixas.map((f) => {
+    const k = p.banco[f.mid]?.sprite ?? 0;
+    const col = k % sp.colunas, lin = Math.floor(k / sp.colunas);
+    return h('button', {
+      class: 'lt-cena', title: `Tópico ${f.cena + 1} · ${fmtT(f.inicio)}`,
+      style: {
+        width: `${((f.fim - f.inicio) / total) * 100}%`,
+        backgroundImage: state.cenasImg ? `url("${state.cenasImg}")` : 'none',
+        backgroundSize: `${sp.colunas * 100}% ${linhas * 100}%`,
+        backgroundPosition: `${sp.colunas > 1 ? (col / (sp.colunas - 1)) * 100 : 0}% ${linhas > 1 ? (lin / (linhas - 1)) * 100 : 0}%`,
+      },
+      onclick: (e) => {
+        const r = box.getBoundingClientRect();
+        pularPara(((e.clientX - r.left) / r.width) * total);
+      },
+    }, h('span', {}, `T${f.cena + 1}`));
+  });
+  box.replaceChildren(h('div', { class: 'lt-faixa' }, ...blocos), h('i', { class: 'lt-cursor', id: 'ltCursor' }));
+  box.hidden = false;
+}
+function moverCursor(t, total) {
+  const c = $('#ltCursor');
+  if (c && total) c.style.left = `${Math.min(100, (t / total) * 100)}%`;
+}
+function pularPara(t) {
+  if (previa.tocando) { tocarPrevia(Math.max(0, t)); return; }
+  const v = $('#player');
+  if (!v.getAttribute('src')) return;
+  v.currentTime = Math.max(0, t);
+  v.play().catch(() => {});
+}
+$('#player').addEventListener('timeupdate', () => { if (!previa.tocando && state.projeto) moverCursor($('#player').currentTime, state.projeto.duracao || 0); });
 
 /* ---------------- meus vídeos / novo / configurações ---------------- */
 $('#menuVideos').addEventListener('toggle', async (e) => {
@@ -760,6 +1320,7 @@ window.addEventListener('beforeunload', (e) => {
     if (r.materia) { $('#urlMateria').value = r.materia.url || ''; $('#textoMateria').value = r.materia.texto || ''; }
   }
   atualizaBotaoRoteiro();
+  renderLote();
   if (tagUrl) { abrirVideo(tagUrl); return; }
   if (r?.passo === 'video' && r.tag) { abrirVideo(r.tag); return; }
   // a gravação não sobrevive a um recarregamento: volta no máximo para a voz

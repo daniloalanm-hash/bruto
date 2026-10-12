@@ -1,6 +1,7 @@
 // GET /api/status?tag=narrado-...           -> andamento do render + links dos arquivos prontos
 // GET /api/status?tag=narrado-...&projeto=1 -> conteúdo do projeto.json (para a tela de revisão)
 // GET /api/status?lista=1                   -> vídeos já feitos (mais recentes primeiro)
+// GET /api/status?tag=narrado-...&previa=1  -> MP3 leve da gravação (bytes), para a prévia instantânea na tela
 const { gh, REPO, releasePorTag, lerAsset, checarSenha, responder, httpError } = require('./_gh');
 
 module.exports = (req, res) => responder(res, async () => {
@@ -23,6 +24,21 @@ module.exports = (req, res) => responder(res, async () => {
   if (!/^narrado-[a-z0-9]+$/.test(tag)) throw httpError(400, 'Vídeo inválido.');
   const rel = await releasePorTag(tag);
   const asset = (nome) => rel.assets.find((a) => a.name === nome);
+
+  if (q.previa) {
+    const a = asset('voz_previa.mp3');
+    if (!a) throw httpError(404, 'A prévia ainda não está disponível para este vídeo (gere uma nova versão).');
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/assets/${a.id}`, {
+      headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/octet-stream', 'User-Agent': 'bruto' },
+      redirect: 'follow',
+    });
+    if (!r.ok) throw httpError(502, `Não consegui ler a prévia (${r.status}).`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.end(buf);
+    return undefined;
+  }
 
   if (q.projeto) {
     const a = asset('projeto.json');
@@ -47,5 +63,6 @@ module.exports = (req, res) => responder(res, async () => {
     video: link('final.mp4'),
     cenas: link('cenas.jpg'),
     temProjeto: !!asset('projeto.json'),
+    temPrevia: !!asset('voz_previa.mp3'),
   };
 });

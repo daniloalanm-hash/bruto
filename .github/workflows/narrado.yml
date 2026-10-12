@@ -65,16 +65,23 @@ jobs:
       - name: Instalar ffmpeg e dependências
         run: |
           # ffmpeg (corte, voz, render) e tesseract (descarta trechos de trailer com texto na tela)
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr tesseract-ocr-eng
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr tesseract-ocr-eng fonts-noto-color-emoji
           pip install -q -r narrado/requirements.txt
 
       - name: Baixar o pedido da tela
         run: |
-          gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" || true
+          gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" -p "cenas.jpg" -p "pm-*" || true
           # o áudio chega em partes (limite de upload do Vercel); junta de volta
           if ls job/voz.part* >/dev/null 2>&1; then
             nome=$(python -c "import json;print(json.load(open('job/job.json'))['voz']['arquivo'])")
             cat $(ls job/voz.part* | sort -V) > "job/$nome"
+          fi
+          # imagens/clipes enviados pela tela: pm-<id>.<ext>.partNNN -> job/proprias/pm-<id>.<ext>
+          if ls job/pm-*.part* >/dev/null 2>&1; then
+            mkdir -p job/proprias
+            for base in $(ls job/pm-*.part* | sed 's/\.part[0-9]*$//' | sort -u); do
+              cat $(ls "$base".part* | sort -V) > "job/proprias/$(basename "$base")"
+            done
           fi
           ls -la job
 

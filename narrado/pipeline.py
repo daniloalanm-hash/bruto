@@ -18,7 +18,7 @@ import assets  # noqa: E402
 import fala  # noqa: E402
 import render  # noqa: E402
 import voz  # noqa: E402
-from comum import Status, ffmpeg, gravar, ler, norm  # noqa: E402
+from comum import Status, duracao, ffmpeg, gravar, ler, norm  # noqa: E402
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 RAW = os.environ.get("NARRADO_RAW", os.path.join(RAIZ, "..", ".narrado-cache", "raw"))
@@ -48,6 +48,21 @@ def chave_do_jogo(nome, jogos):
         if norm(nome) in norm(j["nome"]) or norm(j["nome"]) in norm(nome):
             return j["chave"]
     return None
+
+
+# aparência padrão de um vídeo novo (a tela pode mudar cada uma; o job pode trazer as preferências salvas)
+ESTILO_PADRAO = {
+    "jl_quadros": 8, "transicao_gancho": "pan", "legenda_estilo": "classico", "legenda_cor": "amarelo",
+    "legenda_altura": 0.615, "sfx": True, "zoom_enfase": True, "emoji": True,
+}
+
+
+def impacto_plano(banco):
+    """Nota de impacto de um trecho: movimento entre quadros, cor e duração suficiente para o gancho."""
+    def nota(mid):
+        m = banco[mid]
+        return (m.get("mov", 0) + 1) * (1 + m.get("sat", 30) / 60) * (1 if m.get("dur", 0) >= 2 else 0.6)
+    return nota
 
 
 def planejar(cenas, banco, jogos):
@@ -81,10 +96,14 @@ def planejar(cenas, banco, jogos):
             c["midias"] = []
             continue
         escolha = []
-        if k == 0:  # gancho: abre com uma imagem limpa (screenshot) do jogo principal
-            img = next((m for m in f["seq"] if banco[m]["tipo"] == "i"), None)
-            if img:
-                escolha.append(img)
+        if k == 0:  # gancho: abre com o plano de trailer mais impactante (movimento + cor) do jogo
+            vids = [m for m in f["seq"] if banco[m]["tipo"] == "v"]
+            if vids:
+                escolha.append(max(vids, key=impacto_plano(banco)))
+            else:
+                img = next((m for m in f["seq"] if banco[m]["tipo"] == "i"), None)
+                if img:
+                    escolha.append(img)
         while len(escolha) < 6:
             m = f["seq"][f["pos"] % len(f["seq"])]
             f["pos"] += 1
@@ -106,13 +125,14 @@ def garantir_assets(nomes):
         except Exception as e:
             print(f"aviso: falhou ao buscar '{nome}': {e}")
     if not jogos:
-        raise RuntimeError("Não encontrei material na Steam para nenhum dos jogos do roteiro.")
+        raise RuntimeError("Não encontrei material (Steam, App Store ou YouTube) para nenhum dos jogos do roteiro.")
     return jogos
 
 
 def preparar(pasta, st):
     job = ler(os.path.join(pasta, "job.json"))
-    cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto")}
+    cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto"),
+              **({"emoji": c["emoji"]} if c.get("emoji") else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes = job.get("jogos") or [c["assunto"] for c in cenas if c.get("assunto")]
     nomes = list(dict.fromkeys(n for n in nomes if n))
@@ -148,7 +168,13 @@ def preparar(pasta, st):
         "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
         "nomes_busca": nomes, "cenas": cenas, "palavras": palavras, "faltando": faltando,
         "banco": banco, "sprite": sprite,
+        # aparência (a tela permite mudar e re-renderizar)
+        "titulo_tela": (job.get("titulo_tela") or "").strip(), "titulo_gancho": bool(job.get("titulo_tela")),
+        "post": job.get("post") or {},
+        **{k: job[k] for k in ESTILO_PADRAO if k in job},
     }
+    for k, v in ESTILO_PADRAO.items():
+        projeto.setdefault(k, v)
     finalizar(pasta, projeto, audio, st, 62)
 
 
@@ -174,7 +200,49 @@ def rerender(pasta, st):
     finalizar(pasta, projeto, os.path.join(pasta, projeto["voz"]["arquivo"]), st, 20)
 
 
+def integrar_proprias(pasta, projeto):
+    """Imagens/clipes enviados pela tela (job/proprias/) entram no banco e na cena escolhida."""
+    import shutil
+    novas = False
+    for item in projeto.get("proprias", []):
+        mid = f"proprio_{item['id']}"
+        orig = os.path.join(pasta, "proprias", item["arquivo"])
+        destino = os.path.join(RAW, item["arquivo"])
+        if not os.path.exists(destino):
+            if not os.path.exists(orig):
+                print(f"aviso: mídia enviada {item['arquivo']} não chegou")
+                continue
+            os.makedirs(RAW, exist_ok=True)
+            shutil.copy(orig, destino)
+        if mid not in projeto["banco"]:
+            ent = {"tipo": item.get("tipo", "i"), "jogo": "proprio", "arquivo": item["arquivo"], "proprio": True,
+                   "nome": item.get("nome", "")}
+            if ent["tipo"] == "v":
+                ent.update({"t": 0.0, "dur": round(duracao(destino), 2)})
+            projeto["banco"][mid] = ent
+            novas = True
+        cena = item.get("cena")
+        if isinstance(cena, int) and 0 <= cena < len(projeto["cenas"]) and not item.get("aplicada"):
+            midias = projeto["cenas"][cena].setdefault("midias", [])
+            if mid not in midias:
+                midias.insert(0, mid)
+            item["aplicada"] = True
+    if novas or not os.path.exists(os.path.join(pasta, "cenas.jpg")):
+        try:
+            projeto["sprite"] = assets.sprite(projeto["banco"], RAW, os.path.join(pasta, "cenas.jpg"))
+        except Exception as e:
+            print(f"aviso: miniaturas não atualizadas: {e}")
+
+
+def voz_previa(audio, pasta):
+    """MP3 leve da gravação inteira: a tela usa para a prévia instantânea (corta as falas no navegador)."""
+    destino = os.path.join(pasta, "voz_previa.mp3")
+    ffmpeg("-i", audio, "-ac", 1, "-ar", 24000, "-c:a", "libmp3lame", "-b:a", "48k", destino)
+    return destino
+
+
 def finalizar(pasta, projeto, audio, st, p0):
+    integrar_proprias(pasta, projeto)
     st.etapa("Tratando a voz", p0)
     escolha = projeto["voz"].get("reducao_ruido", "auto")
     forcar = None if escolha == "auto" else escolha == "sim"
@@ -196,7 +264,12 @@ def finalizar(pasta, projeto, audio, st, p0):
     pub = publicador()
     if pub:
         st.etapa("Publicando o vídeo", 97)
-        arquivos = [os.path.join(pasta, x) for x in ("final.mp4", "projeto.json", "cenas.jpg", "voz_ia.mp3")
+        try:
+            voz_previa(audio_limpo(audio), pasta)
+        except Exception as e:
+            print(f"aviso: prévia de voz não gerada: {e}")
+        arquivos = [os.path.join(pasta, x) for x in ("final.mp4", "projeto.json", "cenas.jpg", "voz_ia.mp3",
+                                                     "voz_previa.mp3")
                     if os.path.exists(os.path.join(pasta, x))]
         pub(*arquivos)
     st.pronto({"versao": projeto["versao"], "duracao": projeto["duracao"]})

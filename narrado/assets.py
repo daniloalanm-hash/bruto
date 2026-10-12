@@ -37,14 +37,28 @@ def achar_jogo(nome):
         extra = 0.25 if re.search(r"soundtrack|dlc|pack|expansion|season pass|demo", i["name"], re.I) else 0
         return SequenceMatcher(None, alvo, n).ratio() - extra
     melhor = max(itens, key=nota)
+    if nota(melhor) < 0.5:  # nada parecido na Steam (ex.: jogo só de celular): deixa as outras fontes tentarem
+        return None
     return melhor["id"], melhor["name"]
 
 
-def baixar_jogo(nome, pasta):
-    """Baixa screenshots e trailers de um jogo. Devolve dict com o que foi obtido."""
+def _baixar_trailer(src, p):
+    """Baixa os primeiros TRECHO_MAX s de um trailer (cópia direta; se o contêiner não aceitar, reencoda)."""
+    if os.path.exists(p):
+        return True
+    try:
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-c:v", "copy", "-movflags", "+faststart", p)
+        if duracao(p) < 3:
+            raise RuntimeError("curto")
+    except Exception:
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:1080",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+    return os.path.exists(p)
+
+
+def _steam(nome, pasta):
     achado = achar_jogo(nome)
     if not achado:
-        print(f"aviso: '{nome}' não encontrado na Steam")
         return None
     appid, oficial = achado
     d = json.loads(_get(f"https://store.steampowered.com/api/appdetails?appids={appid}&l=portuguese"))[str(appid)]
@@ -52,8 +66,7 @@ def baixar_jogo(nome, pasta):
         return None
     d = d["data"]
     chave = slug(oficial)
-    info = {"chave": chave, "nome": oficial, "appid": appid, "screens": [], "trailers": []}
-    os.makedirs(pasta, exist_ok=True)
+    info = {"chave": chave, "nome": oficial, "appid": appid, "fonte": "Steam", "screens": [], "trailers": []}
     for i, s in enumerate(d.get("screenshots", [])[:MAX_SCREENSHOTS]):
         p = os.path.join(pasta, f"{chave}_s{i}.jpg")
         if not os.path.exists(p):
@@ -70,16 +83,97 @@ def baixar_jogo(nome, pasta):
         if not src:
             continue
         p = os.path.join(pasta, f"{chave}_t{i}.mp4")
-        if not os.path.exists(p):
-            try:  # cópia direta é rápida; se o contêiner não aceitar, reencoda
-                ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-c:v", "copy", "-movflags", "+faststart", p)
-                if duracao(p) < 3:
-                    raise RuntimeError("curto")
-            except Exception:
-                ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:1080",
-                       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", p)
-        info["trailers"].append({"arquivo": p, "nome": m.get("name", "")})
-    print(f"{oficial}: {len(info['screens'])} imagens, {len(info['trailers'])} trailers")
+        try:
+            if _baixar_trailer(src, p):
+                info["trailers"].append({"arquivo": p, "nome": m.get("name", "")})
+        except Exception as e:
+            print(f"aviso: trailer {i} de {oficial} falhou: {e}")
+    return info
+
+
+def _app_store(nome, pasta):
+    """Jogos de celular: screenshots da App Store (API pública do iTunes, sem chave)."""
+    q = urllib.parse.quote(nome)
+    dados = json.loads(_get(f"https://itunes.apple.com/search?term={q}&entity=software&country=br&limit=10"))
+    itens = [r for r in dados.get("results", []) if "Games" in (r.get("genres") or []) or
+             r.get("primaryGenreName") == "Games"]
+    if not itens:
+        return None
+    alvo = norm(nome)
+    melhor = max(itens, key=lambda r: SequenceMatcher(None, alvo, norm(r.get("trackName", ""))).ratio())
+    if SequenceMatcher(None, alvo, norm(melhor.get("trackName", ""))).ratio() < 0.45:
+        return None
+    oficial = melhor["trackName"]
+    chave = slug(oficial)
+    info = {"chave": chave, "nome": oficial, "appid": f"ios-{melhor.get('trackId')}", "fonte": "App Store",
+            "screens": [], "trailers": []}
+    urls = (melhor.get("screenshotUrls") or []) + (melhor.get("ipadScreenshotUrls") or [])
+    for i, u in enumerate(urls[:MAX_SCREENSHOTS]):
+        p = os.path.join(pasta, f"{chave}_a{i}.jpg")
+        try:
+            if not os.path.exists(p):
+                with open(p, "wb") as f:
+                    f.write(_get(u))
+            info["screens"].append(p)
+        except Exception as e:
+            print(f"aviso: screenshot da App Store falhou: {e}")
+    return info if info["screens"] else None
+
+
+def _youtube(nome, chave, pasta, n=2):
+    """Trailer oficial no YouTube (yt-dlp). Melhor esforço: o YouTube às vezes bloqueia servidores."""
+    import shutil
+    import subprocess
+    if not shutil.which("yt-dlp"):
+        return []
+    saida = []
+    for i in range(n):
+        p = os.path.join(pasta, f"{chave}_y{i}.mp4")
+        if os.path.exists(p):
+            saida.append({"arquivo": p, "nome": "YouTube"})
+            continue
+        tmp = os.path.join(pasta, f"{chave}_y{i}.tmp")
+        try:
+            r = subprocess.run(
+                ["yt-dlp", f"ytsearch{n}:{nome} trailer oficial", "--playlist-items", str(i + 1),
+                 "--match-filter", "duration < 900", "-f", "bv*[height<=1080][ext=mp4]/bv*[height<=1080]",
+                 "--download-sections", f"*0-{TRECHO_MAX}", "--no-playlist", "--quiet", "--no-warnings",
+                 "-o", tmp + ".%(ext)s"], capture_output=True, text=True, timeout=240)
+            baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))), None)
+            if r.returncode != 0 or not baixado:
+                print(f"aviso: YouTube não liberou o trailer de {nome}: {(r.stderr or '').strip()[-200:]}")
+                break
+            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+            os.remove(baixado)
+            saida.append({"arquivo": p, "nome": "YouTube"})
+        except Exception as e:
+            print(f"aviso: YouTube falhou para {nome}: {e}")
+            break
+    return saida
+
+
+def baixar_jogo(nome, pasta):
+    """Material oficial do jogo: Steam; se não tiver (ou não tiver trailer), App Store e YouTube."""
+    os.makedirs(pasta, exist_ok=True)
+    info = None
+    try:
+        info = _steam(nome, pasta)
+    except Exception as e:
+        print(f"aviso: Steam falhou para '{nome}': {e}")
+    if not info:
+        try:
+            info = _app_store(nome, pasta)
+        except Exception as e:
+            print(f"aviso: App Store falhou para '{nome}': {e}")
+    if not info:
+        info = {"chave": slug(nome), "nome": nome, "appid": None, "fonte": "YouTube", "screens": [], "trailers": []}
+    if not info["trailers"]:
+        info["trailers"] = _youtube(info["nome"], info["chave"], pasta)
+    if not info["screens"] and not info["trailers"]:
+        print(f"aviso: nenhum material encontrado para '{nome}'")
+        return None
+    print(f"{info['nome']} ({info['fonte']}): {len(info['screens'])} imagens, {len(info['trailers'])} trailers")
     return info
 
 
@@ -158,6 +252,14 @@ def _palavras_fortes(tsv):
     return fortes, grandes
 
 
+def movimento(video, t, dur=1.0):
+    """Quanto a imagem muda entre quadros (média do YDIF): mede a "energia" do plano para o gancho."""
+    r = run(["ffmpeg", "-hide_banner", "-ss", f"{max(t, 0):.2f}", "-i", video, "-t", f"{dur:.2f}", "-vf",
+             "scale=320:-2,signalstats,metadata=print:key=lavfi.signalstats.YDIF", "-f", "null", "-"])
+    v = [float(x) for x in re.findall(r"YDIF=([\d.]+)", r.stderr)]
+    return round(sum(v) / len(v), 2) if v else 0.0
+
+
 def tem_texto(origem, t=None, limite=2):
     """True se a parte que aparece no vídeo (centro 9:16) tiver texto: cartela de trailer, legenda, menu.
 
@@ -208,7 +310,8 @@ def trechos_bons(video):
         # cartela ("EXPANDED PHOTO MODE"), legenda ou interface: confere começo, meio e fim do plano
         if any(tem_texto(video, x) for x in (a2 + 0.3, meio, b2 - 0.3)):
             continue
-        candidatos.append({"t": round(a2, 2), "dur": round(b2 - a2, 2), "y": y, "s": s})
+        candidatos.append({"t": round(a2, 2), "dur": round(b2 - a2, 2), "y": y, "s": s,
+                           "mov": movimento(video, meio - 0.5)})
     # prioriza planos mais longos e coloridos, mantendo a ordem do trailer
     candidatos.sort(key=lambda c: -(min(c["dur"], 4) + c["s"] / 40))
     escolhidos = sorted(candidatos[:MAX_SHOTS_POR_TRAILER], key=lambda c: c["t"])
@@ -220,6 +323,7 @@ def montar_banco(jogos_info, pasta_thumbs):
     os.makedirs(pasta_thumbs, exist_ok=True)
     banco = {}
     for j in jogos_info:
+        antes = len(banco)
         for i, p in enumerate(j["screens"]):
             if tem_texto(p, limite=4):
                 continue  # screenshot de mapa/menu/legenda
@@ -229,7 +333,10 @@ def montar_banco(jogos_info, pasta_thumbs):
             for c in trechos_bons(t["arquivo"]):
                 mid = f"{j['chave']}_t{ti}_{int(c['t'] * 10)}"
                 banco[mid] = {"tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
-                              "t": c["t"], "dur": c["dur"]}
+                              "t": c["t"], "dur": c["dur"], "mov": c.get("mov", 0), "sat": round(c["s"], 1)}
+        if len(banco) == antes:  # tudo tinha texto (ex.: screenshots de loja com chamada): melhor isso que nada
+            for i, p in enumerate(j["screens"][:6]):
+                banco[f"{j['chave']}_s{i}"] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p)}
     return banco
 
 
@@ -245,7 +352,7 @@ def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):
         m = banco[mid]
         src = os.path.join(pasta_raw, m["arquivo"])
         out = os.path.join(tmp, f"{k:04d}.jpg")
-        vf = f"crop=ih*9/16:ih,scale={tw}:{th}"
+        vf = f"crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale={tw}:{th}"
         if m["tipo"] == "v":
             ffmpeg("-ss", m["t"] + min(m["dur"] / 2, 1.0), "-i", src, "-frames:v", 1, "-vf", vf, "-q:v", 4, out)
         else:
