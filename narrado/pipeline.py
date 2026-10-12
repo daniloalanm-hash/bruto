@@ -104,6 +104,7 @@ def planejar(cenas, banco, jogos):
                 img = next((m for m in f["seq"] if banco[m]["tipo"] == "i"), None)
                 if img:
                     escolha.append(img)
+        inicio = f["pos"]
         while len(escolha) < 6:
             m = f["seq"][f["pos"] % len(f["seq"])]
             f["pos"] += 1
@@ -111,6 +112,10 @@ def planejar(cenas, banco, jogos):
                 escolha.append(m)
             if len(escolha) >= len(f["seq"]):
                 break
+        # o próximo tópico continua de onde este parou de verdade (≈ cortes que ele usa), e não 6 adiante:
+        # com pouco material (ex.: jogo de celular com 6 imagens), cada tópico abre com uma imagem diferente
+        cortes = max(1, round(len(c.get("texto", "").split()) / 2.6 / 1.7))
+        f["pos"] = inicio + min(cortes, len(escolha))
         c["midias"] = escolha
     return cenas
 

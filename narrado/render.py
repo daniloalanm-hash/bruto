@@ -103,7 +103,16 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
 
 
-def seg_imagem(src, dur, out, k, trans, encaixar=False):
+def _recorte(m):
+    """Filtro de recorte vertical (faixa sem texto) para screenshots de loja."""
+    rc = m.get("recorte") if m else None
+    if not rc:
+        return ""
+    y0, y1 = float(rc[0]), float(rc[1])
+    return f"crop=iw:ih*{y1 - y0:.4f}:0:ih*{y0:.4f},"
+
+
+def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
     n = max(1, int(round(dur * FPS)))
     if encaixar:
         # print/foto inteira (sem cortar as laterais) sobre fundo desfocado da própria imagem
@@ -119,7 +128,7 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False):
     pans = ["x='iw/2-(iw/zoom/2)'", f"x='(iw-iw/zoom)*on/{n}'", f"x='(iw-iw/zoom)*(1-on/{n})'"]
     punch = f"+{PUNCH[trans]}*max(0\\,1-on/{int(TRANS * FPS)})" if trans in PUNCH else ""
     # cobre 1350x2400 (paisagem ou retrato, ex.: screenshot de celular) e faz o Ken Burns
-    vf = (f"scale=1350:2400:force_original_aspect_ratio=increase,crop=1350:2400,"
+    vf = (f"{pre}scale=1350:2400:force_original_aspect_ratio=increase,crop=1350:2400,"
           f"zoompan=z='1.05+0.10*on/{n}{punch}':{pans[k % 3]}:y='ih/2-(ih/zoom/2)':d={n}:s={W}x{H}:fps={FPS},"
           f"setsar=1,eq=contrast=1.05:saturation=1.1" + _fx_transicao(trans))
     ffmpeg("-loop", 1, "-i", src, "-frames:v", n, "-vf", vf,
@@ -414,7 +423,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             elif m["tipo"] == "v":
                 seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)
             else:
-                seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio")))
+                seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio")), pre=_recorte(m))
             usados_cena[-1]["cortes"].append(mid)
             lista.append(out)
             k += 1

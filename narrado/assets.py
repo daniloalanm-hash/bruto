@@ -236,6 +236,37 @@ def _fracao_texto_east(png):
     return float((s >= 0.8).mean())
 
 
+def faixa_sem_texto(png, min_altura=0.45):
+    """Maior faixa vertical da imagem sem texto (EAST), em frações (y0, y1). Usada nos screenshots de loja,
+    que têm chamadas de marketing em cima/embaixo. None se não sobrar faixa útil."""
+    rede = _rede_east()
+    if rede is None:
+        return None
+    import cv2
+    import numpy as np
+    img = cv2.imread(png)
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    nw = 384
+    nh = max(32, int(round(h * nw / w / 32)) * 32)
+    blob = cv2.dnn.blobFromImage(cv2.resize(img, (nw, nh)), 1.0, (nw, nh), (123.68, 116.78, 103.94), True, False)
+    rede.setInput(blob)
+    sc = rede.forward("feature_fusion/Conv_7/Sigmoid")[0, 0]
+    linhas = (sc >= 0.8).sum(axis=1) >= 2           # linha (de 4 px) com texto
+    linhas = np.convolve(linhas.astype(float), np.ones(15), mode="same") > 0  # margem (~3%) em volta do texto
+    melhor, ini = (0, 0), None
+    for i, t in enumerate(list(linhas) + [True]):
+        if not t and ini is None:
+            ini = i
+        elif t and ini is not None:
+            if i - ini > melhor[1] - melhor[0]:
+                melhor = (ini, i)
+            ini = None
+    y0, y1 = melhor[0] / len(linhas), melhor[1] / len(linhas)
+    return (round(y0, 3), round(y1, 3)) if y1 - y0 >= min_altura else None
+
+
 def _palavras_fortes(tsv):
     """Palavras que o Tesseract leu com segurança (descarta o "ruído" de folhagem, fagulhas etc.)."""
     fortes, grandes = 0, 0
@@ -324,7 +355,15 @@ def montar_banco(jogos_info, pasta_thumbs):
     banco = {}
     for j in jogos_info:
         antes = len(banco)
+        loja = j.get("fonte") == "App Store"
         for i, p in enumerate(j["screens"]):
+            if loja:
+                # screenshot de loja: usa só a faixa sem a chamada de marketing
+                faixa = faixa_sem_texto(p)
+                if faixa:
+                    banco[f"{j['chave']}_s{i}"] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p),
+                                                   "recorte": list(faixa)}
+                continue
             if tem_texto(p, limite=4):
                 continue  # screenshot de mapa/menu/legenda
             mid = f"{j['chave']}_s{i}"
@@ -356,7 +395,9 @@ def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):
         if m["tipo"] == "v":
             ffmpeg("-ss", m["t"] + min(m["dur"] / 2, 1.0), "-i", src, "-frames:v", 1, "-vf", vf, "-q:v", 4, out)
         else:
-            ffmpeg("-i", src, "-frames:v", 1, "-vf", vf, "-q:v", 4, out)
+            rc = m.get("recorte")
+            pre = f"crop=iw:ih*{rc[1] - rc[0]:.4f}:0:ih*{rc[0]:.4f}," if rc else ""
+            ffmpeg("-i", src, "-frames:v", 1, "-vf", pre + vf, "-q:v", 4, out)
         with Image.open(out) as im:
             folha.paste(im.convert("RGB").resize((tw, th)), ((k % col) * tw, (k // col) * th))
         m["sprite"] = k
