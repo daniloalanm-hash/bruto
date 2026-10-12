@@ -7,6 +7,7 @@ Na pasta do job: job.json (vem da tela), o áudio enviado e, no re-render, o pro
 Saídas na mesma pasta: final.mp4, projeto.json, cenas.jpg, status.json.
 """
 import os
+import re
 import subprocess
 import sys
 import traceback
@@ -65,6 +66,23 @@ def impacto_plano(banco):
     return nota
 
 
+_GENERICAS = {"tom", "clancys", "the", "of", "edition", "remastered", "remaster", "mobile", "online", "game",
+              "games", "definitive", "deluxe", "complete", "goty", "2", "3", "4", "ii", "iii", "iv"}
+
+
+def mesma_franquia(a, b):
+    """Dois nomes da mesma franquia: dividem pelo menos 2 palavras relevantes (ou 1 bem longa)."""
+    pa = {w for w in re.findall(r"[a-z0-9]+", norm_txt(a)) if w not in _GENERICAS}
+    pb = {w for w in re.findall(r"[a-z0-9]+", norm_txt(b)) if w not in _GENERICAS}
+    comuns = pa & pb
+    return len(comuns) >= 2 or any(len(w) >= 7 for w in comuns)
+
+
+def norm_txt(s):
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(s or "").lower()) if unicodedata.category(c) != "Mn").replace("'", "")
+
+
 def planejar(cenas, banco, jogos):
     """Cada cena usa material do jogo de que ela fala; cenas gerais usam o jogo principal.
 
@@ -88,6 +106,27 @@ def planejar(cenas, banco, jogos):
             if im:
                 seq.append(im.pop(0))
         fila[j["chave"]] = {"seq": seq, "pos": 0}
+    # jogo com pouco material (ex.: versão de celular só com 2 screenshots) é completado com o de um jogo
+    # da mesma franquia que está no vídeo (Rainbow Six Mobile ← Rainbow Six Siege). Jogo de outra
+    # franquia continua nunca aparecendo fora da hora.
+    for j in jogos:
+        proprio = fila[j["chave"]]["seq"]
+        n_vid = sum(1 for m in proprio if banco[m]["tipo"] == "v")
+        if n_vid >= 2 and len(proprio) >= 6:
+            continue
+        extra = []
+        for o in jogos:
+            if o["chave"] != j["chave"] and mesma_franquia(j["nome"], o["nome"]):
+                extra += [m for m in fila[o["chave"]]["seq"] if banco[m]["tipo"] == "v"] or fila[o["chave"]]["seq"]
+        if extra:
+            mix, a, b = [], list(proprio), list(extra)
+            while a or b:  # 1 do próprio jogo : 2 da franquia
+                if a:
+                    mix.append(a.pop(0))
+                for _ in range(2):
+                    if b:
+                        mix.append(b.pop(0))
+            fila[j["chave"]]["seq"] = mix
     materia = [m for m, d in banco.items() if d.get("jogo") == "materia"]
     for k, c in enumerate(cenas):
         ch = chaves[k] or principal
