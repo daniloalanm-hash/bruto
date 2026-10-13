@@ -132,8 +132,30 @@ def _alinha_trecho(S, C, esperado):
     return melhor
 
 
+PALAVRAS_LIGACAO = {
+    "e", "o", "a", "os", "as", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "um", "uma",
+    "que", "se", "por", "pra", "para", "com", "ao", "aos", "mas", "ou", "eh", "ah", "tipo", "ja", "nao",
+}
+ALUCINACAO = re.compile(r"legendas pela comunidade|amara\.org|obrigad[oa] por assistir|inscreva-se no canal|"
+                        r"legendado por|transcri[cç][aã]o por", re.I)
+
+
+def juntar_hifens(palavras):
+    """O Whisper separa palavra com hífen ("quinta" + "-feira", "E" + "-Day"): junta de volta."""
+    saida = []
+    for w in palavras:
+        ant = saida[-1] if saida else None
+        if ant and w["w"].startswith("-") and ant["c"] == w["c"] and w["s"] - ant["e"] < 0.35:
+            ant["w"] = ant["w"].rstrip(",.") + w["w"]
+            ant["e"] = w["e"]
+            continue
+        saida.append(dict(w))
+    return saida
+
+
 def editar(palavras, cenas, nomes=()):
     """Decide o que fica (última tomada de cada parte), a cena de cada palavra e o texto da legenda."""
+    palavras = juntar_hifens(palavras)
     S = tokens_roteiro(cenas)
     por_trecho = {}
     for i, w in enumerate(palavras):
@@ -161,10 +183,16 @@ def editar(palavras, cenas, nomes=()):
         C = [norm(w["w"]) for w in ws]
         if not any(C):
             continue
+        if ALUCINACAO.search(" ".join(w["w"] for w in ws)):
+            continue  # o Whisper "inventa" isso em trechos de silêncio
         p, nota, ops, _ = _alinha_trecho(S, C, esperado)
         iguais = sum(i2 - i1 for tag, i1, i2, j1, j2 in ops if tag == "equal") if ops else 0
-        if nota < 0.42 or iguais < 2:
-            continue  # comentário fora do roteiro, ruído ou teste de microfone
+        # palavras de conteúdo que bateram (não conta "e", "o", "de"...): tentativa que parou no começo
+        # ("E o…") não pode valer como a última tomada daquele trecho e derrubar a tomada completa
+        conteudo = sum(1 for tag, i1, i2, j1, j2 in (ops or []) if tag == "equal"
+                       for k in range(j1, j2) if C[k] not in PALAVRAS_LIGACAO and (len(C[k]) >= 3 or C[k].isdigit()))
+        if nota < 0.42 or iguais < 2 or conteudo < 1:
+            continue  # comentário fora do roteiro, ruído, teste de microfone ou começo abandonado
         validos.add(c)
         ultimo_op = len(ops) - 1
         for oi, (tag, i1, i2, j1, j2) in enumerate(ops):

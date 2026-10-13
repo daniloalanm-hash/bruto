@@ -196,18 +196,44 @@ def planejar(cenas, banco, jogos):
     return cenas
 
 
-def garantir_assets(nomes, permitir_vazio=False):
-    jogos = []
-    for nome in nomes:
+def garantir_assets(nomes, permitir_vazio=False, trailers=None):
+    """Baixa o material de cada jogo em paralelo (rede, não CPU). trailers: {nome: máximo de trailers}."""
+    from concurrent.futures import ThreadPoolExecutor
+    trailers = trailers or {}
+
+    def um(nome):
         try:
-            info = assets.baixar_jogo(nome, RAW)
-            if info:
-                jogos.append(info)
+            return assets.baixar_jogo(nome, RAW, trailers.get(nome, assets.MAX_TRAILERS))
         except Exception as e:
-            print(f"aviso: falhou ao buscar '{nome}': {e}")
+            print(f"aviso: falhou ao buscar '{nome}': {e}", flush=True)
+            return None
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        jogos = [j for j in ex.map(um, nomes) if j]
     if not jogos and not permitir_vazio:
         raise RuntimeError("Não encontrei material (Steam, App Store ou YouTube) para nenhum dos jogos do roteiro.")
     return jogos
+
+
+def jogos_necessarios(job, cenas):
+    """Só busca jogo que é assunto de algum tópico (mais o principal). Jogo só citado na lista não entra.
+
+    Devolve (nomes, {nome: máximo de trailers}): o principal leva 3 trailers; jogo com 2+ tópicos leva 2;
+    jogo de um tópico só leva 1 (análise de trailer é a parte mais lenta da preparação).
+    """
+    lista = [n for n in (job.get("jogos") or []) if n]
+    assuntos = [c["assunto"] for c in cenas if c.get("assunto")]
+    principal = lista[0] if lista else (max(set(assuntos), key=assuntos.count) if assuntos else None)
+    nomes = list(dict.fromkeys([n for n in [principal] + assuntos if n]))
+    if not assuntos:  # roteiro sem assuntos marcados: comportamento antigo (todos da lista)
+        nomes = list(dict.fromkeys(lista))
+    trailers = {}
+    for n in nomes:
+        q = assuntos.count(n)
+        trailers[n] = assets.MAX_TRAILERS if n == principal else (2 if q >= 2 else 1)
+    pulados = [n for n in lista if n not in nomes]
+    if pulados:
+        print(f"jogos citados sem tópico próprio (não busco material): {pulados}", flush=True)
+    return nomes, trailers
 
 
 def preparar(pasta, st):
@@ -215,14 +241,16 @@ def preparar(pasta, st):
     cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto"),
               **({"emoji": c["emoji"]} if c.get("emoji") else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
-    nomes = job.get("jogos") or [c["assunto"] for c in cenas if c.get("assunto")]
-    nomes = list(dict.fromkeys(n for n in nomes if n))
+    nomes, n_trailers = jogos_necessarios(job, cenas)
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
-    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia")))
+    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia")), trailers=n_trailers)
 
     st.etapa("Escolhendo os melhores trechos dos trailers", 18)
-    banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"))
+
+    def prog(k, n):
+        st.etapa(f"Escolhendo os melhores trechos dos trailers ({k}/{n})", 18 + int(10 * k / n))
+    banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"), prog)
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
     sprite = assets.sprite(banco, RAW, os.path.join(pasta, "cenas.jpg"))
 
@@ -235,7 +263,7 @@ def preparar(pasta, st):
     else:
         audio = os.path.join(pasta, job["voz"]["arquivo"])
         st.etapa("Transcrevendo a sua gravação", 30)
-        dicas = ", ".join(j["nome"] for j in jogos)
+        dicas = ", ".join(dict.fromkeys([j["nome"] for j in jogos] + (job.get("jogos") or [])))
         palavras = fala.transcrever(audio_limpo(audio), MODELO_WHISPER, dicas)
     st.etapa("Cortando erros e repetições", 55)
     palavras, faltando = fala.editar(palavras, cenas, [j["nome"] for j in jogos])
@@ -251,7 +279,7 @@ def preparar(pasta, st):
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
         "voz": {"modo": modo, "arquivo": os.path.basename(audio), "reducao_ruido": "auto"},
         "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
-        "nomes_busca": nomes, "cenas": cenas, "palavras": palavras, "faltando": faltando,
+        "nomes_busca": nomes, "trailers_busca": n_trailers, "cenas": cenas, "palavras": palavras, "faltando": faltando,
         "banco": banco, "sprite": sprite,
         # aparência (a tela permite mudar e re-renderizar)
         "titulo_tela": (job.get("titulo_tela") or "").strip(), "titulo_gancho": bool(job.get("titulo_tela")),
@@ -299,7 +327,8 @@ def rerender(pasta, st):
     st.etapa("Preparando o material", 5)
     falta = [m for m in projeto["banco"].values() if not os.path.exists(os.path.join(RAW, m["arquivo"]))]
     if any(m.get("jogo") not in ("materia", "proprio") for m in falta):
-        garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]], permitir_vazio=True)
+        garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]], permitir_vazio=True,
+                        trailers=projeto.get("trailers_busca"))
     urls = [m["url"] for m in falta if m.get("jogo") == "materia" and m.get("url")]
     if urls:
         assets.baixar_imagens_materia(urls, RAW)

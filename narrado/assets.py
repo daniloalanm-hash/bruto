@@ -56,7 +56,7 @@ def _baixar_trailer(src, p):
     return os.path.exists(p)
 
 
-def _steam(nome, pasta):
+def _steam(nome, pasta, max_trailers=MAX_TRAILERS):
     achado = achar_jogo(nome)
     if not achado:
         return None
@@ -73,7 +73,7 @@ def _steam(nome, pasta):
             with open(p, "wb") as f:
                 f.write(_get(s["path_full"]))
         info["screens"].append(p)
-    for i, m in enumerate(d.get("movies", [])[:MAX_TRAILERS]):
+    for i, m in enumerate(d.get("movies", [])[:max_trailers]):
         src = None
         for k in ("mp4", "webm"):
             if m.get(k):
@@ -184,12 +184,15 @@ def baixar_imagens_materia(urls, pasta):
     return banco
 
 
-def baixar_jogo(nome, pasta):
-    """Material oficial do jogo: Steam; se não tiver (ou não tiver trailer), App Store e YouTube."""
+def baixar_jogo(nome, pasta, max_trailers=MAX_TRAILERS):
+    """Material oficial do jogo: Steam; se não tiver (ou não tiver trailer), App Store e YouTube.
+
+    max_trailers: jogo principal leva 3; jogo citado de passagem leva menos (cada trailer custa ~1 min de análise).
+    """
     os.makedirs(pasta, exist_ok=True)
     info = None
     try:
-        info = _steam(nome, pasta)
+        info = _steam(nome, pasta, max_trailers)
     except Exception as e:
         print(f"aviso: Steam falhou para '{nome}': {e}")
     if not info:
@@ -200,12 +203,36 @@ def baixar_jogo(nome, pasta):
     if not info:
         info = {"chave": slug(nome), "nome": nome, "appid": None, "fonte": "YouTube", "screens": [], "trailers": []}
     if not info["trailers"]:
-        info["trailers"] = _youtube(info["nome"], info["chave"], pasta)
+        info["trailers"] = _youtube(info["nome"], info["chave"], pasta, n=min(2, max_trailers))
     if not info["screens"] and not info["trailers"]:
         print(f"aviso: nenhum material encontrado para '{nome}'")
         return None
     print(f"{info['nome']} ({info['fonte']}): {len(info['screens'])} imagens, {len(info['trailers'])} trailers")
     return info
+
+
+class Quadros:
+    """Quadros do recorte central (9:16, 720 px) a 4 por segundo, extraídos no MESMO passe da detecção de
+    cortes. Evita abrir o trailer em 1080p de novo para cada checagem de texto (era o grosso do tempo)."""
+    FPS = 4
+
+    def __init__(self, video, pasta):
+        import subprocess
+        self.pasta = pasta
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-i", video, "-filter_complex",
+                            "[0:v]split[a][b];[a]scale=320:-2,select='gt(scene,0.32)',showinfo,nullsink;"
+                            f"[b]fps={self.FPS},crop='min(iw,ih*9/16)':ih,scale=720:-2[q]",
+                            "-map", "[q]", "-q:v", "3", os.path.join(pasta, "q%05d.jpg")],
+                           capture_output=True, text=True)
+        self.cortes = [float(x) for x in re.findall(r"pts_time:([\d.]+)", r.stderr)]
+        self.n = len([f for f in os.listdir(pasta) if f.startswith("q")])
+
+    def em(self, t):
+        """Caminho do quadro mais próximo de t (o quadro k cobre ~ k/FPS)."""
+        if not self.n:
+            return None
+        k = min(self.n, max(1, int(round(t * self.FPS)) + 1))
+        return os.path.join(self.pasta, f"q{k:05d}.jpg")
 
 
 def cortes_de_cena(video):
@@ -276,7 +303,7 @@ def _quadro_central(origem, t, destino):
     return subprocess.run(args).returncode == 0 and os.path.exists(destino)
 
 
-def mascara_persistente(video, ini, fim, amostras=12):
+def mascara_persistente(video, ini, fim, amostras=12, quadros=None):
     """Texto que fica no MESMO lugar o trailer todo (marca d'água "Captured on PS5", classificação, HUD fixo).
     Devolve o mapa dessas células (para serem ignoradas) ou None."""
     import tempfile
@@ -285,8 +312,8 @@ def mascara_persistente(video, ini, fim, amostras=12):
     with tempfile.TemporaryDirectory() as tmp:
         for i in range(amostras):
             t = ini + (fim - ini) * (i + 0.5) / amostras
-            png = os.path.join(tmp, f"m{i}.png")
-            if _quadro_central(video, t, png):
+            png = quadros.em(t) if quadros else os.path.join(tmp, f"m{i}.png")
+            if (png and os.path.exists(png)) if quadros else _quadro_central(video, t, png):
                 m = _mapa_east(png)
                 if m is not None:
                     mapas.append(m)
@@ -376,7 +403,7 @@ def movimento(video, t, dur=1.0):
     return round(sum(v) / len(v), 2) if v else 0.0
 
 
-def tem_texto(origem, t=None, limite=2, mascara=None):
+def tem_texto(origem, t=None, limite=2, mascara=None, ocr=True, pronto=False):
     """True se a parte que aparece no vídeo (centro 9:16) tiver texto: cartela de trailer, legenda, menu.
 
     Combina o detector EAST (acha a região de texto, mesmo estilizado) com uma leitura do Tesseract.
@@ -386,13 +413,16 @@ def tem_texto(origem, t=None, limite=2, mascara=None):
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         cor = os.path.join(tmp, "q.png")
-        args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
-        if t is not None:
-            args += ["-ss", f"{t:.2f}"]
-        # mesmo recorte do render: centro vertical 9:16
-        args += ["-i", origem, "-frames:v", "1", "-vf", "crop='min(iw,ih*9/16)':ih,scale=720:-2", cor]
-        if subprocess.run(args).returncode != 0 or not os.path.exists(cor):
-            return False
+        if pronto:  # já é o quadro do recorte central (Quadros)
+            cor = origem
+        else:
+            args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+            if t is not None:
+                args += ["-ss", f"{t:.2f}"]
+            # mesmo recorte do render: centro vertical 9:16
+            args += ["-i", origem, "-frames:v", "1", "-vf", "crop='min(iw,ih*9/16)':ih,scale=720:-2", cor]
+            if subprocess.run(args).returncode != 0 or not os.path.exists(cor):
+                return False
         if mascara is not None:
             # trailer com marca d'água fixa: só conta texto FORA dela; o Tesseract leria a marca d'água
             m = _mapa_east(cor)
@@ -400,19 +430,20 @@ def tem_texto(origem, t=None, limite=2, mascara=None):
                 return float((m & ~mascara).mean()) >= 0.0018 * limite / 2
         if _fracao_texto_east(cor) >= 0.0018 * limite / 2:
             return True
-        if not shutil.which("tesseract"):
+        if not ocr or not shutil.which("tesseract"):
             return False
         # legenda/letreiro comum: uma leitura do Tesseract, contando só palavras lidas com segurança
         cinza = os.path.join(tmp, "g.png")
         subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", cor, "-vf", "format=gray", cinza])
-        r = subprocess.run(["tesseract", cinza, "-", "--psm", "11", "-l", "eng", "tsv"], capture_output=True, text=True)
+        r = subprocess.run(["tesseract", cinza, "-", "--psm", "11", "-l", "eng", "tsv"], capture_output=True, text=True,
+                           env={**os.environ, "OMP_THREAD_LIMIT": "1"})
         fortes, grandes = _palavras_fortes(r.stdout)
         if fortes >= limite or grandes >= 1:
             return True
     return False
 
 
-def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None):
+def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=None):
     """Trecho [a2, b2] serve como cena? Devolve o candidato ou None (e conta o motivo)."""
     meio = (a2 + b2) / 2
     y, s = medir_quadro(video, meio)
@@ -422,8 +453,15 @@ def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None):
     if s < 10 and y < 70:  # cartela de texto (fundo escuro sem cor)
         conta["cartela"] += 1
         return None
-    pontos = (a2 + 0.3, meio, b2 - 0.3) if checar_pontas else (meio,)
-    if any(tem_texto(video, x, mascara=mascara) for x in pontos):
+    # EAST (rápido) no meio e nas pontas; a leitura do Tesseract (lenta) só no meio, por último
+    pontos = (meio, a2 + 0.3, b2 - 0.3) if checar_pontas else (meio,)
+
+    def texto(x, ocr):
+        q = quadros.em(x) if quadros else None
+        if q and os.path.exists(q):
+            return tem_texto(q, mascara=mascara, ocr=ocr, pronto=True)
+        return tem_texto(video, x, mascara=mascara, ocr=ocr)
+    if any(texto(x, False) for x in pontos) or (mascara is None and texto(meio, True)):
         conta["texto"] += 1
         return None
     return {"t": round(a2, 2), "dur": round(b2 - a2, 2), "y": y, "s": s, "mov": movimento(video, meio - 0.5)}
@@ -436,17 +474,26 @@ def trechos_bons(video):
     quase não tem plano tão longo: aí completa com janelas de 1,8 s ao longo do trailer — cortes rápidos
     dentro de um trecho ficam naturais no vídeo.
     """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        return _trechos_bons(video, Quadros(video, tmp))
+
+
+def _trechos_bons(video, quadros):
     dur = duracao(video)
-    marcas = [0.0] + cortes_de_cena(video) + [dur]
+    marcas = [0.0] + quadros.cortes + [dur]
     ini, fim = dur * 0.07, dur * 0.86  # abertura (classificação etária/logos) e encerramento (logo/data)
     conta = {"escuro": 0, "cartela": 0, "texto": 0}
-    mascara = mascara_persistente(video, ini, fim) if fim - ini > 6 else None
+    mascara = mascara_persistente(video, ini, fim, quadros=quadros) if fim - ini > 6 else None
     candidatos = []
-    for a, b in zip(marcas, marcas[1:]):
-        a2, b2 = max(a, ini) + 0.1, min(b, fim) - 0.08
-        if b2 - a2 < 1.2:
-            continue
-        c = _avaliar(video, a2, b2, conta, mascara=mascara)
+    planos = [(max(a, ini) + 0.1, min(b, fim) - 0.08) for a, b in zip(marcas, marcas[1:])]
+    # avalia os planos mais longos primeiro e para quando já tem o bastante (a avaliação com detector de
+    # texto é a parte cara; os planos longos são justamente os preferidos no fim)
+    planos = sorted((p for p in planos if p[1] - p[0] >= 1.2), key=lambda p: -(p[1] - p[0]))
+    for a2, b2 in planos:
+        if len(candidatos) >= int(MAX_SHOTS_POR_TRAILER * 1.5):
+            break
+        c = _avaliar(video, a2, b2, conta, mascara=mascara, quadros=quadros)
         if c:
             candidatos.append(c)
     n_planos = len(candidatos)
@@ -454,20 +501,54 @@ def trechos_bons(video):
         t = ini
         while t + 1.8 <= fim and len(candidatos) < MAX_SHOTS_POR_TRAILER:
             if all(abs(t - c["t"]) > 1.8 for c in candidatos):
-                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False, mascara=mascara)
+                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False, mascara=mascara, quadros=quadros)
                 if c:
                     candidatos.append(c)
             t += 3.0
     print(f"trailer {os.path.basename(video)}: {dur:.0f}s, {len(marcas) - 1} planos, {n_planos} planos bons, "
-          f"{len(candidatos) - n_planos} janelas; descartes {conta}; marca d'água fixa: {mascara is not None}")
+          f"{len(candidatos) - n_planos} janelas; descartes {conta}; marca d'água fixa: {mascara is not None}",
+          flush=True)
     # prioriza trechos mais longos e coloridos, mantendo a ordem do trailer
     candidatos.sort(key=lambda c: -(min(c["dur"], 4) + c["s"] / 40))
     return sorted(candidatos[:MAX_SHOTS_POR_TRAILER], key=lambda c: c["t"])
 
 
-def montar_banco(jogos_info, pasta_thumbs):
-    """Gera o banco de mídias {id: {...}} e as miniaturas verticais de cada uma."""
+def _iniciar_processo(threads):
+    try:
+        import cv2
+        cv2.setNumThreads(threads)
+    except Exception:
+        pass
+
+
+def _analisar_trailer(arquivo):
+    return arquivo, trechos_bons(arquivo)
+
+
+def montar_banco(jogos_info, pasta_thumbs, progresso=None):
+    """Gera o banco de mídias {id: {...}} e as miniaturas verticais de cada uma.
+
+    Os trailers são analisados em paralelo (um processo por núcleo; cada um carrega a sua rede EAST).
+    progresso(feitos, total) é chamado a cada trailer concluído.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
     os.makedirs(pasta_thumbs, exist_ok=True)
+    arquivos = [t["arquivo"] for j in jogos_info for t in j["trailers"]]
+    analise = {}
+    if arquivos:
+        nucleos = os.cpu_count() or 2
+        n = max(1, min(len(arquivos), nucleos))
+        with ProcessPoolExecutor(max_workers=n, initializer=_iniciar_processo,
+                                 initargs=(max(1, nucleos // n),)) as ex:
+            futuros = [ex.submit(_analisar_trailer, a) for a in arquivos]
+            for k, f in enumerate(as_completed(futuros), 1):
+                try:
+                    a, trechos = f.result()
+                    analise[a] = trechos
+                except Exception as e:
+                    print(f"aviso: análise de trailer falhou: {e}", flush=True)
+                if progresso:
+                    progresso(k, len(arquivos))
     banco = {}
     for j in jogos_info:
         antes = len(banco)
@@ -485,7 +566,7 @@ def montar_banco(jogos_info, pasta_thumbs):
             mid = f"{j['chave']}_s{i}"
             banco[mid] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p)}
         for ti, t in enumerate(j["trailers"]):
-            for c in trechos_bons(t["arquivo"]):
+            for c in analise.get(t["arquivo"], []):
                 mid = f"{j['chave']}_t{ti}_{int(c['t'] * 10)}"
                 banco[mid] = {"tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
                               "t": c["t"], "dur": c["dur"], "mov": c.get("mov", 0), "sat": round(c["s"], 1)}

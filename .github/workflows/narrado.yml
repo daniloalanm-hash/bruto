@@ -98,7 +98,7 @@ jobs:
           ls -la job
 
       - name: Montar o vídeo
-        run: python narrado/pipeline.py "${{ inputs.fase }}" job
+        run: python -u narrado/pipeline.py "${{ inputs.fase }}" job
 
       - name: Publicar erro
         if: failure()
