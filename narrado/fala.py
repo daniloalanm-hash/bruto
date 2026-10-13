@@ -104,6 +104,7 @@ def transcrever(src, modelo="medium", dicas=""):
                 ws = min(max(w.start, ini), fim)
                 we = min(max(w.end, ws + 0.02), fim)
                 palavras.append({"w": t, "s": round(a + ws - ini, 3), "e": round(a + we - ini, 3), "c": ci})
+    palavras.sort(key=lambda w: (w["c"], w["s"]))  # as janelas são intercaladas: volta à ordem da gravação
     print(f"transcrição: {len(trechos)} trechos em {len(grupos)} janelas, {len(palavras)} palavras", flush=True)
     return palavras
 
@@ -145,7 +146,10 @@ _sim_cache = {}
 def sim(a, b):
     k = (a, b)
     if k not in _sim_cache:
-        _sim_cache[k] = 1.0 if a == b else SequenceMatcher(None, a, b).ratio()
+        r = 1.0 if a == b else SequenceMatcher(None, a, b).ratio()
+        if r < 0.85 and len(a) >= 4 and len(b) > len(a) and b.startswith(a):
+            r = 0.85  # palavra cortada no meio pelo Whisper ("Grave..." de "Graveyard")
+        _sim_cache[k] = r
     return _sim_cache[k]
 
 
@@ -185,10 +189,23 @@ ALUCINACAO = re.compile(r"legendas pela comunidade|amara\.org|obrigad[oa] por as
                         r"legendado por|transcri[cç][aã]o por", re.I)
 
 
+def erro_de_ouvido(a, b):
+    """Diferença típica de transcrição, não de fala: uma letra trocada no meio da palavra ("jugar" x "jogar")
+    ou palavra cortada pelo Whisper ("grave" de "graveyard"). Flexão real ("missão" x "missões") muda o final."""
+    if len(a) >= 4 and len(b) > len(a) + 1 and b.startswith(a):
+        return True
+    if len(a) == len(b) >= 4:
+        dif = [i for i in range(len(a)) if a[i] != b[i]]
+        return len(dif) == 1 and dif[0] < len(a) - 2
+    return False
+
+
 def juntar_hifens(palavras):
     """O Whisper separa palavra com hífen ("quinta" + "-feira", "E" + "-Day"): junta de volta."""
     saida = []
     for w in palavras:
+        if not norm(w["w"]):
+            continue  # traço/pontuação solta: não é fala e atrapalha o alinhamento
         ant = saida[-1] if saida else None
         if ant and w["w"].startswith("-") and ant["c"] == w["c"] and w["s"] - ant["e"] < 0.35:
             ant["w"] = ant["w"].rstrip(",.") + w["w"]
@@ -218,8 +235,9 @@ def editar(palavras, cenas, nomes=()):
         """Legenda com a grafia do roteiro só quando é a mesma palavra, um nome próprio/número, ou
         (troca=True) um erro de transcrição evidente ("graça" no lugar de "gasta").
         Variações reais da fala ("missões" x "missão", "tempo" x "tamanho") ficam como foram ditas."""
-        s = sim(norm(w["w"]), S[x][0])
-        w["rot"] = s == 1.0 or nome_proprio(x) or (troca and s >= 0.55)
+        a, b = norm(w["w"]), S[x][0]
+        s = sim(a, b)
+        w["rot"] = s == 1.0 or nome_proprio(x) or (troca and s >= 0.55) or erro_de_ouvido(a, b)
 
     # 1) alinha cada trecho ao roteiro e mapeia palavra -> posição no roteiro
     validos = set()
