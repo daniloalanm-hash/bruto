@@ -189,6 +189,9 @@ ALUCINACAO = re.compile(r"legendas pela comunidade|amara\.org|obrigad[oa] por as
                         r"legendado por|transcri[cç][aã]o por", re.I)
 
 
+RUIDOS = {"ahem", "hmm", "hm", "hmmm", "uhm", "ehm", "mhm", "ahn"}
+
+
 def erro_de_ouvido(a, b):
     """Diferença típica de transcrição, não de fala: uma letra trocada no meio da palavra ("jugar" x "jogar")
     ou palavra cortada pelo Whisper ("grave" de "graveyard"). Flexão real ("missão" x "missões") muda o final."""
@@ -204,8 +207,8 @@ def juntar_hifens(palavras):
     """O Whisper separa palavra com hífen ("quinta" + "-feira", "E" + "-Day"): junta de volta."""
     saida = []
     for w in palavras:
-        if not norm(w["w"]):
-            continue  # traço/pontuação solta: não é fala e atrapalha o alinhamento
+        if not norm(w["w"]) or norm(w["w"]) in RUIDOS:
+            continue  # traço/pontuação solta ou pigarro ("Ahem"): não é fala e atrapalha o alinhamento
         ant = saida[-1] if saida else None
         if ant and w["w"].startswith("-") and ant["c"] == w["c"] and w["s"] - ant["e"] < 0.35:
             ant["w"] = ant["w"].rstrip(",.") + w["w"]
