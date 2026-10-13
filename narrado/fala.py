@@ -470,7 +470,10 @@ def editar(palavras, cenas, nomes=()):
                 w["legenda"] = S[w["idx"]][2]
             else:
                 pont = re.search(r"[.,:;!?…]+$", S[w["idx"]][2])
-                w["legenda"] = re.sub(r"[.,:;!?…]+$", "", w["w"]) + (pont.group(0) if pont else "")
+                leg = re.sub(r"[.,:;!?…]+$", "", w["w"])
+                if S[w["idx"]][2][:1].islower() and leg[:1].isupper() and not leg.isupper():
+                    leg = leg[0].lower() + leg[1:]  # "Pouco meses" no meio da frase do roteiro: minúscula
+                w["legenda"] = leg + (pont.group(0) if pont else "")
         else:
             prox = next((o for o in mantidas[k + 1:] if o["idx"] is not None), None)
             w["cena"] = S[prox["idx"]][1] if prox and prox["c"] == w["c"] else ultima_cena
