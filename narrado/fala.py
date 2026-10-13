@@ -37,8 +37,33 @@ def trechos_de_fala(src):
     return out, cur
 
 
+JANELA = 26.0      # s de fala por chamada do Whisper (ele sempre processa janelas de 30 s)
+SEPARADOR = 0.8    # silêncio entre trechos empacotados na mesma janela
+
+
+def _empacotar(trechos):
+    """Agrupa trechos curtos consecutivos numa janela só. O Whisper gasta o mesmo tempo para 1 s ou 30 s de
+    áudio; transcrever 60+ trechos um a um (gravação com muitos erros) levava mais de 15 min."""
+    grupos, atual, tam = [], [], 0.0
+    for ci, (a, b) in enumerate(trechos):
+        d = b - a
+        if atual and tam + SEPARADOR + d > JANELA:
+            grupos.append(atual)
+            atual, tam = [], 0.0
+        tam += (SEPARADOR if atual else 0) + d
+        atual.append(ci)
+    if atual:
+        grupos.append(atual)
+    return grupos
+
+
 def transcrever(src, modelo="medium", dicas=""):
-    """Transcreve cada trecho isoladamente (sem contexto do anterior), com tempo por palavra."""
+    """Transcreve os trechos falados com tempo por palavra; cada palavra sabe de qual trecho (tomada) veio.
+
+    Trechos curtos são empacotados (com silêncio entre eles) numa mesma janela do Whisper, e cada palavra
+    volta para o seu trecho pelo instante em que foi dita.
+    """
+    import numpy as np
     from faster_whisper import WhisperModel
     audio = _audio16k(src)
     dur = len(audio) / 16000
@@ -49,17 +74,35 @@ def transcrever(src, modelo="medium", dicas=""):
         trechos = [(0, dur)]
     model = WhisperModel(modelo, device="cpu", compute_type="int8")
     palavras = []
-    for ci, (a, b) in enumerate(trechos):
-        seg = audio[int(a * 16000):int(b * 16000)]
-        res, _ = model.transcribe(seg, language="pt", word_timestamps=True, vad_filter=False,
+    sep = np.zeros(int(SEPARADOR * 16000), np.float32)
+    grupos = _empacotar(trechos)
+    for grupo in grupos:
+        partes, mapa, pos = [], [], 0.0  # mapa: (início no pacote, fim no pacote, trecho)
+        for k, ci in enumerate(grupo):
+            a, b = trechos[ci]
+            seg = audio[int(a * 16000):int(b * 16000)]
+            if k:
+                partes.append(sep)
+                pos += SEPARADOR
+            partes.append(seg)
+            mapa.append((pos, pos + len(seg) / 16000, ci))
+            pos += len(seg) / 16000
+        res, _ = model.transcribe(np.concatenate(partes), language="pt", word_timestamps=True, vad_filter=False,
                                   condition_on_previous_text=False, beam_size=5,
                                   initial_prompt=dicas or None)
         for s in res:
             for w in s.words:
                 t = w.word.strip()
-                if t:
-                    palavras.append({"w": t, "s": round(a + w.start, 3), "e": round(a + w.end, 3), "c": ci})
-    print(f"transcrição: {len(trechos)} trechos, {len(palavras)} palavras")
+                if not t:
+                    continue
+                meio = (w.start + w.end) / 2
+                ini, fim, ci = min(mapa, key=lambda m: 0 if m[0] <= meio <= m[1] else min(abs(meio - m[0]),
+                                                                                            abs(meio - m[1])))
+                a = trechos[ci][0]
+                ws = min(max(w.start, ini), fim)
+                we = min(max(w.end, ws + 0.02), fim)
+                palavras.append({"w": t, "s": round(a + ws - ini, 3), "e": round(a + we - ini, 3), "c": ci})
+    print(f"transcrição: {len(trechos)} trechos em {len(grupos)} janelas, {len(palavras)} palavras", flush=True)
     return palavras
 
 
