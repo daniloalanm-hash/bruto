@@ -37,6 +37,8 @@ def trechos_de_fala(src):
     return out, cur
 
 
+# modo "pacote" (vários trechos por janela do Whisper): mais rápido em tese, mas no teste lado a lado ganhou
+# pouco tempo e errou mais (palavra trocando de tomada). O padrão é "isolado": cada trecho sozinho.
 JANELA = 26.0      # s de fala por chamada do Whisper (ele sempre processa janelas de 30 s)
 SEPARADOR = 1.5    # silêncio entre trechos empacotados na mesma janela
 
@@ -112,7 +114,7 @@ def _distribuir(segs, mapa, trechos):
     return saida
 
 
-def transcrever(src, modelo="medium", dicas="", modo="pacote", model=None):
+def transcrever(src, modelo="medium", dicas="", modo="isolado", model=None):
     """Transcreve os trechos falados com tempo por palavra; cada palavra sabe de qual trecho (tomada) veio.
 
     Trechos curtos são empacotados (com silêncio entre eles) numa mesma janela do Whisper, e cada palavra
@@ -203,8 +205,23 @@ def tokens_roteiro(cenas):
 _sim_cache = {}
 
 
+NUM_EN = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "5": "five", "6": "six", "7": "seven",
+          "8": "eight", "9": "nine"}
+NUM_PT = {"0": "zero", "1": "um", "2": "dois", "3": "tres", "4": "quatro", "5": "cinco", "6": "seis", "7": "sete",
+          "8": "oito", "9": "nove"}
+
+
 def sim(a, b):
     k = (a, b)
+    if k not in _sim_cache and (re.search(r"\d", a) and re.search(r"[a-z]", a + b)):
+        # "5m" x "fivem", "4k" x "quatrok": compara também com os dígitos por extenso
+        r = max(_sim_base(a, b), *(_sim_base("".join(t.get(ch, ch) for ch in a), b) for t in (NUM_EN, NUM_PT)))
+        _sim_cache[k] = r
+    return _sim_base(a, b) if k not in _sim_cache else _sim_cache[k]
+
+
+def _sim_base(a, b):
+    k = ("base", a, b)
     if k not in _sim_cache:
         r = 1.0 if a == b else SequenceMatcher(None, a, b).ratio()
         if r < 0.85 and len(a) >= 4 and len(b) > len(a) and b.startswith(a):
@@ -228,7 +245,7 @@ def _alinha_trecho(S, C, esperado):
         cc = []
         for t in C:
             alvo = max(janela, key=lambda v: sim(t, v)) if janela else t
-            cc.append(alvo if len(t) >= 3 and sim(t, alvo) >= 0.75 else t)
+            cc.append(alvo if (len(t) >= 3 or re.search(r"\d[a-z]", t)) and sim(t, alvo) >= 0.75 else t)
         sm = SequenceMatcher(None, janela, cc, autojunk=False)
         r = sm.ratio()
         d = p - esperado
@@ -245,11 +262,31 @@ PALAVRAS_LIGACAO = {
     "e", "o", "a", "os", "as", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "um", "uma",
     "que", "se", "por", "pra", "para", "com", "ao", "aos", "mas", "ou", "eh", "ah", "tipo", "ja", "nao",
 }
-ALUCINACAO = re.compile(r"legendas pela comunidade|amara\.org|obrigad[oa] por assistir|inscreva-se no canal|"
+ALUCINACAO = re.compile(r"legendas pela comunidade(?: (?:do |da )?amara ?\.? ?org)?|amara ?\.org|obrigad[oa] por assistir|inscreva-se no canal|"
                         r"legendado por|transcri[cç][aã]o por", re.I)
 
 
 RUIDOS = {"ahem", "hmm", "hm", "hmmm", "uhm", "ehm", "mhm", "ahn"}
+
+
+def tirar_alucinacao(palavras):
+    """Tira as frases que o Whisper inventa no silêncio ("Legendas pela comunidade Amara.org"), mesmo quando
+    vêm grudadas numa fala de verdade no mesmo trecho; o resto do trecho continua valendo."""
+    fora = set()
+    por_c = {}
+    for k, w in enumerate(palavras):
+        por_c.setdefault(w["c"], []).append(k)
+    for ks in por_c.values():
+        texto, pos = "", []
+        for k in ks:
+            ini = len(texto) + (1 if texto else 0)
+            texto = f"{texto} {palavras[k]['w']}" if texto else palavras[k]["w"]
+            pos.append((ini, len(texto), k))
+        for m in ALUCINACAO.finditer(texto):
+            for a, b, k in pos:
+                if a < m.end() and b > m.start():
+                    fora.add(k)
+    return [w for k, w in enumerate(palavras) if k not in fora]
 
 
 def erro_de_ouvido(a, b):
@@ -280,7 +317,7 @@ def juntar_hifens(palavras):
 
 def editar(palavras, cenas, nomes=()):
     """Decide o que fica (última tomada de cada parte), a cena de cada palavra e o texto da legenda."""
-    palavras = juntar_hifens(palavras)
+    palavras = tirar_alucinacao(juntar_hifens(palavras))
     S = tokens_roteiro(cenas)
     por_trecho = {}
     for i, w in enumerate(palavras):
@@ -309,8 +346,6 @@ def editar(palavras, cenas, nomes=()):
         C = [norm(w["w"]) for w in ws]
         if not any(C):
             continue
-        if ALUCINACAO.search(" ".join(w["w"] for w in ws)):
-            continue  # o Whisper "inventa" isso em trechos de silêncio
         p, nota, ops, _ = _alinha_trecho(S, C, esperado)
         iguais = sum(i2 - i1 for tag, i1, i2, j1, j2 in ops if tag == "equal") if ops else 0
         # palavras de conteúdo que bateram (não conta "e", "o", "de"...): tentativa que parou no começo
@@ -341,7 +376,7 @@ def editar(palavras, cenas, nomes=()):
                     ponta = oi == 0 or oi == ultimo_op
                     for w, x in zip(fal, rot):
                         sx = sim(norm(w["w"]), S[x][0])
-                        if ponta and sx < 0.5 and (not nome_proprio(x) or sx < 0.3):
+                        if ponta and sx < 0.5 and (not nome_proprio(x) or sx < 0.45):
                             continue  # palavra de ligação na ponta ("as", "mas"): não é aquela do roteiro
                         w["idx"] = x
                         usar_roteiro(w, x, troca=True)
@@ -387,6 +422,9 @@ def editar(palavras, cenas, nomes=()):
             continue
         a, b = mant[0], mant[-1]
         for k, w in enumerate(ws):
+            abandonada = w["idx"] is None and re.search(r"(\.\.\.|…|[-‐])$", w["w"])
+            if abandonada:
+                continue  # palavra que você começou e largou ("Como..."): sai do áudio
             if a < k < b and not w["manter"]:
                 # dentro de uma tomada mantida: só fica se não for repetição já dita depois
                 if w["idx"] is None or not any(o["manter"] and o["idx"] == w["idx"] and o is not w for o in palavras):
