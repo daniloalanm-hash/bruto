@@ -38,23 +38,25 @@ def trechos_de_fala(src):
 
 
 JANELA = 26.0      # s de fala por chamada do Whisper (ele sempre processa janelas de 30 s)
-SEPARADOR = 0.8    # silêncio entre trechos empacotados na mesma janela
+SEPARADOR = 1.5    # silêncio entre trechos empacotados na mesma janela
 
 
 def _empacotar(trechos):
-    """Agrupa trechos curtos consecutivos numa janela só. O Whisper gasta o mesmo tempo para 1 s ou 30 s de
-    áudio; transcrever 60+ trechos um a um (gravação com muitos erros) levava mais de 15 min."""
-    grupos, atual, tam = [], [], 0.0
-    for ci, (a, b) in enumerate(trechos):
-        d = b - a
-        if atual and tam + SEPARADOR + d > JANELA:
-            grupos.append(atual)
-            atual, tam = [], 0.0
-        tam += (SEPARADOR if atual else 0) + d
-        atual.append(ci)
-    if atual:
-        grupos.append(atual)
-    return grupos
+    """Agrupa trechos numa mesma janela do Whisper. Ele gasta o mesmo tempo para 1 s ou 30 s de áudio;
+    transcrever 60+ trechos um a um (gravação com muitos erros) levava mais de 15 min.
+
+    Os trechos são intercalados (janela k recebe os trechos k, k+G, k+2G...): tomadas repetidas da mesma frase
+    ficam lado a lado na gravação e, se caíssem na mesma janela, o Whisper juntaria/omitiria a repetição.
+    """
+    n = len(trechos)
+    durs = [b - a for a, b in trechos]
+    g = max(1, int(-(-(sum(durs) + SEPARADOR * n) // JANELA)))
+    while True:
+        grupos = [list(range(k, n, g)) for k in range(g)]
+        if g >= n or all(sum(durs[i] for i in gr) + SEPARADOR * (len(gr) - 1) <= JANELA or len(gr) == 1
+                         for gr in grupos):
+            return [gr for gr in grupos if gr]
+        g += 1
 
 
 def transcrever(src, modelo="medium", dicas=""):
