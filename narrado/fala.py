@@ -92,18 +92,33 @@ def transcrever(src, modelo="medium", dicas=""):
         res, _ = model.transcribe(np.concatenate(partes), language="pt", word_timestamps=True, vad_filter=False,
                                   condition_on_previous_text=False, beam_size=5,
                                   initial_prompt=dicas or None)
+        doja = []  # palavras desta janela, já com o trecho de cada uma
         for s in res:
             for w in s.words:
                 t = w.word.strip()
                 if not t:
                     continue
-                meio = (w.start + w.end) / 2
-                ini, fim, ci = min(mapa, key=lambda m: 0 if m[0] <= meio <= m[1] else min(abs(meio - m[0]),
-                                                                                            abs(meio - m[1])))
+                # a palavra pertence ao último trecho que começou antes dela: no silêncio entre trechos ela
+                # é o final do trecho anterior (o Whisper atrasa o tempo do fim da frase), nunca o próximo
+                ini, fim, ci = mapa[0]
+                for m in mapa:
+                    if m[0] <= w.start + 0.15:
+                        ini, fim, ci = m
                 a = trechos[ci][0]
                 ws = min(max(w.start, ini), fim)
-                we = min(max(w.end, ws + 0.02), fim)
-                palavras.append({"w": t, "s": round(a + ws - ini, 3), "e": round(a + we - ini, 3), "c": ci})
+                we = min(max(w.end, ws), fim)
+                doja.append({"w": t, "s": round(a + ws - ini, 3), "e": round(a + we - ini, 3), "c": ci})
+        # tempos espremidos no fim do trecho (palavra que "vazou" para o silêncio): a palavra vai do fim da
+        # anterior até o fim do trecho, para o corte não engolir o som dela
+        for k, w in enumerate(doja):
+            ant = doja[k - 1] if k and doja[k - 1]["c"] == w["c"] else None
+            if w["e"] - w["s"] < 0.06 and ant:
+                w["s"] = ant["e"]
+                w["e"] = max(w["e"], w["s"])
+            ult = k + 1 == len(doja) or doja[k + 1]["c"] != w["c"]
+            if ult:
+                w["e"] = round(max(w["e"], trechos[w["c"]][1] - 0.08), 3)
+        palavras += doja
     palavras.sort(key=lambda w: (w["c"], w["s"]))  # as janelas são intercaladas: volta à ordem da gravação
     print(f"transcrição: {len(trechos)} trechos em {len(grupos)} janelas, {len(palavras)} palavras", flush=True)
     return palavras
@@ -280,7 +295,8 @@ def editar(palavras, cenas, nomes=()):
                     # mesma quantidade de palavras: é a mesma frase com erro de transcrição ou troca de palavra
                     ponta = oi == 0 or oi == ultimo_op
                     for w, x in zip(fal, rot):
-                        if ponta and sim(norm(w["w"]), S[x][0]) < 0.5 and not nome_proprio(x):
+                        sx = sim(norm(w["w"]), S[x][0])
+                        if ponta and sx < 0.5 and (not nome_proprio(x) or sx < 0.3):
                             continue  # palavra de ligação na ponta ("as", "mas"): não é aquela do roteiro
                         w["idx"] = x
                         usar_roteiro(w, x, troca=True)
