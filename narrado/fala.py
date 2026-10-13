@@ -112,7 +112,7 @@ def _distribuir(segs, mapa, trechos):
     return saida
 
 
-def transcrever(src, modelo="medium", dicas=""):
+def transcrever(src, modelo="medium", dicas="", modo="pacote", model=None):
     """Transcreve os trechos falados com tempo por palavra; cada palavra sabe de qual trecho (tomada) veio.
 
     Trechos curtos são empacotados (com silêncio entre eles) numa mesma janela do Whisper, e cada palavra
@@ -127,8 +127,23 @@ def transcrever(src, modelo="medium", dicas=""):
         trechos.append((max(ultimo_fim - 0.08, 0), dur))
     if not trechos:
         trechos = [(0, dur)]
-    model = WhisperModel(modelo, device="cpu", compute_type="int8")
+    model = model or WhisperModel(modelo, device="cpu", compute_type="int8")
     palavras = []
+    if modo in ("isolado", "curto"):
+        # cada trecho sozinho (mais fiel; "curto" usa janela do tamanho do trecho em vez de 30 s)
+        for ci, (a, b) in enumerate(trechos):
+            seg = audio[int(a * 16000):int(b * 16000)]
+            extra = {"chunk_length": int(min(30, max(8, -(-(b - a + 1) // 1))))} if modo == "curto" else {}
+            res, _ = model.transcribe(seg, language="pt", word_timestamps=True, vad_filter=False,
+                                      condition_on_previous_text=False, beam_size=5,
+                                      initial_prompt=dicas or None, **extra)
+            for sg in res:
+                for w in sg.words:
+                    t = w.word.strip()
+                    if t:
+                        palavras.append({"w": t, "s": round(a + w.start, 3), "e": round(a + w.end, 3), "c": ci})
+        print(f"transcrição ({modo}): {len(trechos)} trechos, {len(palavras)} palavras", flush=True)
+        return palavras
     sep = np.zeros(int(SEPARADOR * 16000), np.float32)
     grupos = _empacotar(trechos)
     for grupo in grupos:

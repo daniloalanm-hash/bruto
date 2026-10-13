@@ -33,6 +33,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Avisar a tela que começou
+        if: inputs.fase != 'teste_transcricao'
         run: |
           mkdir -p job
           printf '{"estado":"processando","fase":"%s","etapa":"Iniciando o servidor de render","progresso":2,"atualizado":%s}' \

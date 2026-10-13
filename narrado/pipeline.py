@@ -412,12 +412,31 @@ def finalizar(pasta, projeto, audio, st, p0):
     st.pronto({"versao": projeto["versao"], "duracao": projeto["duracao"]})
 
 
+def teste_transcricao(pasta, st):
+    """Diagnóstico: transcreve a gravação de 3 jeitos e publica os resultados (não mexe no vídeo)."""
+    import time as _t
+    from faster_whisper import WhisperModel
+    job = ler(os.path.join(pasta, "job.json"))
+    audio = audio_limpo(os.path.join(pasta, job["voz"]["arquivo"]))
+    dicas = ", ".join(job.get("jogos") or [])
+    model = WhisperModel(MODELO_WHISPER, device="cpu", compute_type="int8")
+    pub = publicador()
+    for modo in ("pacote", "curto", "isolado"):
+        t0 = _t.time()
+        pal = fala.transcrever(audio, MODELO_WHISPER, dicas, modo=modo, model=model)
+        destino = os.path.join(pasta, f"teste_{modo}.json")
+        gravar(destino, {"segundos": round(_t.time() - t0, 1), "palavras": pal})
+        print(f"teste {modo}: {_t.time() - t0:.0f}s", flush=True)
+        if pub:
+            pub(destino)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
-    st = Status(pasta, fase, (lambda p: pub(p)) if pub else None)
+    st = Status(pasta, fase, (lambda p: pub(p)) if pub and fase != "teste_transcricao" else None)
     try:
-        {"preparar": preparar, "legenda": so_legenda}.get(fase, rerender)(pasta, st)
+        {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
