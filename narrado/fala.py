@@ -289,11 +289,17 @@ def tirar_alucinacao(palavras):
     return [w for k, w in enumerate(palavras) if k not in fora]
 
 
-def erro_de_ouvido(a, b):
+def erro_de_ouvido(a, b, cru=""):
     """Diferença típica de transcrição, não de fala: uma letra trocada no meio da palavra ("jugar" x "jogar")
     ou palavra cortada pelo Whisper ("grave" de "graveyard"). Flexão real ("missão" x "missões") muda o final."""
-    if len(a) >= 4 and len(b) > len(a) + 1 and b.startswith(a):
-        return True
+    if b.startswith(a):
+        # só palavra que o Whisper marcou como cortada ("Grave..."); "ganhar" x "ganharam" é flexão de verdade
+        return len(a) >= 4 and len(b) > len(a) + 1 and bool(re.search(r"(\.\.\.|…|[-‐])$", cru))
+    if len(a) >= 5 and 2 <= len(b) - len(a) <= 3:
+        # sílaba engolida pelo Whisper ("replay" de "roleplay"): o falado aparece inteiro, em ordem, no roteiro
+        it = iter(b)
+        if all(ch in it for ch in a):
+            return True
     if len(a) == len(b) >= 4:
         dif = [i for i in range(len(a)) if a[i] != b[i]]
         return len(dif) == 1 and dif[0] < len(a) - 2
@@ -337,7 +343,7 @@ def editar(palavras, cenas, nomes=()):
         Variações reais da fala ("missões" x "missão", "tempo" x "tamanho") ficam como foram ditas."""
         a, b = norm(w["w"]), S[x][0]
         s = sim(a, b)
-        w["rot"] = s == 1.0 or nome_proprio(x) or (troca and s >= 0.55) or erro_de_ouvido(a, b)
+        w["rot"] = s == 1.0 or nome_proprio(x) or (troca and s >= 0.55) or erro_de_ouvido(a, b, w["w"])
 
     # 1) alinha cada trecho ao roteiro e mapeia palavra -> posição no roteiro
     validos = set()
