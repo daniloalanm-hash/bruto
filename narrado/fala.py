@@ -59,6 +59,59 @@ def _empacotar(trechos):
         g += 1
 
 
+def _distribuir(segs, mapa, trechos):
+    """Devolve cada palavra de uma janela empacotada ao seu trecho, com o tempo na gravação original.
+
+    O tempo por palavra do Whisper escorrega para o silêncio entre trechos (fim de frase atrasado, começo
+    adiantado), então a decisão é por SEGMENTO (frase), cujo tempo é mais confiável: o segmento vai inteiro para
+    o trecho com que mais se sobrepõe. Só um segmento que atravessa dois trechos é dividido palavra a palavra,
+    pelo ponto confiável de cada uma (início dentro de um trecho; senão o fim; senão o mais próximo).
+    """
+    def sobre(a0, a1, b0, b1):
+        return max(0.0, min(a1, b1) - max(a0, b0))
+
+    def por_palavra(ws, we):
+        for m in mapa:
+            if m[0] - 0.05 <= ws <= m[1]:
+                return m
+        for m in mapa:
+            if m[0] <= we <= m[1] + 0.05:
+                return m
+        meio = (ws + we) / 2
+        return min(mapa, key=lambda m: min(abs(meio - m[0]), abs(meio - m[1])))
+
+    saida = []
+    for s0, s1, palavras in segs:
+        if not palavras:
+            continue
+        s0, s1 = min(s0, palavras[0][1]), max(s1, palavras[-1][2])
+        ov = [sobre(s0, s1, m[0], m[1]) for m in mapa]
+        tocados = [k for k, v in enumerate(ov) if v > 0.25]
+        unico = mapa[max(range(len(mapa)), key=lambda k: ov[k])] if len(tocados) <= 1 and max(ov) > 0 else None
+        for t, ws, we in palavras:
+            ini, fim, ci = unico or por_palavra(ws, we)
+            a = trechos[ci][0]
+            x0 = min(max(ws, ini), fim)
+            x1 = min(max(we, x0), fim)
+            saida.append({"w": t, "s": round(a + x0 - ini, 3), "e": round(a + x1 - ini, 3), "c": ci})
+    # palavra espremida (tempo zero no fim/começo do trecho): divide o tempo com a vizinha, para a legenda
+    # aparecer e o corte não engolir o som dela
+    for k, w in enumerate(saida):
+        if w["e"] - w["s"] >= 0.06:
+            continue
+        ant = saida[k - 1] if k and saida[k - 1]["c"] == w["c"] else None
+        prox = saida[k + 1] if k + 1 < len(saida) and saida[k + 1]["c"] == w["c"] else None
+        if ant and ant["e"] - ant["s"] > 0.2 and w["s"] >= ant["e"] - 0.01:
+            corte = round(max(ant["s"] + 0.1, ant["e"] - 0.3), 3)
+            ant["e"], w["s"] = corte, corte
+            w["e"] = max(w["e"], round(corte + 0.1, 3))
+        elif prox and prox["e"] - prox["s"] > 0.2 and w["e"] <= prox["s"] + 0.01:
+            corte = round(min(prox["e"] - 0.1, prox["s"] + 0.3), 3)
+            w["s"] = min(w["s"], round(corte - 0.1, 3))
+            w["e"], prox["s"] = corte, corte
+    return saida
+
+
 def transcrever(src, modelo="medium", dicas=""):
     """Transcreve os trechos falados com tempo por palavra; cada palavra sabe de qual trecho (tomada) veio.
 
@@ -92,32 +145,9 @@ def transcrever(src, modelo="medium", dicas=""):
         res, _ = model.transcribe(np.concatenate(partes), language="pt", word_timestamps=True, vad_filter=False,
                                   condition_on_previous_text=False, beam_size=5,
                                   initial_prompt=dicas or None)
-        doja = []  # palavras desta janela, já com o trecho de cada uma
-        for s in res:
-            for w in s.words:
-                t = w.word.strip()
-                if not t:
-                    continue
-                # a palavra pertence ao último trecho que começou antes dela: no silêncio entre trechos ela
-                # é o final do trecho anterior (o Whisper atrasa o tempo do fim da frase), nunca o próximo
-                ini, fim, ci = mapa[0]
-                for m in mapa:
-                    if m[0] <= w.start + 0.15:
-                        ini, fim, ci = m
-                a = trechos[ci][0]
-                ws = min(max(w.start, ini), fim)
-                we = min(max(w.end, ws), fim)
-                doja.append({"w": t, "s": round(a + ws - ini, 3), "e": round(a + we - ini, 3), "c": ci})
-        # tempos espremidos no fim do trecho (palavra que "vazou" para o silêncio): a palavra vai do fim da
-        # anterior até o fim do trecho, para o corte não engolir o som dela
-        for k, w in enumerate(doja):
-            ant = doja[k - 1] if k and doja[k - 1]["c"] == w["c"] else None
-            if w["e"] - w["s"] < 0.06 and ant:
-                w["s"] = ant["e"]
-                w["e"] = max(w["e"], w["s"])
-            ult = k + 1 == len(doja) or doja[k + 1]["c"] != w["c"]
-            if ult:
-                w["e"] = round(max(w["e"], trechos[w["c"]][1] - 0.08), 3)
+        segs = [(sg.start, sg.end, [(w.word.strip(), w.start, w.end) for w in sg.words if w.word.strip()])
+                for sg in res]
+        doja = _distribuir(segs, mapa, trechos)
         palavras += doja
     palavras.sort(key=lambda w: (w["c"], w["s"]))  # as janelas são intercaladas: volta à ordem da gravação
     print(f"transcrição: {len(trechos)} trechos em {len(grupos)} janelas, {len(palavras)} palavras", flush=True)
