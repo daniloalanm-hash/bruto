@@ -269,17 +269,38 @@ def blocos_legenda(projeto):
     return saida
 
 
+PALAVRAS_CURTAS = {"A", "O", "E", "DE", "DA", "DO", "NA", "NO", "EM", "UM", "AS", "OS", "AO", "À"}
+
+
 def _quebra_titulo(txt, max_linha=14):
-    palavras, linhas, cur = txt.split(), [], ""
-    for p in palavras:
-        if cur and len(cur) + 1 + len(p) > max_linha:
-            linhas.append(cur)
-            cur = p
-        else:
-            cur = f"{cur} {p}".strip()
-    if cur:
-        linhas.append(cur)
-    return linhas[:3]
+    """Quebra a chamada em no máximo 3 linhas SEM perder palavra: se não couber, aumenta o limite por linha
+    (a manchete ajusta o tamanho de cada linha à largura da tela). Palavra curta ("A", "DE") não fica
+    pendurada no fim da linha: desce junto com a palavra seguinte ("DOMINOU / A STEAM")."""
+    palavras = txt.split()
+    if not palavras:
+        return []
+
+    def quebra(m):
+        linhas, cur = [], ""
+        for p in palavras:
+            if cur and len(cur) + 1 + len(p) > m:
+                linhas.append(cur)
+                cur = p
+            else:
+                cur = f"{cur} {p}".strip()
+        return linhas + ([cur] if cur else [])
+
+    m = max_linha
+    linhas = quebra(m)
+    while len(linhas) > 3:
+        m += 1
+        linhas = quebra(m)
+    for i in range(len(linhas) - 1):
+        ws = linhas[i].split()
+        if len(ws) > 1 and ws[-1] in PALAVRAS_CURTAS:
+            linhas[i] = " ".join(ws[:-1])
+            linhas[i + 1] = f"{ws[-1]} {linhas[i + 1]}"
+    return linhas
 
 
 def legenda_ass(projeto, destino, corte_gancho):
@@ -376,7 +397,7 @@ def titulo_ass(estilo, titulo, cor, fim):
     ev = []
     chave = len(ls) - 1  # linha-chave: a última (é onde costuma estar o nome/fato)
     largura_alvo = [900 if i == chave else 960 for i in range(len(ls))]
-    escalas = [min(max(largura_alvo[i] / max(_largura_texto(l), 1), 0.9), 2.6) for i, l in enumerate(ls)]
+    escalas = [min(max(largura_alvo[i] / max(_largura_texto(l), 1), 0.3), 2.6) for i, l in enumerate(ls)]
     caps = [TIT_TAM * CAPS * e for e in escalas]
     pad = 34
     gaps = 46

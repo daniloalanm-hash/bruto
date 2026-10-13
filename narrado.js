@@ -1227,6 +1227,20 @@ function imagemSprite() {
   return spriteImg;
 }
 
+// chamada em até 3 linhas sem perder palavra (mesma regra do render.py)
+const CURTAS_TIT = new Set(['A', 'O', 'E', 'DE', 'DA', 'DO', 'NA', 'NO', 'EM', 'UM', 'AS', 'OS', 'AO', 'À']);
+function quebraTitulo(txt, max) {
+  const pals = String(txt || '').toUpperCase().split(/\s+/).filter(Boolean);
+  const quebra = (m) => { const out = []; let l = ''; for (const p of pals) { if (l && (l + ' ' + p).length > m) { out.push(l); l = p; } else l = (l + ' ' + p).trim(); } if (l) out.push(l); return out; };
+  let m = max, ls = quebra(m);
+  while (ls.length > 3) ls = quebra(++m);
+  for (let i = 0; i < ls.length - 1; i++) {
+    const ws = ls[i].split(' ');
+    if (ws.length > 1 && CURTAS_TIT.has(ws[ws.length - 1])) { ls[i + 1] = ws.pop() + ' ' + ls[i + 1]; ls[i] = ws.join(' '); }
+  }
+  return ls;
+}
+
 function desenharPrevia(t) {
   const p = state.projeto, pl = previa.plano, cv = $('#telaPrevia'), g = cv.getContext('2d');
   const W = cv.width, H = cv.height;
@@ -1245,11 +1259,7 @@ function desenharPrevia(t) {
   if (p.titulo_gancho !== false && p.titulo_tela && t < fimTit) {
     const estilo = p.titulo_estilo || 'manchete';
     const cor = CORES_LEG[p.legenda_cor] || CORES_LEG.amarelo;
-    const linhas = []; let l = '';
-    const max = estilo === 'simples' ? 14 : 12;
-    for (const pal of p.titulo_tela.toUpperCase().split(/\s+/)) { if (l && (l + ' ' + pal).length > max) { linhas.push(l); l = pal; } else l = (l + ' ' + pal).trim(); }
-    if (l) linhas.push(l);
-    const ls = linhas.slice(0, 3);
+    const ls = quebraTitulo(p.titulo_tela, estilo === 'simples' ? 14 : 12);
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
     if (estilo === 'simples') {
       g.font = '40px Anton'; g.lineWidth = 6; g.strokeStyle = '#000';
