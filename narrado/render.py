@@ -91,6 +91,8 @@ def _fx_transicao(tipo):
 
 
 _dur_fonte = {}
+# todo segmento com a mesma taxa e a mesma base de tempo: a junção sem reencodar depende disso
+SEG_PADRAO = ("-r", str(FPS), "-video_track_timescale", "15360")
 
 
 def _inicio_seguro(src, t0, dur):
@@ -125,7 +127,7 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
           f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
           f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _fx_transicao(trans) + pad)
     ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
 
 
 def _recorte(m):
@@ -148,7 +150,7 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
               f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1,fps={FPS},"
               f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans))
         ffmpeg("-loop", 1, "-t", f"{dur:.3f}", "-i", src, "-filter_complex", vf, "-frames:v", n,
-               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
         return
     pans = ["x='iw/2-(iw/zoom/2)'", f"x='(iw-iw/zoom)*on/{n}'", f"x='(iw-iw/zoom)*(1-on/{n})'"]
     punch = f"+{PUNCH[trans]}*max(0\\,1-on/{int(TRANS * FPS)})" if trans in PUNCH else ""
@@ -157,7 +159,7 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
           f"zoompan=z='1.05+0.10*on/{n}{punch}':{pans[k % 3]}:y='ih/2-(ih/zoom/2)':d={n}:s={W}x{H}:fps={FPS},"
           f"setsar=1,eq=contrast=1.05:saturation=1.1" + _fx_transicao(trans))
     ffmpeg("-loop", 1, "-i", src, "-frames:v", n, "-vf", vf,
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
 
 
 def seg_video_proprio(src, t0, dur, out, trans):
@@ -171,7 +173,7 @@ def seg_video_proprio(src, t0, dur, out, trans):
           f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={FPS},"
           f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans) + pad)
     ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-filter_complex", vf, "-an", "-frames:v", n,
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
 
 
 # ---------------------------------------------------------------- linha do tempo
@@ -582,6 +584,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     trans_cena = transicoes(projeto, faixas)
     lista, k = [], 0
     usados_cena = []
+    diag = []
     for fi, (c, a, b) in enumerate(faixas):
         dur = b - a
         n = max(1, round(dur / CUT))
@@ -606,6 +609,10 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             else:
                 seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio") or m.get("encaixar")), pre=_recorte(m))
             usados_cena[-1]["cortes"].append(mid)
+            ds = duracao(out)
+            if abs(ds - d) > 0.08:
+                print(f"aviso: segmento {k} ({mid}) saiu com {ds:.2f}s em vez de {d:.2f}s", flush=True)
+                diag.append({"seg": k, "midia": mid, "esperado": round(d, 2), "saiu": round(ds, 2)})
             lista.append(out)
             k += 1
         if progresso:
@@ -616,6 +623,15 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     visual = os.path.join(pasta_trab, "visual.mp4")
     ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c", "copy", visual)
     dv = duracao(visual)
+    if dv < total - 0.2:
+        # junção sem reencodar perdeu tempo (base de tempo diferente em algum segmento): junta reencodando
+        print(f"aviso: junção rápida deu {dv:.2f}s para {total:.2f}s; juntando de novo reencodando", flush=True)
+        diag.append({"juncao_rapida": round(dv, 2), "total": round(total, 2)})
+        refeito = os.path.join(pasta_trab, "visual_reencodado.mp4")
+        ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-vf", f"fps={FPS},setpts=N/({FPS}*TB)", "-an",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", refeito)
+        visual = refeito
+        dv = duracao(visual)
     if dv < total - 0.2:
         # rede de segurança: nunca deixar a imagem acabar antes da voz
         print(f"aviso: imagem com {dv:.2f}s para {total:.2f}s de voz; completando com o último quadro", flush=True)
@@ -723,4 +739,8 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
            "-crf", 17, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", limpo)
     # 2) legenda, chamada e emojis por cima
     legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho, total)
+    if diag:
+        projeto["diagnostico_render"] = diag
+    else:
+        projeto.pop("diagnostico_render", None)
     return usados_cena, total

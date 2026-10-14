@@ -23,6 +23,32 @@ def _get(url, timeout=60):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
+ROMANOS = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10"}
+GENERICAS = {"the", "of", "and", "game", "jogo", "de", "do", "da", "edition", "remastered", "remake", "definitive"}
+
+
+def _marcas(nome):
+    """Números/sequência e palavras que identificam o jogo ("underground", "2")."""
+    ws = re.findall(r"[a-z0-9]+", re.sub(r"[^\w\s]", " ", nome.lower()))
+    nums = {ROMANOS.get(w, w) for w in ws if w.isdigit() or w in ROMANOS}
+    curtas = {"of", "de", "do", "da", "a", "e", "o", "s", "to", "in", "on", "no", "na"}
+    chave = {w for w in ws if not w.isdigit() and w not in ROMANOS and w not in GENERICAS and
+             (len(w) >= 4 or (len(w) <= 2 and w.isalpha() and w not in curtas))}
+    return nums, chave
+
+
+def mesmo_jogo(pedido, achado, minimo=0.5):
+    """O resultado da loja é o MESMO jogo? Parecença do nome + número da sequência igual + as palavras
+    que identificam o jogo presentes ("Need for Speed Underground 2" não vira "Need for Speed No Limits")."""
+    if SequenceMatcher(None, norm(pedido), norm(achado)).ratio() < minimo:
+        return False
+    n1, k1 = _marcas(pedido)
+    n2, k2 = _marcas(achado)
+    if n1 != (n2 & n1) or (n2 - n1 and n1):
+        return False
+    return len(k1 & k2) >= max(1, round(len(k1) * 0.75))
+
+
 def achar_jogo(nome):
     """Procura o jogo na loja da Steam e devolve (appid, nome oficial) do resultado mais parecido."""
     q = urllib.parse.quote(nome)
@@ -36,8 +62,11 @@ def achar_jogo(nome):
         n = norm(i["name"])
         extra = 0.25 if re.search(r"soundtrack|dlc|pack|expansion|season pass|demo", i["name"], re.I) else 0
         return SequenceMatcher(None, alvo, n).ratio() - extra
+    itens = [i for i in itens if mesmo_jogo(nome, i["name"])]
+    if not itens:
+        return None  # nada que seja este jogo na Steam (ex.: jogo de console antigo/celular): outras fontes
     melhor = max(itens, key=nota)
-    if nota(melhor) < 0.5:  # nada parecido na Steam (ex.: jogo só de celular): deixa as outras fontes tentarem
+    if nota(melhor) < 0.5:
         return None
     return melhor["id"], melhor["name"]
 
@@ -101,7 +130,7 @@ def _app_store(nome, pasta):
         return None
     alvo = norm(nome)
     melhor = max(itens, key=lambda r: SequenceMatcher(None, alvo, norm(r.get("trackName", ""))).ratio())
-    if SequenceMatcher(None, alvo, norm(melhor.get("trackName", ""))).ratio() < 0.45:
+    if not mesmo_jogo(nome, melhor.get("trackName", ""), 0.45):
         return None
     oficial = melhor["trackName"]
     chave = slug(oficial)
@@ -153,6 +182,72 @@ def _youtube(nome, chave, pasta, n=2):
     return saida
 
 
+RUIM_DM = re.compile(r"review|an[aá]lise|reac|react|mod\b|speedrun|tutorial|dicas|tips|how to|unboxing|"
+                     r"compara|vs\.?\b|parte \d|part \d|episod|live|stream|ost|soundtrack|music", re.I)
+
+
+def titulo_do_jogo(nome, titulo):
+    """O vídeo é deste jogo? Todas as palavras que identificam o jogo no título e o número da sequência."""
+    n1, k1 = _marcas(nome)
+    n2, k2 = _marcas(titulo)
+    # número de sequência que o pedido não tem ("Silent Hill 2" quando se pediu "Silent Hill f"); ano não conta
+    extra = {x for x in n2 - n1 if x.isdigit() and int(x) <= 20}
+    return n1 <= n2 and k1 <= k2 and not extra
+
+
+def _dailymotion(nome, chave, pasta, n=2):
+    """Trailer/gameplay no Dailymotion (busca pública + yt-dlp): funciona no servidor de render, onde o YouTube
+    bloqueia. Bom para jogo de console e jogo antigo que não estão na Steam."""
+    import shutil
+    import subprocess
+    if not shutil.which("yt-dlp"):
+        return []
+    vistos, cands = set(), []
+    for termo, peso in ((f"{nome} trailer", 2), (f"{nome} gameplay", 1)):
+        try:
+            d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
+                {"search": termo, "fields": "id,title,duration", "limit": 15, "sort": "relevance"})))
+        except Exception as e:
+            print(f"aviso: busca no Dailymotion falhou ({termo}): {e}")
+            continue
+        for k, v in enumerate(d.get("list", [])):
+            t, dur = v.get("title", ""), v.get("duration") or 0
+            if v["id"] in vistos or not titulo_do_jogo(nome, t) or RUIM_DM.search(t) or not 25 <= dur <= 900:
+                continue
+            vistos.add(v["id"])
+            bonus = 2 if re.search(r"trailer", t, re.I) else (1 if re.search(r"gameplay", t, re.I) else 0)
+            cands.append((-(peso + bonus) + k * 0.1, v["id"], t))
+    cands.sort()
+    saida = []
+    for _, vid, titulo in cands[: n + 2]:
+        if len(saida) >= n:
+            break
+        i = len(saida)
+        p = os.path.join(pasta, f"{chave}_d{i}.mp4")
+        if os.path.exists(p):
+            saida.append({"arquivo": p, "nome": titulo})
+            continue
+        tmp = os.path.join(pasta, f"{chave}_d{i}.tmp")
+        try:
+            r = subprocess.run(["yt-dlp", f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
+                                "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]/b",
+                                "--download-sections", f"*0-{TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
+                               capture_output=True, text=True, timeout=240)
+            baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))),
+                           None)
+            if r.returncode != 0 or not baixado:
+                print(f"aviso: Dailymotion não baixou {titulo}: {(r.stderr or '').strip()[-160:]}")
+                continue
+            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+            os.remove(baixado)
+            print(f"Dailymotion: {titulo} ({int(duracao(p))}s baixados)", flush=True)
+            saida.append({"arquivo": p, "nome": titulo})
+        except Exception as e:
+            print(f"aviso: Dailymotion falhou para {titulo}: {e}")
+    return saida
+
+
 def baixar_imagens_materia(urls, pasta):
     """Imagens da própria matéria (mostram a novidade de verdade). Converte tudo para JPG e descarta
     miniaturas. Devolve entradas de banco {id: {...}}."""
@@ -201,7 +296,10 @@ def baixar_jogo(nome, pasta, max_trailers=MAX_TRAILERS):
         except Exception as e:
             print(f"aviso: App Store falhou para '{nome}': {e}")
     if not info:
-        info = {"chave": slug(nome), "nome": nome, "appid": None, "fonte": "YouTube", "screens": [], "trailers": []}
+        info = {"chave": slug(nome), "nome": nome, "appid": None, "fonte": "Dailymotion", "screens": [], "trailers": []}
+    if not info["trailers"]:
+        # sem trailer na Steam (console, jogo antigo, celular): Dailymotion; o YouTube costuma bloquear o servidor
+        info["trailers"] = _dailymotion(nome, info["chave"], pasta, n=min(2, max_trailers))
     if not info["trailers"]:
         info["trailers"] = _youtube(info["nome"], info["chave"], pasta, n=min(2, max_trailers))
     if not info["screens"] and not info["trailers"]:
