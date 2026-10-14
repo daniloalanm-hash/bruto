@@ -6,6 +6,7 @@
 Na pasta do job: job.json (vem da tela), o áudio enviado e, no re-render, o projeto.json.
 Saídas na mesma pasta: final.mp4, projeto.json, cenas.jpg, status.json.
 """
+import json
 import os
 import re
 import subprocess
@@ -431,12 +432,25 @@ def teste_transcricao(pasta, st):
             pub(destino)
 
 
+def teste_fontes(pasta, st):
+    import teste_fontes as tf
+    job = ler(os.path.join(pasta, "job.json"))
+    rel = tf.testar((job.get("jogos") or [])[:2] + ["Silent Hill f"], os.path.join(pasta, "fontes"))
+    destino = os.path.join(pasta, "teste_fontes.json")
+    gravar(destino, rel)
+    print(json.dumps(rel, ensure_ascii=False, indent=1), flush=True)
+    pub = publicador()
+    if pub:
+        pub(destino)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
-    st = Status(pasta, fase, (lambda p: pub(p)) if pub and fase != "teste_transcricao" else None)
+    st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
-        {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao}.get(fase, rerender)(pasta, st)
+        {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
+         "teste_fontes": teste_fontes}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
