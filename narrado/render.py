@@ -11,7 +11,7 @@ import re
 import shutil
 
 import efeitos
-from comum import FPS, W, H, ffmpeg, norm, run
+from comum import FPS, W, H, duracao, ffmpeg, norm, run
 
 CUT = 1.7        # duração alvo de cada corte (s)
 TRANS = 0.25     # duração do efeito de entrada de tópico (flash/zoom/glitch)
@@ -90,7 +90,32 @@ def _fx_transicao(tipo):
     return ""
 
 
+_dur_fonte = {}
+
+
+def _inicio_seguro(src, t0, dur):
+    """O trecho nunca passa do fim do arquivo (ffmpeg devolveria um segmento mais curto e o vídeo inteiro
+    ficaria dessincronizado do áudio — a imagem congela no fim)."""
+    if src not in _dur_fonte:
+        try:
+            _dur_fonte[src] = duracao(src)
+        except Exception:
+            _dur_fonte[src] = 0
+    total = _dur_fonte[src]
+    if total and t0 + dur > total - 0.15:
+        t0 = max(0.0, total - dur - 0.15)
+    return t0
+
+
+def _quadros_exatos(dur):
+    """Segmento sempre com o número exato de quadros: se a fonte acabar antes, repete o último quadro."""
+    n = max(1, int(round(dur * FPS)))
+    return n, f",tpad=stop_mode=clone:stop_duration={dur + 1:.3f}"
+
+
 def seg_video(src, t0, dur, out, zoom_in, trans):
+    t0 = _inicio_seguro(src, t0, dur)
+    n, pad = _quadros_exatos(dur)
     z = f"1+0.07*t/{dur:.3f}" if zoom_in else f"1.07-0.07*t/{dur:.3f}"
     if trans in PUNCH:
         z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
@@ -98,8 +123,8 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
     pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
     vf = (f"{pre}crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale={W}:{H},"
           f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
-          f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _fx_transicao(trans))
-    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur:.3f}", "-vf", vf, "-an",
+          f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _fx_transicao(trans) + pad)
+    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
 
 
@@ -137,13 +162,15 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
 
 def seg_video_proprio(src, t0, dur, out, trans):
     """Clipe enviado pelo usuário: vertical vira tela cheia; horizontal fica inteiro sobre fundo desfocado."""
+    t0 = _inicio_seguro(src, t0, dur)
+    n, pad = _quadros_exatos(dur)
     punch = f"+{PUNCH[trans]}*max(0\\,1-t/{TRANS})" if trans in PUNCH else ""
     z = f"(1.0+0.04*t/{dur:.3f}{punch})"
     vf = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=30:2,"
           f"eq=brightness=-0.12[bg];[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];"
           f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={FPS},"
-          f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans))
-    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur:.3f}", "-filter_complex", vf, "-an",
+          f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans) + pad)
+    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-filter_complex", vf, "-an", "-frames:v", n,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", out)
 
 
@@ -588,6 +615,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         f.writelines(f"file '{p}'\n" for p in lista)
     visual = os.path.join(pasta_trab, "visual.mp4")
     ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c", "copy", visual)
+    dv = duracao(visual)
+    if dv < total - 0.2:
+        # rede de segurança: nunca deixar a imagem acabar antes da voz
+        print(f"aviso: imagem com {dv:.2f}s para {total:.2f}s de voz; completando com o último quadro", flush=True)
+        completo = os.path.join(pasta_trab, "visual_completo.mp4")
+        ffmpeg("-i", visual, "-vf", f"tpad=stop_mode=clone:stop_duration={total - dv + 0.5:.3f}", "-t", f"{total:.3f}",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", completo)
+        visual = completo
 
     corte_gancho = faixas[1][1] if len(faixas) > 1 else total
     blocos = blocos_com_destaque(projeto)

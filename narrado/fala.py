@@ -289,12 +289,41 @@ def tirar_alucinacao(palavras):
     return [w for k, w in enumerate(palavras) if k not in fora]
 
 
+def _tirar_desgarradas(ws, S):
+    """Palavra que o alinhamento jogou longe do resto da tomada ("Qual É O jogo" -> "nem O calendário"):
+    um pedacinho de 1 ou 2 palavras de ligação, separado da sequência principal por um salto no roteiro.
+    Se ficasse, contaria como "dito por último" e apagaria a frase inteira de uma tomada anterior."""
+    marc = [w for w in ws if w["idx"] is not None]
+    if len(marc) < 3:
+        return
+    corridas, atual = [], [marc[0]]
+    for w in marc[1:]:
+        if 0 < w["idx"] - atual[-1]["idx"] <= 3:
+            atual.append(w)
+        else:
+            corridas.append(atual)
+            atual = [w]
+    corridas.append(atual)
+    if len(corridas) < 2:
+        return
+    maior = max(corridas, key=len)
+    for r in corridas:
+        if r is maior or len(r) > 2:
+            continue
+        if all(norm(w["w"]) in PALAVRAS_LIGACAO or len(norm(w["w"])) <= 2 for w in r):
+            for w in r:
+                w["idx"] = None
+                w.pop("rot", None)
+
+
 def erro_de_ouvido(a, b, cru=""):
     """Diferença típica de transcrição, não de fala: uma letra trocada no meio da palavra ("jugar" x "jogar")
     ou palavra cortada pelo Whisper ("grave" de "graveyard"). Flexão real ("missão" x "missões") muda o final."""
     if b.startswith(a):
         # só palavra que o Whisper marcou como cortada ("Grave..."); "ganhar" x "ganharam" é flexão de verdade
         return len(a) >= 4 and len(b) > len(a) + 1 and bool(re.search(r"(\.\.\.|…|[-‐])$", cru))
+    if b.endswith(a):
+        return False  # contração do roteiro ("praquele") x o que foi dito ("aquele"): vale o falado
     if len(a) >= 5 and 2 <= len(b) - len(a) <= 3:
         # sílaba engolida pelo Whisper ("replay" de "roleplay"): o falado aparece inteiro, em ordem, no roteiro
         it = iter(b)
@@ -401,6 +430,7 @@ def editar(palavras, cenas, nomes=()):
                     elif abs(len(fal) - len(rot)) <= 1:
                         for w, x in zip(fal, rot):  # só para saber a posição; a legenda segue o que foi dito
                             w["idx"] = x
+        _tirar_desgarradas(ws, S)
         mapeados = [w["idx"] for w in ws if w["idx"] is not None]
         if mapeados:
             esperado = max(mapeados) + 1
@@ -437,6 +467,30 @@ def editar(palavras, cenas, nomes=()):
                     w["manter"] = True
             elif k < a and w["idx"] is None and k == a - 1:
                 w["manter"] = True  # palavra de ligação no começo da tomada ("Mas e pra você")
+
+    # 3c) fim (ou começo) de frase mal ouvido: "…que ama Survival War" no lugar de "horror". Se a tomada
+    #     mantida termina em palavras sem correspondência e as posições seguintes do roteiro não foram
+    #     ditas em lugar nenhum, essas palavras são o final da frase: ficam (com a grafia do roteiro)
+    ditos = {w["idx"] for w in palavras if w["manter"] and w["idx"] is not None}
+    for c, ws in por_trecho.items():
+        mant = [k for k, w in enumerate(ws) if w["manter"] and w["idx"] is not None]
+        if c not in validos or not mant:
+            continue
+        a, b = mant[0], mant[-1]
+        cauda = ws[b + 1:]
+        if cauda and len(cauda) <= 2 and all(w["idx"] is None and not w["manter"] for w in cauda):
+            pos = list(range(ws[b]["idx"] + 1, ws[b]["idx"] + 1 + len(cauda)))
+            if all(x < len(S) and x not in ditos and S[x][1] == S[ws[b]["idx"]][1] for x in pos):
+                for w, x in zip(cauda, pos):
+                    w.update({"idx": x, "manter": True, "rot": True})
+                    ditos.add(x)
+        cabeca = ws[:a]
+        if cabeca and len(cabeca) <= 2 and all(w["idx"] is None and not w["manter"] for w in cabeca):
+            pos = list(range(ws[a]["idx"] - len(cabeca), ws[a]["idx"]))
+            if all(x >= 0 and x not in ditos and S[x][1] == S[ws[a]["idx"]][1] for x in pos):
+                for w, x in zip(cabeca, pos):
+                    w.update({"idx": x, "manter": True, "rot": True})
+                    ditos.add(x)
 
     # 3b) improviso curto entre duas partes mantidas ("Mas e você?" no lugar de "Você"): se traz uma
     #     palavra do roteiro que ficou faltando exatamente naquele ponto, o trecho inteiro fica
