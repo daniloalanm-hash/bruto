@@ -115,6 +115,21 @@ def _quadros_exatos(dur):
     return n, f",tpad=stop_mode=clone:stop_duration={dur + 1:.3f}"
 
 
+_alt_fonte = {}
+
+
+def _nitidez(src):
+    """Vídeo de baixa resolução (gameplay antigo, 360p): realce leve para não ficar borrado ao ampliar."""
+    if src not in _alt_fonte:
+        try:
+            r = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height",
+                     "-of", "csv=p=0", src])
+            _alt_fonte[src] = int(r.stdout.strip().split()[0])
+        except Exception:
+            _alt_fonte[src] = 1080
+    return ",unsharp=5:5:0.9:3:3:0.4" if _alt_fonte[src] < 700 else ""
+
+
 def seg_video(src, t0, dur, out, zoom_in, trans):
     t0 = _inicio_seguro(src, t0, dur)
     n, pad = _quadros_exatos(dur)
@@ -125,7 +140,8 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
     pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
     vf = (f"{pre}crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale={W}:{H},"
           f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
-          f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _fx_transicao(trans) + pad)
+          f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
+          _fx_transicao(trans) + pad)
     ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
 
