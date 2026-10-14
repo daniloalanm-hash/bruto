@@ -613,6 +613,16 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             if abs(ds - d) > 0.08:
                 print(f"aviso: segmento {k} ({mid}) saiu com {ds:.2f}s em vez de {d:.2f}s", flush=True)
                 diag.append({"seg": k, "midia": mid, "esperado": round(d, 2), "saiu": round(ds, 2)})
+                if m["tipo"] == "v":
+                    # trecho de vídeo que não decodifica direito: usa um quadro dele como imagem (Ken Burns)
+                    quadro = os.path.join(seg_dir, f"{k:04d}_q.jpg")
+                    try:
+                        ffmpeg("-ss", f"{m.get('t', 0) + 0.5:.2f}", "-i", src, "-frames:v", 1, "-q:v", 2, quadro)
+                        seg_imagem(quadro, d, out, k, fx)
+                    except Exception:
+                        seg_imagem(os.path.join(pasta_raw, next(
+                            (banco[x]["arquivo"] for x in midias if banco[x]["tipo"] == "i"), m["arquivo"])), d, out, k, fx)
+                    diag[-1]["refeito"] = round(duracao(out), 2)
             lista.append(out)
             k += 1
         if progresso:

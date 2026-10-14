@@ -30,8 +30,18 @@ def ffmpeg(*args):
 
 
 def duracao(path):
-    r = run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)])
-    return float(r.stdout.strip() or 0)
+    """Duração em segundos (0 se o arquivo não tiver duração legível, ex.: segmento quebrado)."""
+    for campo in ("format=duration", "stream=duration"):
+        try:
+            r = run(["ffprobe", "-v", "error", "-show_entries", campo, "-of", "csv=p=0", str(path)])
+        except RuntimeError:
+            return 0.0
+        for linha in r.stdout.split():
+            try:
+                return float(linha.strip().rstrip(","))
+            except ValueError:
+                continue
+    return 0.0
 
 
 def ler(path, padrao=None):
