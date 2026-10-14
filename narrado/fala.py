@@ -307,10 +307,16 @@ def _tirar_desgarradas(ws, S):
     if len(corridas) < 2:
         return
     maior = max(corridas, key=len)
+
+    def forte(w):  # palavra de conteúdo que realmente bate com a do roteiro naquela posição
+        a = norm(w["w"])
+        return a not in PALAVRAS_LIGACAO and len(a) >= 3 and sim(a, S[w["idx"]][0]) >= 0.75
     for r in corridas:
-        if r is maior or len(r) > 2:
+        if r is maior:
             continue
-        if all(norm(w["w"]) in PALAVRAS_LIGACAO or len(norm(w["w"])) <= 2 for w in r):
+        so_ligacao = len(r) <= 2 and all(norm(w["w"]) in PALAVRAS_LIGACAO or len(norm(w["w"])) <= 2 for w in r)
+        # pedaço encaixado só por posição ("Mas e você? Qual o" -> "os títulos nem o"): nenhuma palavra bate
+        if so_ligacao or not any(forte(w) for w in r):
             for w in r:
                 w["idx"] = None
                 w.pop("rot", None)
