@@ -71,17 +71,44 @@ def achar_jogo(nome):
     return melhor["id"], melhor["name"]
 
 
+def _decodifica(p):
+    """O arquivo decodifica do começo ao fim sem erro? (cópia direta de stream às vezes sai corrompida:
+    "Invalid NAL unit size" — aí os trechos do trailer saem vazios no render)."""
+    import subprocess
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-an", "-vf", "scale=160:-2", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    erros = [l for l in r.stderr.splitlines() if l.strip()]
+    return r.returncode == 0 and len(erros) <= 2
+
+
 def _baixar_trailer(src, p):
-    """Baixa os primeiros TRECHO_MAX s de um trailer (cópia direta; se o contêiner não aceitar, reencoda)."""
-    if os.path.exists(p):
+    """Baixa os primeiros TRECHO_MAX s de um trailer (cópia direta; se sair corrompida ou o contêiner não aceitar,
+    reencoda). Arquivo já baixado é conferido uma vez (marca .ok ao lado)."""
+    ok = p + ".ok"
+    if os.path.exists(p) and os.path.exists(ok):
         return True
-    try:
-        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-c:v", "copy", "-movflags", "+faststart", p)
-        if duracao(p) < 3:
-            raise RuntimeError("curto")
-    except Exception:
+    if os.path.exists(p) and _decodifica(p):
+        open(ok, "w").close()
+        return True
+    if os.path.exists(p):
+        print(f"aviso: {os.path.basename(p)} estava corrompido; baixando de novo reencodando", flush=True)
+        os.remove(p)
         ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:1080",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+        open(ok, "w").close()
+        return os.path.exists(p)
+    try:
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-c:v", "copy", "-movflags", "+faststart", p)
+        if duracao(p) < 3 or not _decodifica(p):
+            raise RuntimeError("curto ou corrompido")
+        open(ok, "w").close()
+        return True
+    except Exception:
+        if os.path.exists(p):
+            os.remove(p)
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:1080",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+        open(ok, "w").close()
     return os.path.exists(p)
 
 
