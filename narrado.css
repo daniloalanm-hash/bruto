@@ -155,3 +155,20 @@ audio { width: 100%; }
 .bloco-leg .t { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .bloco-leg input { text-transform: uppercase; font-weight: 600; }
 .tomadas .w { cursor: pointer; }
+
+/* fila de vídeos gerando (canto inferior) */
+.fila { position: fixed; right: 16px; bottom: 16px; z-index: 40; width: min(340px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35); max-height: 45vh; overflow: auto; }
+.fila-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fila ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fila-item { width: 100%; text-align: left; display: grid; gap: 2px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px; color: inherit; font: inherit; cursor: pointer; }
+.fila-item:disabled { cursor: default; }
+.fila-tit { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fila-barra { display: block; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 3px; }
+.fila-barra > i { display: block; height: 100%; background: var(--in); transition: width .4s; }
+.fila-erro .fila-barra > i { background: var(--warn); }
+.fila-abre { background: none; border: 0; color: inherit; font: inherit; font-weight: 700; padding: 0; cursor: pointer; }
+/* no celular a fila fica recolhida (só o título) para não cobrir o botão de gravar */
+@media (max-width: 640px) { .fila { left: 16px; right: 16px; width: auto; bottom: 10px; } .fila:not(.aberta) ul { display: none; } .fila:not(.aberta) .fila-topo { margin: 0; } }

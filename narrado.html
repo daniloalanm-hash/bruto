@@ -159,6 +159,7 @@
 
         <div class="row fim">
           <button class="btn" data-ir="roteiro">Voltar</button>
+          <button id="btnGerarProximo" class="btn" hidden>Gerar e gravar o próximo</button>
           <button id="btnGerar" class="btn primary">Gerar vídeo</button>
         </div>
         <p id="statusEnvio" class="muted small"></p>
@@ -281,6 +282,7 @@
   </dialog>
 
   <div id="toasts" aria-live="polite"></div>
+  <aside id="fila" class="fila" hidden aria-live="polite"></aside>
   <script src="narrado.js"></script>
 </body>
 </html>

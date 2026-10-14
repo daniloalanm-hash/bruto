@@ -33,7 +33,7 @@ const fmtT = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart
 /* ---------------- armazenamento local ---------------- */
 const K = {
   gemini: 'bruto:gemini:key', modelo: 'bruto:gemini:model', senha: 'bruto:narrado:senha', rasc: 'bruto:narrado:rascunho',
-  estilo: 'bruto:narrado:estilo', lote: 'bruto:narrado:lote', post: 'bruto:narrado:post:',
+  estilo: 'bruto:narrado:estilo', lote: 'bruto:narrado:lote', post: 'bruto:narrado:post:', fila: 'bruto:narrado:fila',
 };
 // aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
 const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji'];
@@ -158,6 +158,7 @@ function irPara(passo) {
   });
   if (passo === 'roteiro') renderRoteiro();
   if (passo === 'voz') renderTeleprompter();
+  atualizarBotaoProximo();
   salvarRascunho();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -318,7 +319,7 @@ function renderLote() {
       h('button', { class: 'btn small primary', onclick: () => abrirDoLote(d.id) }, 'Abrir e gravar'),
       h('button', { class: 'btn small icon danger', title: 'Excluir', onclick: () => { salvarLote(lote().filter((x) => x.id !== d.id)); renderLote(); } }, '✕')))));
 }
-function abrirDoLote(id) {
+function abrirDoLote(id, passo = 'roteiro') {
   const d = lote().find((x) => x.id === id);
   if (!d) return;
   state.materia = d.materia;
@@ -326,8 +327,9 @@ function abrirDoLote(id) {
   state.loteId = d.id;
   if (d.materia) { $('#urlMateria').value = d.materia.url || ''; $('#textoMateria').value = d.materia.texto || ''; }
   atualizaBotaoRoteiro();
-  irPara('roteiro');
+  irPara(passo);
 }
+function proximoDoLote() { return lote().find((x) => x.id !== state.loteId) || null; }
 async function buscarMateria(url) {
   let m = await materiaWordPress(url).catch(() => null);
   if (!m || m.texto.length < 200) m = await api(`/api/artigo?url=${encodeURIComponent(url)}`);
@@ -547,59 +549,175 @@ function paraBase64(blob) {
   });
 }
 
-$('#btnGerar').addEventListener('click', async () => {
+function montarJob() {
   const modo = state.voz.modo === 'ia' ? 'ia' : 'gravada';
-  if (modo === 'gravada' && !state.voz.blob) { toast('Grave ou envie o áudio primeiro.', 'warn'); return; }
-  if (grav.rec?.state === 'recording') { toast('Pare a gravação antes de gerar.', 'warn'); return; }
-  const st = $('#statusEnvio'), btn = $('#btnGerar');
-  btn.classList.add('busy');
+  const r = state.roteiro;
+  return {
+    ...estiloSalvo(),
+    titulo: r.titulo, titulo_tela: r.titulo_tela || '', fonte: state.materia?.url || '',
+    jogos: r.jogos,
+    cenas: r.cenas.filter((c) => c.texto.trim()),
+    post: r.post || null,
+    imagens_materia: state.materia?.imagens || [],
+    voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
+  };
+}
+function podeGerar() {
+  if (state.voz.modo !== 'ia' && !state.voz.blob) { toast('Grave ou envie o áudio primeiro.', 'warn'); return false; }
+  if (grav.rec?.state === 'recording') { toast('Pare a gravação antes de gerar.', 'warn'); return false; }
+  return true;
+}
+
+/* ---------------- fila: vários vídeos sendo gerados ao mesmo tempo ----------------
+   Cada vídeo é enviado e montado no servidor por conta própria; a tela fica livre para gravar o próximo. */
+const fila = (() => { try { return JSON.parse(ls.get(K.fila) || '[]'); } catch { return []; } })();
+function salvarFila() {
+  // guarda só o que dá para retomar depois de recarregar (os que já estão no servidor)
+  ls.set(K.fila, JSON.stringify(fila.filter((x) => x.tag && x.estado !== 'enviando').slice(0, 12)));
+}
+function renderFila() {
+  const box = $('#fila');
+  const itens = fila.filter((x) => !x.dispensado);
+  box.hidden = !itens.length;
+  if (!itens.length) return;
+  const ativos = itens.filter((x) => x.estado === 'enviando' || x.estado === 'processando').length;
+  box.replaceChildren(
+    h('div', { class: 'fila-topo' },
+      h('button', { class: 'fila-abre', title: 'Mostrar/esconder', onclick: () => box.classList.toggle('aberta') },
+        ativos ? `Gerando ${ativos} vídeo${ativos > 1 ? 's' : ''}` : 'Vídeos prontos', h('span', { class: 'muted small' }, ` · ${itens.length}`)),
+      h('button', { class: 'link small', onclick: () => { fila.forEach((x) => { if (x.estado === 'pronto' || x.estado === 'erro') x.dispensado = true; }); salvarFila(); renderFila(); } }, 'limpar prontos')),
+    h('ul', {}, ...itens.map((x) => h('li', { class: `fila-${x.estado}` },
+      h('button', {
+        class: 'fila-item', disabled: !x.tag, title: x.tag ? 'Abrir este vídeo' : 'Ainda enviando',
+        onclick: () => { if (x.tag) abrirVideo(x.tag); },
+      },
+      h('span', { class: 'fila-tit' }, x.titulo || 'Sem título'),
+      h('span', { class: 'fila-etapa muted small' },
+        x.estado === 'pronto' ? '✅ Pronto — abrir' : x.estado === 'erro' ? `⚠️ ${x.etapa || 'Erro'}` : (x.etapa || 'Na fila…')),
+      h('i', { class: 'fila-barra' }, h('i', { style: { width: `${x.estado === 'pronto' ? 100 : Math.max(3, x.progresso || 0)}%` } })))))));
+}
+let vigiandoFila = false;
+async function vigiarFila() {
+  if (vigiandoFila) return;
+  vigiandoFila = true;
   try {
-    const r = state.roteiro;
-    const job = {
-      ...estiloSalvo(),
-      titulo: r.titulo, titulo_tela: r.titulo_tela || '', fonte: state.materia?.url || '',
-      jogos: r.jogos,
-      cenas: r.cenas.filter((c) => c.texto.trim()),
-      post: r.post || null,
-      imagens_materia: state.materia?.imagens || [],
-      voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
-    };
-    st.textContent = 'Criando o vídeo…';
+    while (fila.some((x) => x.estado === 'processando' || x.estado === 'enviando')) {
+      for (const x of fila.filter((i) => i.estado === 'processando' && i.tag)) {
+        try {
+          const s = await api(`/api/status?tag=${encodeURIComponent(x.tag)}`);
+          const st = s.status || {};
+          if (st.estado === 'pronto' && s.video) {
+            x.estado = 'pronto';
+            notificar('Vídeo pronto', x.titulo || 'Modo Narrado', true, x.tag);
+          } else if (st.estado === 'erro') {
+            x.estado = 'erro'; x.etapa = st.erro || 'falha no render';
+            notificar('Um vídeo deu erro', x.titulo || '', false, x.tag);
+          } else {
+            x.etapa = st.etapa || 'Processando…'; x.progresso = st.progresso || x.progresso || 0;
+          }
+        } catch { /* tenta de novo na próxima volta */ }
+      }
+      salvarFila(); renderFila();
+      await sleep(8000);
+    }
+  } finally { vigiandoFila = false; }
+}
+async function enviarParaFila(job, voz) {
+  const item = { id: Math.random().toString(36).slice(2, 9), titulo: job.titulo, estado: 'enviando', etapa: 'Criando…', progresso: 1 };
+  fila.unshift(item);
+  renderFila();
+  pedirPermissaoAviso();
+  try {
     const { tag } = await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'criar', job }) });
-    if (state.loteId) { salvarLote(lote().filter((x) => x.id !== state.loteId)); state.loteId = null; renderLote(); }
-    if (r.post) ls.set(K.post + tag, JSON.stringify(r.post));
-    if (modo === 'gravada') {
+    item.tag = tag;
+    if (job.post) ls.set(K.post + tag, JSON.stringify(job.post));
+    if (voz?.blob) {
       const PARTE = 3 * 1024 * 1024; // limite de upload das funções do Vercel
-      const total = Math.ceil(state.voz.blob.size / PARTE);
+      const total = Math.ceil(voz.blob.size / PARTE);
       for (let n = 0; n < total; n++) {
-        st.textContent = `Enviando o áudio (${n + 1}/${total})…`;
-        const base64 = await paraBase64(state.voz.blob.slice(n * PARTE, (n + 1) * PARTE));
+        item.etapa = `Enviando o áudio (${n + 1}/${total})…`; renderFila();
+        const base64 = await paraBase64(voz.blob.slice(n * PARTE, (n + 1) * PARTE));
         await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'parte', tag, n, base64 }) });
       }
     }
-    st.textContent = 'Mandando para o servidor de render…';
-    pedirAviso();
+    item.etapa = 'Mandando para o servidor de render…'; renderFila();
     await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'iniciar', tag, fase: 'preparar' }) });
-    st.textContent = '';
-    abrirVideo(tag);
+    item.estado = 'processando'; item.etapa = 'Na fila do servidor…'; item.progresso = 2;
   } catch (e) {
-    st.textContent = `Erro: ${e.message}`;
-  } finally { btn.classList.remove('busy'); }
+    item.estado = 'erro'; item.etapa = `Não enviou: ${e.message}`;
+    toast(`O envio de "${job.titulo}" falhou: ${e.message}`, 'warn', 8000);
+  }
+  salvarFila(); renderFila();
+  vigiarFila();
+  return item;
+}
+function tirarDoLote() {
+  if (state.loteId) { salvarLote(lote().filter((x) => x.id !== state.loteId)); state.loteId = null; renderLote(); }
+}
+
+$('#btnGerar').addEventListener('click', async () => {
+  if (!podeGerar()) return;
+  const st = $('#statusEnvio'), btn = $('#btnGerar');
+  btn.classList.add('busy');
+  st.textContent = 'Enviando…';
+  const job = montarJob();
+  tirarDoLote();
+  const item = await enviarParaFila(job, state.voz.modo === 'ia' ? null : { blob: state.voz.blob });
+  btn.classList.remove('busy');
+  st.textContent = '';
+  if (item.tag && item.estado !== 'erro') abrirVideo(item.tag);
+  else st.textContent = `Erro: ${item.etapa}`;
 });
 
+// gravar em sequência: manda este para a fila (o envio continua sozinho) e já abre o próximo roteiro na voz
+$('#btnGerarProximo').addEventListener('click', () => {
+  if (!podeGerar()) return;
+  const prox = proximoDoLote();
+  if (!prox) return;
+  const job = montarJob();
+  const voz = state.voz.modo === 'ia' ? null : { blob: state.voz.blob };
+  tirarDoLote();
+  enviarParaFila(job, voz);
+  toast(`"${job.titulo}" foi para a fila. Pode gravar o próximo.`);
+  state.voz.blob = null; state.voz.nome = '';
+  $('#ouvirGrav').hidden = true; $('#ouvirGrav').removeAttribute('src');
+  $('#ouvirArq').hidden = true; $('#ouvirArq').removeAttribute('src');
+  $('#soltarAudio span').textContent = 'Clique ou arraste o áudio (m4a, mp3, wav…)';
+  $('#arqAudio').value = '';
+  $('#tempoGrav').textContent = '0:00';
+  $('#statusGrav').textContent = 'Pronto para gravar';
+  abrirDoLote(prox.id, 'voz');
+});
+function atualizarBotaoProximo() {
+  const prox = state.passo === 'voz' ? proximoDoLote() : null;
+  const b = $('#btnGerarProximo');
+  b.hidden = !prox;
+  if (prox) {
+    const resto = lote().filter((x) => x.id !== state.loteId).length;
+    b.textContent = `Gerar e gravar o próximo (${resto} na lista)`;
+    b.title = `Próximo: ${prox.roteiro.titulo || 'sem título'}`;
+  }
+}
+
 /* ---------------- aviso quando o vídeo fica pronto ---------------- */
+function pedirPermissaoAviso() {
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); } catch { /* sem suporte */ }
+}
 function pedirAviso() {
   state.esperando = true;
-  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); } catch { /* sem suporte */ }
+  pedirPermissaoAviso();
 }
 const tituloPagina = document.title;
 function avisar(titulo, corpo, ok = true) {
   if (!state.esperando) return;
   state.esperando = false;
+  notificar(titulo, corpo, ok);
+}
+function notificar(titulo, corpo, ok = true, tag = '') {
   try {
     if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
       const n = new Notification(titulo, { body: corpo, icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" });
-      n.onclick = () => { window.focus(); n.close(); };
+      n.onclick = () => { window.focus(); n.close(); if (tag) abrirVideo(tag); };
     }
   } catch { /* sem suporte */ }
   if (document.hidden) {
@@ -1467,7 +1585,7 @@ $('#btnSalvarCfg').addEventListener('click', () => {
   toast('Configurações salvas neste navegador.');
 });
 window.addEventListener('beforeunload', (e) => {
-  if (state.sujo || grav.rec?.state === 'recording') { e.preventDefault(); e.returnValue = ''; }
+  if (state.sujo || grav.rec?.state === 'recording' || fila.some((x) => x.estado === 'enviando')) { e.preventDefault(); e.returnValue = ''; }
 });
 
 /* ---------------- início ---------------- */
@@ -1482,6 +1600,8 @@ window.addEventListener('beforeunload', (e) => {
   }
   atualizaBotaoRoteiro();
   renderLote();
+  renderFila();
+  vigiarFila();
   if (tagUrl) { abrirVideo(tagUrl); return; }
   if (r?.passo === 'video' && r.tag) { abrirVideo(r.tag); return; }
   // a gravação não sobrevive a um recarregamento: volta no máximo para a voz
