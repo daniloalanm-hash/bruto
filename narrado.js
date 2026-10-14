@@ -34,6 +34,7 @@ const fmtT = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart
 const K = {
   gemini: 'bruto:gemini:key', modelo: 'bruto:gemini:model', senha: 'bruto:narrado:senha', rasc: 'bruto:narrado:rascunho',
   estilo: 'bruto:narrado:estilo', lote: 'bruto:narrado:lote', post: 'bruto:narrado:post:', fila: 'bruto:narrado:fila',
+  duracao: 'bruto:narrado:duracao', ritmo: 'bruto:narrado:ritmo',
 };
 // aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
 const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji'];
@@ -111,17 +112,49 @@ async function gemini(prompt, onStatus = () => {}) {
   throw new Error(`Gemini indisponível agora (${ultimo}). Tente em alguns minutos.`);
 }
 
+// ritmo do vídeo pronto (palavras/s depois dos cortes): começa em 3,1 (média medida nos seus vídeos)
+// e se ajusta sozinho com a média dos últimos vídeos que você abriu
+const MONETIZA = 60; // TikTok: só monetiza vídeo com mais de 1 minuto
+function ritmo() {
+  try { const r = JSON.parse(ls.get(K.ritmo) || '[]'); if (r.length) return r.reduce((a, b) => a + b, 0) / r.length; } catch { /* padrão */ }
+  return 3.1;
+}
+function registrarRitmo(p) {
+  if (!p?.duracao || p.voz?.modo !== 'gravada') return;
+  const n = (p.palavras || []).filter((w) => w.manter).length;
+  const r = n / p.duracao;
+  if (!(r > 1.5 && r < 5)) return;
+  let l = [];
+  try { l = JSON.parse(ls.get(K.ritmo) || '[]'); } catch { l = []; }
+  if (l.at(-1) === +r.toFixed(3)) return;
+  ls.set(K.ritmo, JSON.stringify([...l, +r.toFixed(3)].slice(-6)));
+}
+const contarPalavras = (cenas) => cenas.reduce((a, c) => a + String(c.texto || '').split(/\s+/).filter(Boolean).length, 0);
+// meta de palavras: para 1 min+ mira ~10% acima (a edição corta pausas e o vídeo encolhe)
+function metaPalavras(segundos) {
+  const alvo = segundos >= MONETIZA ? Math.max(segundos, 68) : segundos;
+  return { alvo: Math.round(alvo * ritmo()), minimo: Math.round((segundos >= MONETIZA ? 64 : segundos * 0.85) * ritmo()) };
+}
+
 function promptRoteiro(materia, segundos) {
-  const palavras = Math.round(segundos * 2.6);
+  const { alvo: palavras, minimo } = metaPalavras(segundos);
+  const longo = segundos >= MONETIZA;
   return `Você é roteirista de vídeos curtos virais de games (TikTok/Reels/Shorts) no estilo "narração sem rosto": uma voz conta a história enquanto aparecem cenas dos jogos com legenda grande.
 
 Escreva o roteiro a partir da matéria abaixo.
 
 REGRAS
 - Português do Brasil, falado e natural, frases curtas, como quem conta uma novidade para um amigo gamer.
-- Cerca de ${palavras} palavras no total (~${segundos} segundos de fala).
+- ${longo ? `TAMANHO É OBRIGATÓRIO: entre ${palavras} e ${palavras + 25} palavras no total, NUNCA menos de ${minimo} (o vídeo precisa passar de 1 minuto para monetizar).` : `Cerca de ${palavras} palavras no total (~${segundos} segundos de fala).`}
 - A PRIMEIRA frase é um gancho forte (curiosidade, contraste ou número surpreendente). Nada de "neste vídeo".
-- Divida em 6 a 10 tópicos. Cada tópico = uma ideia; trocar de tópico = trocar de assunto/jogo.
+- Divida em ${longo ? '9 a 13' : '6 a 10'} tópicos. Cada tópico = uma ideia; trocar de tópico = trocar de assunto/jogo.${longo ? `
+- Para chegar ao tamanho SEM enrolar (o ritmo tem que continuar rápido, frases curtas):
+  - logo depois do gancho, abra uma curiosidade que só se resolve no fim ("e o último detalhe é o mais curioso");
+  - aproveite TODOS os dados da matéria: números, datas, preço, plataformas, nomes, comparações, o que muda para o jogador;
+  - dê contexto que o público gamer precisa para entender (o que é o jogo, de qual franquia/estúdio, o que aconteceu antes), desde que seja informação pública e conhecida;
+  - um tópico de "por que isso importa" ou "o que isso significa para quem joga";
+  - mini-ganchos entre tópicos ("mas não para por aí", "agora vem a parte boa").
+- Nada de repetir a mesma informação com outras palavras só para encher.` : ''}
 - O último tópico é uma pergunta para gerar comentários + "comenta aí".
 - Números em algarismos (2026, 30, 11). Sem reticências, sem emojis, sem hashtags, sem aspas.
 - Use os nomes dos jogos exatamente como aparecem na loja da Steam.
@@ -279,6 +312,23 @@ function roteiroDaIA(r, materia) {
   };
 }
 
+async function roteiroComTamanho(materia, segundos, onStatus = () => {}) {
+  let r = roteiroDaIA(await gemini(promptRoteiro(materia, segundos), onStatus), materia);
+  const { alvo, minimo } = metaPalavras(segundos);
+  for (let tentativa = 0; tentativa < 2 && r.cenas.length && contarPalavras(r.cenas) < minimo; tentativa++) {
+    onStatus(`Roteiro curto (${contarPalavras(r.cenas)} palavras): pedindo para a IA completar até ~${alvo}…`);
+    const extra = await gemini(`${promptRoteiro(materia, segundos)}
+
+ROTEIRO ATUAL (curto demais: ${contarPalavras(r.cenas)} palavras; precisa de ${alvo} a ${alvo + 25}):
+${JSON.stringify({ titulo: r.titulo, titulo_tela: r.titulo_tela, jogos: r.jogos, cenas: r.cenas, post: r.post })}
+
+Reescreva e AUMENTE este roteiro até o tamanho pedido: mantenha o gancho e o final, acrescente tópicos com dados e contexto da matéria (sem inventar e sem repetir). Responda no mesmo formato JSON.`, onStatus);
+    const novo = roteiroDaIA(extra, materia);
+    if (contarPalavras(novo.cenas) > contarPalavras(r.cenas)) r = novo;
+  }
+  return r;
+}
+
 async function escreverRoteiro() {
   const texto = $('#textoMateria').value.trim();
   const materia = { ...(state.materia || {}), texto: texto || state.materia?.texto || '' };
@@ -287,8 +337,7 @@ async function escreverRoteiro() {
   st.textContent = 'A IA está escrevendo o roteiro…';
   $('#btnRoteiro').classList.add('busy');
   try {
-    const r = await gemini(promptRoteiro(materia, +$('#duracao').value), (m) => { st.textContent = m; });
-    state.roteiro = roteiroDaIA(r, materia);
+    state.roteiro = await roteiroComTamanho(materia, +$('#duracao').value, (m) => { st.textContent = m; });
     if (!state.roteiro.cenas.length) throw new Error('A IA devolveu um roteiro vazio. Tente de novo.');
     state.materia = materia;
     st.textContent = '';
@@ -346,7 +395,7 @@ $('#btnLote').addEventListener('click', async () => {
       st.textContent = `(${i + 1}/${links.length}) Lendo a matéria…`;
       const m = await buscarMateria(url);
       st.textContent = `(${i + 1}/${links.length}) Escrevendo o roteiro: ${m.titulo}`;
-      const r = roteiroDaIA(await gemini(promptRoteiro(m, +$('#duracao').value), (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; }), m);
+      const r = await roteiroComTamanho(m, +$('#duracao').value, (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; });
       if (!r.cenas.length) throw new Error('roteiro vazio');
       salvarLote([{ id: Math.random().toString(36).slice(2, 10), criado: Date.now(), materia: m, roteiro: r }, ...lote()]);
       ok++;
@@ -361,8 +410,14 @@ $('#btnLote').addEventListener('click', async () => {
 /* ---------------- 2. roteiro ---------------- */
 function nomesJogos() { return $('#jogos').value.split('\n').map((s) => s.trim()).filter(Boolean); }
 function estimativa() {
-  const n = state.roteiro.cenas.reduce((a, c) => a + c.texto.split(/\s+/).filter(Boolean).length, 0);
-  $('#estimativa').textContent = `${Math.round(n / 2.6)} s`;
+  const n = contarPalavras(state.roteiro.cenas);
+  const seg = Math.round(n / ritmo());
+  const el = $('#estimativa');
+  el.textContent = seg >= 60 ? `${fmtT(seg)} min` : `${seg} s`;
+  const curto = seg < 64;
+  el.classList.toggle('curto', curto);
+  const falta = Math.max(0, Math.ceil((64 - seg) * ritmo()));
+  $('#estimativaNota').textContent = curto ? `abaixo de 1 min · faltam ~${falta} palavras` : `${n} palavras · passa de 1 min ✓`;
 }
 function renderRoteiro() {
   const r = state.roteiro;
@@ -810,7 +865,8 @@ async function carregarProjeto() {
     state.projeto = await api(`/api/status?tag=${encodeURIComponent(state.tag)}&projeto=1`);
   } catch (e) { toast(`Não consegui abrir o projeto para ajustes: ${e.message}`, 'warn', 7000); return; }
   const p = state.projeto;
-  const info = [`${fmtT(p.duracao || 0)} min`, `versão ${p.versao}`];
+  registrarRitmo(p);
+  const info = [`${fmtT(p.duracao || 0)} min${(p.duracao || 0) < MONETIZA ? ' ⚠️ abaixo de 1 min (não monetiza no TikTok)' : ''}`, `versão ${p.versao}`];
   if (p.voz?.modo === 'gravada') info.push(p.voz.reducao_aplicada ? `redução de ruído ligada (fundo ${p.voz.ruido_db} dB)` : 'gravação limpa, sem redução de ruído');
   $('#infoVideo').textContent = `${p.titulo} · ${info.join(' · ')}`;
   $('#ruido').value = p.voz?.reducao_ruido || 'auto';
@@ -1598,6 +1654,8 @@ window.addEventListener('beforeunload', (e) => {
     state.roteiro = r.roteiro || state.roteiro;
     if (r.materia) { $('#urlMateria').value = r.materia.url || ''; $('#textoMateria').value = r.materia.texto || ''; }
   }
+  if (ls.get(K.duracao)) $('#duracao').value = ls.get(K.duracao);
+  $('#duracao').addEventListener('change', () => ls.set(K.duracao, $('#duracao').value));
   atualizaBotaoRoteiro();
   renderLote();
   renderFila();

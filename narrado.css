@@ -172,3 +172,6 @@ audio { width: 100%; }
 .fila-abre { background: none; border: 0; color: inherit; font: inherit; font-weight: 700; padding: 0; cursor: pointer; }
 /* no celular a fila fica recolhida (só o título) para não cobrir o botão de gravar */
 @media (max-width: 640px) { .fila { left: 16px; right: 16px; width: auto; bottom: 10px; } .fila:not(.aberta) ul { display: none; } .fila:not(.aberta) .fila-topo { margin: 0; } }
+.estimativa b.curto { color: var(--warn); }
+.estimativa b.curto ~ #estimativaNota { color: var(--warn); }
+#estimativaNota { color: var(--in); }

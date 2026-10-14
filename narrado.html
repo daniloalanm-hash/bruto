@@ -52,9 +52,10 @@
         <div class="row fim">
           <label class="field curto"><span>Duração</span>
             <select id="duracao">
+              <option value="70" selected>1 min+ (monetiza no TikTok)</option>
+              <option value="90">~1 min 30</option>
+              <option value="50">~50 s</option>
               <option value="35">~35 s</option>
-              <option value="50" selected>~50 s</option>
-              <option value="70">~70 s</option>
             </select>
           </label>
           <button id="btnRoteiro" class="btn primary" disabled>Escrever roteiro com IA</button>
@@ -83,7 +84,7 @@
             <h2>Roteiro</h2>
             <p class="muted small">Cada bloco é um tópico: troca de assunto = transição no vídeo. Em <b>Jogo na tela</b>, escolha de qual jogo aparecem as imagens enquanto aquele trecho é falado.</p>
           </div>
-          <div class="estimativa"><b id="estimativa">0 s</b><span class="muted small">estimado</span></div>
+          <div class="estimativa"><b id="estimativa">0 s</b><span class="muted small">estimado no vídeo final</span><span id="estimativaNota" class="small"></span></div>
         </div>
         <div class="row2">
           <label class="field"><span>Título</span><input id="titulo" type="text"></label>
