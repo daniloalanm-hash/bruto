@@ -155,7 +155,13 @@ REGRAS
   - um tópico de "por que isso importa" ou "o que isso significa para quem joga";
   - mini-ganchos entre tópicos ("mas não para por aí", "agora vem a parte boa").
 - Nada de repetir a mesma informação com outras palavras só para encher.` : ''}
-- O último tópico é uma pergunta para gerar comentários + "comenta aí".
+- FECHAMENTO (é o que gera salvamento e compartilhamento, que fazem o vídeo ser entregue para mais gente):
+  - o penúltimo tópico entrega a "recompensa" prometida no começo (o detalhe mais curioso/surpreendente fica para o fim);
+  - o último tópico junta, em no máximo 2 frases curtas: uma pergunta para comentar + UM pedido de ação ESPECÍFICO, escolhendo o que combina com o assunto:
+    - compartilhar com alguém concreto: "manda pra aquele amigo que [joga X / está esperando Y / vive reclamando de Z]";
+    - salvar quando o vídeo tem informação útil (datas, lista de jogos, preço, requisitos): "salva pra não esquecer a data" / "salva pra consultar depois";
+  - nada de "curte, comenta, compartilha e segue" genérico.
+- Se o vídeo for uma lista (vários jogos, várias datas), diga no começo quantos itens são ("são 5 jogos, e o último...") para a pessoa ficar até o fim.
 - Números em algarismos (2026, 30, 11). Sem reticências, sem emojis, sem hashtags, sem aspas.
 - Use os nomes dos jogos exatamente como aparecem na loja da Steam.
 - Não invente fatos que não estão na matéria.
@@ -168,7 +174,7 @@ Para cada tópico informe:
 
 Também:
 - "titulo_tela": texto curto e chamativo (3 a 6 palavras) que aparece grande na tela nos 2 primeiros segundos, reforçando o gancho. Ex.: "O FIM DO RAINBOW SIX MOBILE".
-- "post": legenda para publicar o vídeo no TikTok/Reels: {"legenda": "1 a 2 frases que instigam + pergunta", "hashtags": ["#5 a 8 hashtags relevantes, em português quando fizer sentido"]}.
+- "post": legenda para publicar o vídeo no TikTok/Reels: {"legenda": "1 a 2 frases que instigam + pergunta + o mesmo pedido de salvar/compartilhar do fim do vídeo", "hashtags": ["#5 a 8 hashtags relevantes, em português quando fizer sentido"]}.
 
 Responda SOMENTE com JSON:
 {"titulo": "...", "titulo_tela": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "emoji": null}], "post": {"legenda": "...", "hashtags": ["#..."]}}
