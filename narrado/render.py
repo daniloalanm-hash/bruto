@@ -116,6 +116,7 @@ def _quadros_exatos(dur):
 
 
 _alt_fonte = {}
+_ultimo = {}
 
 
 def _nitidez(src):
@@ -142,8 +143,10 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
           f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
           f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
           _fx_transicao(trans) + pad)
-    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+    r = ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+    _ultimo["seg"] = {"t0": round(t0, 2), "crop": c, "fonte_s": _dur_fonte.get(src), "stderr": (r.stderr or "")[-300:],
+                      "bytes": os.path.getsize(out) if os.path.exists(out) else -1}
 
 
 def _recorte(m):
@@ -628,7 +631,8 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             ds = duracao(out)
             if abs(ds - d) > 0.08:
                 print(f"aviso: segmento {k} ({mid}) saiu com {ds:.2f}s em vez de {d:.2f}s", flush=True)
-                diag.append({"seg": k, "midia": mid, "esperado": round(d, 2), "saiu": round(ds, 2)})
+                diag.append({"seg": k, "midia": mid, "esperado": round(d, 2), "saiu": round(ds, 2),
+                             "detalhe": _ultimo.pop("seg", None) if m["tipo"] == "v" else None})
                 if m["tipo"] == "v":
                     # trecho de vídeo que não decodifica direito: usa um quadro dele como imagem (Ken Burns)
                     quadro = os.path.join(seg_dir, f"{k:04d}_q.jpg")
