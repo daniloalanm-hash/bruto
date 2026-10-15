@@ -498,6 +498,54 @@ def editar(palavras, cenas, nomes=()):
                     w.update({"idx": x, "manter": True, "rot": True})
                     ditos.add(x)
 
+    # 3d) palavra fora do roteiro colada (sem pausa) na borda de uma tomada mantida, fechando a tomada
+    #     ("bilhão | de dólares", "Isso é | mais que o dobro", "Just | See" = Justice): fica, até 3 palavras —
+    #     senão o áudio corta no meio de uma frase falada de uma vez.
+    COLADO = 0.12
+
+    def abandonada(w):
+        return bool(re.search(r"(\.\.\.|…|[-‐])$", w["w"]))
+    for c, ws in por_trecho.items():
+        if c not in validos:
+            continue
+        k = 0
+        while k < len(ws):
+            if not ws[k]["manter"]:
+                k += 1
+                continue
+            a = k
+            while k + 1 < len(ws) and ws[k + 1]["manter"]:
+                k += 1
+            b = k
+            k += 1
+            # o improviso colado só fica se fecha a tomada (vai até o fim/começo dela): senão é o começo
+            # de uma tentativa que foi largada ("Você vai comprar o novo…")
+            j = b + 1
+            while j < len(ws) and j - b <= 3 and not ws[j]["manter"] and ws[j]["idx"] is None and \
+                    not abandonada(ws[j]) and ws[j]["s"] - ws[j - 1]["e"] < COLADO:
+                j += 1
+            if j == len(ws) and j > b + 1:
+                ult = ws[b]
+                for w in ws[b + 1:j]:
+                    w["manter"] = True
+                    w["estendida"] = True
+                prim = ws[b + 1]
+                if ult["idx"] is not None:
+                    alvo = S[ult["idx"]][0]
+                    a1, junto = norm(ult["w"]), norm(ult["w"]) + norm(prim["w"])
+                    if sim(junto, alvo) > sim(a1, alvo) + 0.1 or \
+                            (alvo.startswith(a1) and len(a1) < len(alvo) and sim(junto, alvo) >= 0.6):
+                        prim.update({"junta": True, "idx": ult["idx"]})  # "Just"+"See" = "Justice": legenda na anterior
+                        ult["rot"] = True
+                ult["pontua_depois"] = ws[j - 1]["i"]
+            j = a - 1
+            while j >= 0 and a - j <= 3 and not ws[j]["manter"] and ws[j]["idx"] is None and \
+                    not abandonada(ws[j]) and ws[j + 1]["s"] - ws[j]["e"] < COLADO:
+                j -= 1
+            if j == -1 and a > 0:
+                for w in ws[0:a]:
+                    w["manter"] = True
+
     # 3b) improviso curto entre duas partes mantidas ("Mas e você?" no lugar de "Você"): se traz uma
     #     palavra do roteiro que ficou faltando exatamente naquele ponto, o trecho inteiro fica
     ditos_ate_aqui = {w["idx"] for w in palavras if w["manter"] and w["idx"] is not None}
@@ -521,8 +569,22 @@ def editar(palavras, cenas, nomes=()):
             w, x = achou
             w["idx"] = x
             ditos_ate_aqui.add(x)
-            for o in ws:
+            # traz junto só as palavras em volta até esbarrar no que já foi dito em outra tomada ou numa
+            # palavra largada no meio ("Você | vai comprar o novo…" -> só "Você")
+            def serve(o):
+                return o is w or (not re.search(r"(\.\.\.|…|[-‐])$", o["w"]) and
+                                  (o["idx"] is None or o["idx"] not in ditos_ate_aqui))
+            iw = ws.index(w)
+            a2 = iw
+            while a2 > 0 and serve(ws[a2 - 1]):
+                a2 -= 1
+            b2 = iw
+            while b2 + 1 < len(ws) and serve(ws[b2 + 1]):
+                b2 += 1
+            for o in ws[a2:b2 + 1]:
                 o["manter"] = True
+                if o["idx"] is not None:
+                    ditos_ate_aqui.add(o["idx"])
 
     # 4) cena de cada palavra + texto da legenda com a grafia do roteiro
     ultima_cena = 0
@@ -554,4 +616,16 @@ def editar(palavras, cenas, nomes=()):
     for w in palavras:
         w.pop("junta", None)
         w.pop("rot", None)
+    # pontuação do roteiro que caía no meio ("bilhão. de dólares"): vai para o fim do que foi estendido
+    por_i = {w["i"]: w for w in palavras}
+    for w in palavras:
+        k = w.get("pontua_depois")
+        if k is None or not w["manter"] or k not in por_i:
+            continue
+        pont = re.search(r"[.,:;!?…]+$", w["legenda"])
+        alvo = por_i[k]
+        if pont and alvo["legenda"]:
+            w["legenda"] = w["legenda"][:pont.start()]
+            alvo["legenda"] = re.sub(r"[.,:;!?…]+$", "", alvo["legenda"]) + pont.group(0)
+
     return palavras, faltando

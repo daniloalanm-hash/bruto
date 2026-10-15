@@ -222,6 +222,19 @@ def titulo_do_jogo(nome, titulo):
     return n1 <= n2 and k1 <= k2 and not extra
 
 
+def _info_dm(vid):
+    """(maior altura disponível, nome do canal) de um vídeo do Dailymotion, via yt-dlp sem baixar."""
+    import subprocess
+    try:
+        r = subprocess.run(["yt-dlp", "-J", "--no-warnings", f"https://www.dailymotion.com/video/{vid}"],
+                           capture_output=True, text=True, timeout=60)
+        d = json.loads(r.stdout or "{}")
+        alt = max([f.get("height") or 0 for f in d.get("formats", [])] + [d.get("height") or 0])
+        return int(alt), d.get("uploader") or d.get("channel") or ""
+    except Exception:
+        return 0, ""
+
+
 def _dailymotion(nome, chave, pasta, n=2):
     """Trailer/gameplay no Dailymotion (busca pública + yt-dlp): funciona no servidor de render, onde o YouTube
     bloqueia. Bom para jogo de console e jogo antigo que não estão na Steam."""
@@ -245,16 +258,29 @@ def _dailymotion(nome, chave, pasta, n=2):
             bonus = 2 if re.search(r"trailer", t, re.I) else (1 if re.search(r"gameplay", t, re.I) else 0)
             cands.append((-(peso + bonus) + k * 0.1, v["id"], t))
     cands.sort()
+    # qualidade: consulta a resolução e o canal dos melhores candidatos; vídeo de reupload borrado (360p de
+    # canal qualquer) só entra se não houver nada melhor
+    avaliados = []
+    for ordem, vid, titulo in cands[:8]:
+        alt, canal = _info_dm(vid)
+        oficial = bool(re.search(r"official|oficial|rockstar|playstation|xbox|nintendo|ign|gamespot|ubisoft|"
+                                 r"bandai|capcom|konami|sega|square enix|ea\b|bethesda|2k|warner", f"{canal} {titulo}", re.I))
+        nota = (2 if alt >= 1080 else 1.5 if alt >= 720 else 0.5 if alt >= 480 else 0) + (1.5 if oficial else 0) - ordem * 0.2
+        avaliados.append((-nota, alt, vid, titulo))
+        print(f"Dailymotion candidato: {titulo[:60]} | {alt}p | {canal}", flush=True)
+    avaliados.sort()
+    if any(a >= 720 for _, a, _, _ in avaliados):
+        avaliados = [x for x in avaliados if x[1] >= 720]
     saida = []
-    for _, vid, titulo in cands[: n + 2]:
+    for _, _alt, vid, titulo in avaliados[: n + 2]:
         if len(saida) >= n:
             break
         i = len(saida)
-        p = os.path.join(pasta, f"{chave}_d{i}.mp4")
+        p = os.path.join(pasta, f"{chave}_d{i}_{vid}.mp4")  # o id no nome: cache não troca um vídeo por outro
         if os.path.exists(p):
             saida.append({"arquivo": p, "nome": titulo})
             continue
-        tmp = os.path.join(pasta, f"{chave}_d{i}.tmp")
+        tmp = os.path.join(pasta, f"{chave}_d{i}_{vid}.tmp")
         try:
             r = subprocess.run(["yt-dlp", f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
                                 "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]/b",

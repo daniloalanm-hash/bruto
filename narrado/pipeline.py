@@ -230,6 +230,8 @@ def juntar_links(jogos, links, nomes):
         ln["chave"] = info["chave"]
         t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
         if t:
+            # com vídeo oficial indicado por você, sai o material achado por busca (Dailymotion/YouTube)
+            info["trailers"] = [x for x in info["trailers"] if not re.search(r"_[dy]\d+(_\w+)?\.mp4$", x["arquivo"])]
             info["trailers"].insert(0, t)
     return [j for j in jogos if j["screens"] or j["trailers"]]
 

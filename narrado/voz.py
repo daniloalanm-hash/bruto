@@ -9,7 +9,7 @@ import re
 
 from comum import ffmpeg, run
 
-PAD_IN, PAD_OUT = 0.12, 0.40   # até onde se procura o som real antes/depois de cada trecho
+PAD_IN, PAD_OUT = 0.25, 0.40   # até onde se procura o som real antes/depois de cada trecho
 FOLGA_IN, FOLGA_OUT = 0.03, 0.06  # folga mínima depois do fim real do som (não come consoante)
 GAP_KEEP = 0.30                # pausas menores que isso ficam como estão (respiro natural dentro da frase)
 GAP_NEW = 0.06                 # pausas maiores viram isso (ritmo de vídeo curto)
@@ -80,6 +80,39 @@ def bordas_reais(db, passo, s, e):
     return min(cs, s), max(ce, e)
 
 
+def _vale(db, passo, t0, t1, primeiro=True):
+    """Instante de menor volume entre t0 e t1 (o "vão" entre duas palavras). Entre vários quase iguais
+    (até 3 dB do mínimo), o primeiro (para fim de trecho) ou o último (para começo)."""
+    import numpy as np
+    a, b = max(int(t0 / passo), 0), min(int(t1 / passo), len(db) - 1)
+    if b <= a:
+        return t0
+    trecho = db[a:b + 1]
+    ok = np.where(trecho <= trecho.min() + 3)[0]
+    k = ok[0] if primeiro else ok[-1]
+    return (a + k) * passo
+
+
+def definir_cortes(blocos, todas, db, passo):
+    """Onde cortar cada bloco (cs/ce). O som real manda (bordas_reais); a palavra vizinha descartada só limita
+    o corte no VÃO de menor volume entre as duas — o tempo que o Whisper dá para a vizinha costuma invadir a
+    nossa palavra (sobretudo entre tomadas diferentes), e cortar ali come o começo/fim da fala."""
+    for b in blocos:
+        som_s, som_e = bordas_reais(db, passo, b["s"], b["e"])
+        cs, ce = max(som_s - FOLGA_IN, 0.0), som_e + FOLGA_OUT
+        if b["primeiro"] > 0:
+            ant = todas[b["primeiro"] - 1]
+            if cs < ant["e"] + 0.02:
+                ini = max(ant["s"] + 0.6 * (ant["e"] - ant["s"]), ant["e"] - 0.25)
+                cs = max(cs, _vale(db, passo, ini, b["s"] + 0.03, primeiro=False))
+        if b["ultimo"] + 1 < len(todas):
+            prox = todas[b["ultimo"] + 1]
+            if ce > prox["s"] - 0.02:
+                fim = min(prox["s"] + 0.4 * (prox["e"] - prox["s"]), prox["s"] + 0.25)
+                ce = min(ce, _vale(db, passo, b["e"] - 0.03, fim, primeiro=True) + 0.01)
+        b["cs"], b["ce"] = cs, max(ce, cs + 0.05)
+
+
 def cadeia_tratamento(ruido, modelo_rnn, modo="gravada", forcar_nr=None):
     """Filtros de áudio. EQ de corpo sempre; denoise conforme o ruído medido (ou escolha da tela)."""
     nr = (ruido > RUIDO_LIMITE) if forcar_nr is None else forcar_nr
@@ -119,12 +152,7 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
         else:
             blocos.append({"s": w["s"], "e": w["e"], "primeiro": k, "ultimo": k, "pal": [w]})
     db, passo = envelope(src)
-    for b in blocos:  # corta onde o som realmente começa/acaba, sem invadir a palavra vizinha
-        ant = todas[b["primeiro"] - 1]["e"] if b["primeiro"] > 0 else 0.0
-        prox = todas[b["ultimo"] + 1]["s"] if b["ultimo"] + 1 < len(todas) else b["e"] + 1
-        som_s, som_e = bordas_reais(db, passo, b["s"], b["e"])
-        b["cs"] = max(ant + 0.02, som_s - FOLGA_IN, 0.0)
-        b["ce"] = min(prox - 0.02, som_e + FOLGA_OUT)
+    definir_cortes(blocos, todas, db, passo)
 
     filt, partes, t = [], [], 0.0
     for bi, b in enumerate(blocos):
