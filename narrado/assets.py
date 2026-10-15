@@ -235,15 +235,22 @@ def _info_dm(vid):
         return 0, ""
 
 
-def _dailymotion(nome, chave, pasta, n=2):
+TENTADOS_DM = {}  # chave do jogo -> ids do Dailymotion já baixados (a 2ª rodada pega outros)
+
+
+def _dailymotion(nome, chave, pasta, n=2, extra=False):
     """Trailer/gameplay no Dailymotion (busca pública + yt-dlp): funciona no servidor de render, onde o YouTube
     bloqueia. Bom para jogo de console e jogo antigo que não estão na Steam."""
     import shutil
     import subprocess
     if not shutil.which("yt-dlp"):
         return []
-    vistos, cands = set(), []
-    for termo, peso in ((f"{nome} trailer", 2), (f"{nome} gameplay", 1)):
+    tentados = TENTADOS_DM.setdefault(chave, set())
+    vistos, cands = set(tentados), []
+    termos = ((f"{nome} trailer", 2), (f"{nome} gameplay", 1))
+    if extra:
+        termos = ((f"{nome} official trailer", 3), (f"{nome} trailer 4K", 2), (f"{nome} trailer oficial", 2))
+    for termo, peso in termos:
         try:
             d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
                 {"search": termo, "fields": "id,title,duration", "limit": 15, "sort": "relevance"})))
@@ -261,7 +268,7 @@ def _dailymotion(nome, chave, pasta, n=2):
     # qualidade: consulta a resolução e o canal dos melhores candidatos; vídeo de reupload borrado (360p de
     # canal qualquer) só entra se não houver nada melhor
     avaliados = []
-    for ordem, vid, titulo in cands[:8]:
+    for ordem, vid, titulo in cands[:10 if extra else 8]:
         alt, canal = _info_dm(vid)
         oficial = bool(re.search(r"official|oficial|rockstar|playstation|xbox|nintendo|ign|gamespot|ubisoft|"
                                  r"bandai|capcom|konami|sega|square enix|ea\b|bethesda|2k|warner", f"{canal} {titulo}", re.I))
@@ -275,6 +282,7 @@ def _dailymotion(nome, chave, pasta, n=2):
     for _, _alt, vid, titulo in avaliados[: n + 2]:
         if len(saida) >= n:
             break
+        tentados.add(vid)
         i = len(saida)
         p = os.path.join(pasta, f"{chave}_d{i}_{vid}.mp4")  # o id no nome: cache não troca um vídeo por outro
         if os.path.exists(p):
@@ -728,6 +736,31 @@ def _iniciar_processo(threads):
 
 def _analisar_trailer(arquivo):
     return arquivo, trechos_bons(arquivo)
+
+
+def segunda_rodada(jogos_info, banco, pasta, assuntos):
+    """Jogo que é assunto de algum tópico e ficou sem nenhum trecho de vídeo (os achados eram borrados):
+    busca de novo no Dailymotion (outros termos, outros vídeos) e analisa só esses."""
+    novos = []
+    for j in jogos_info:
+        if not any(norm(a) == norm(j["nome"]) or mesmo_jogo(a, j["nome"], 0.4) for a in assuntos):
+            continue
+        if any(m["tipo"] == "v" and m["jogo"] == j["chave"] for m in banco.values()):
+            continue
+        extra = _dailymotion(j["nome"], j["chave"], pasta, n=3, extra=True)
+        if extra:
+            print(f"{j['nome']}: sem vídeo bom; 2ª busca trouxe {len(extra)} vídeos", flush=True)
+            novos.append({**j, "screens": [], "trailers": extra, "_base": len(j["trailers"])})
+            j["trailers"] = j["trailers"] + extra
+    if not novos:
+        return banco
+    for nj in novos:
+        for ti, t in enumerate(nj["trailers"]):
+            for c in trechos_bons(t["arquivo"]):
+                mid = f"{nj['chave']}_t{nj['_base'] + ti}_{int(c['t'] * 10)}"
+                banco[mid] = {"tipo": "v", "jogo": nj["chave"], "arquivo": os.path.basename(t["arquivo"]),
+                              "t": c["t"], "dur": c["dur"], "mov": c.get("mov", 0), "sat": round(c["s"], 1)}
+    return banco
 
 
 def montar_banco(jogos_info, pasta_thumbs, progresso=None):

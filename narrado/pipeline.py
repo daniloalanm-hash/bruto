@@ -277,6 +277,7 @@ def preparar(pasta, st):
     def prog(k, n):
         st.etapa(f"Escolhendo os melhores trechos dos trailers ({k}/{n})", 18 + int(10 * k / n))
     banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"), prog)
+    banco = assets.segunda_rodada(jogos, banco, RAW, [c["assunto"] for c in cenas if c.get("assunto")] + nomes[:1])
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
     sprite = assets.sprite(banco, RAW, os.path.join(pasta, "cenas.jpg"))
 
