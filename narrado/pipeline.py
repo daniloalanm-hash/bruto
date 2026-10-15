@@ -466,7 +466,12 @@ def teste_fontes(pasta, st):
     job = ler(os.path.join(pasta, "job.json"))
     pf = os.path.join(pasta, "fontes")
     os.makedirs(pf, exist_ok=True)
-    rel = {"links": {u: tf.ytdlp(u, pf, f"link{i}") for i, u in enumerate(TESTE_LINKS)}}
+    rel = {"links": {}}
+    for i, u in enumerate(TESTE_LINKS):
+        jogos = juntar_links([], [{"url": u, "jogo": "Grand Theft Auto VI"}], ["Grand Theft Auto VI"])
+        banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"))
+        rel["links"][u] = {"jogos": [(j["nome"], [t["arquivo"] for t in j["trailers"]]) for j in jogos],
+                           "trechos": len(banco), "exemplo": list(banco.values())[:3]}
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, rel)
     print(json.dumps(rel, ensure_ascii=False, indent=1), flush=True)
