@@ -175,3 +175,4 @@ audio { width: 100%; }
 .estimativa b.curto { color: var(--warn); }
 .estimativa b.curto ~ #estimativaNota { color: var(--warn); }
 #estimativaNota { color: var(--in); }
+.aviso-video { display: block; margin-top: 4px; color: var(--warn); }

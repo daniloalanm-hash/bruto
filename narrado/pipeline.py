@@ -280,6 +280,9 @@ def preparar(pasta, st):
     banco = assets.segunda_rodada(jogos, banco, RAW, [c["assunto"] for c in cenas if c.get("assunto")] + nomes[:1])
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
     sprite = assets.sprite(banco, RAW, os.path.join(pasta, "cenas.jpg"))
+    assuntos = {c["assunto"] for c in cenas if c.get("assunto")} | set(nomes[:1])
+    sem_video = sorted(a for a in assuntos if not any(
+        m["tipo"] == "v" and m["jogo"] == (chave_do_jogo(a, jogos) or "") for m in banco.values()))
 
     modo = job.get("voz", {}).get("modo", "gravada")
     if modo == "ia":
@@ -306,7 +309,7 @@ def preparar(pasta, st):
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
         "voz": {"modo": modo, "arquivo": os.path.basename(audio), "reducao_ruido": "auto"},
         "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
-        "nomes_busca": nomes, "trailers_busca": n_trailers, "links_video": links, "cenas": cenas, "palavras": palavras, "faltando": faltando,
+        "nomes_busca": nomes, "trailers_busca": n_trailers, "links_video": links, "sem_video": sem_video, "cenas": cenas, "palavras": palavras, "faltando": faltando,
         "banco": banco, "sprite": sprite,
         # aparência (a tela permite mudar e re-renderizar)
         "titulo_tela": (job.get("titulo_tela") or "").strip(), "titulo_gancho": bool(job.get("titulo_tela")),

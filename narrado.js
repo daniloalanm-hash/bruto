@@ -888,6 +888,10 @@ async function carregarProjeto() {
   const info = [`${fmtT(p.duracao || 0)} min${(p.duracao || 0) < MONETIZA ? ' ⚠️ abaixo de 1 min (não monetiza no TikTok)' : ''}`, `versão ${p.versao}`];
   if (p.voz?.modo === 'gravada') info.push(p.voz.reducao_aplicada ? `redução de ruído ligada (fundo ${p.voz.ruido_db} dB)` : 'gravação limpa, sem redução de ruído');
   $('#infoVideo').textContent = `${p.titulo} · ${info.join(' · ')}`;
+  if (p.sem_video?.length) {
+    $('#infoVideo').append(h('span', { class: 'aviso-video' },
+      ` ⚠️ Sem vídeo nítido de ${p.sem_video.join(', ')} (usei imagens). Para ter trailer, cole o link do vídeo oficial (X, Dailymotion, Vimeo…) em "Links de vídeo" no roteiro e gere de novo.`));
+  }
   $('#ruido').value = p.voz?.reducao_ruido || 'auto';
   $('#ajustes').hidden = false;
   $('#btnPrevia').hidden = !state.temPrevia;
