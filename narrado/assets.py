@@ -625,6 +625,23 @@ def tem_texto(origem, t=None, limite=2, mascara=None, ocr=True, pronto=False):
     return False
 
 
+NITIDEZ_MIN = 18  # variância do Laplaciano no quadro de 720 px: reupload borrado fica em 2-6; trailer oficial >100
+
+
+def nitidez(png):
+    """Quão nítido é o quadro (variância do Laplaciano). Baixa = borrado/esticado de baixa resolução."""
+    try:
+        import cv2
+        im = cv2.imread(png, 0)
+        if im is None:
+            return None
+        h = im.shape[0]
+        im = im[int(h * 0.05):int(h * 0.75)]  # sem as bordas (tarjas, marca d'água no rodapé)
+        return float(cv2.Laplacian(im, cv2.CV_64F).var())
+    except Exception:
+        return None
+
+
 def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=None):
     """Trecho [a2, b2] serve como cena? Devolve o candidato ou None (e conta o motivo)."""
     meio = (a2 + b2) / 2
@@ -636,6 +653,12 @@ def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=Non
         conta["cartela"] += 1
         return None
     # EAST (rápido) no meio e nas pontas; a leitura do Tesseract (lenta) só no meio, por último
+    if quadros is not None:
+        q = quadros.em(meio)
+        nit = nitidez(q) if q and os.path.exists(q) else None
+        if nit is not None and nit < NITIDEZ_MIN:
+            conta["borrado"] = conta.get("borrado", 0) + 1
+            return None
     pontos = (meio, a2 + 0.3, b2 - 0.3) if checar_pontas else (meio,)
 
     def texto(x, ocr):

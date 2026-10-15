@@ -578,7 +578,10 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
     entradas, grafo, v = ["-i", limpo], [], "[0:v]"
     grafo.append(f"{v}subtitles={ass}:fontsdir={pasta_fontes}[vs]")
     v = "[vs]"
+    tit_ate = fim_titulo(projeto, corte_gancho) or 0
     for i, e in enumerate(escolher_emojis(projeto, blocos)):
+        if e["ini"] < tit_ate + 0.1:
+            continue  # nunca por cima da chamada do gancho
         png = emoji_png(e["emoji"], os.path.join(pasta_trab, f"emoji{i}.png"))
         if not png:
             continue
