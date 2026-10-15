@@ -415,6 +415,15 @@ $('#btnLote').addEventListener('click', async () => {
 
 /* ---------------- 2. roteiro ---------------- */
 function nomesJogos() { return $('#jogos').value.split('\n').map((s) => s.trim()).filter(Boolean); }
+// "https://…" ou "Nome do jogo: https://…" -> [{ url, jogo }]
+function linksVideo() {
+  return $('#linksVideo').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+    const i = l.search(/https?:\/\//);
+    if (i < 0) return null;
+    const jogo = l.slice(0, i).replace(/[:\-–|]\s*$/, '').trim();
+    return { url: l.slice(i).split(/\s+/)[0], jogo: jogo || null };
+  }).filter(Boolean);
+}
 function estimativa() {
   const n = contarPalavras(state.roteiro.cenas);
   const seg = Math.round(n / ritmo());
@@ -430,6 +439,7 @@ function renderRoteiro() {
   $('#titulo').value = r.titulo;
   $('#tituloTela').value = r.titulo_tela || '';
   $('#jogos').value = r.jogos.join('\n');
+  $('#linksVideo').value = (r.links || []).map((x) => (x.jogo ? `${x.jogo}: ${x.url}` : x.url)).join('\n');
   const box = $('#cenas');
   box.replaceChildren();
   r.cenas.forEach((c, i) => {
@@ -462,6 +472,7 @@ function renderRoteiro() {
 $('#titulo').addEventListener('input', (e) => { state.roteiro.titulo = e.target.value; salvarRascunho(); });
 $('#tituloTela').addEventListener('input', (e) => { state.roteiro.titulo_tela = e.target.value; salvarRascunho(); });
 $('#jogos').addEventListener('change', () => { state.roteiro.jogos = nomesJogos(); renderRoteiro(); });
+$('#linksVideo').addEventListener('change', () => { state.roteiro.links = linksVideo(); salvarRascunho(); });
 $('#btnAddCena').addEventListener('click', () => { state.roteiro.cenas.push({ texto: '', destaques: [], assunto: null }); renderRoteiro(); });
 $('#btnCopiar').addEventListener('click', async () => {
   const t = state.roteiro.cenas.map((c) => c.texto).join('\n\n');
@@ -469,6 +480,7 @@ $('#btnCopiar').addEventListener('click', async () => {
 });
 $('#btnIrVoz').addEventListener('click', () => {
   state.roteiro.jogos = nomesJogos();
+  state.roteiro.links = linksVideo();
   if (!state.roteiro.cenas.some((c) => c.texto.trim())) { toast('Escreva pelo menos um tópico.', 'warn'); return; }
   if (!state.roteiro.jogos.length) { toast('Informe pelo menos um jogo (é de lá que vêm as imagens).', 'warn'); $('#jogos').focus(); return; }
   irPara('voz');
@@ -620,6 +632,7 @@ function montarJob() {
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
     imagens_materia: state.materia?.imagens || [],
+    links_video: r.links || [],
     voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
   };
 }

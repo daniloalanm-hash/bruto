@@ -275,6 +275,37 @@ def _dailymotion(nome, chave, pasta, n=2):
     return saida
 
 
+def baixar_link_video(url, chave, pasta, i):
+    """Vídeo de um link colado na tela (X/Twitter, Dailymotion, Vimeo, Reddit… tudo que o yt-dlp abre).
+    Baixa os primeiros TRECHO_MAX s em até 1080p, sem áudio. Devolve o trailer ou None."""
+    import hashlib
+    import shutil
+    import subprocess
+    if not shutil.which("yt-dlp"):
+        return None
+    p = os.path.join(pasta, f"{chave}_l{hashlib.md5(url.encode()).hexdigest()[:8]}.mp4")
+    if os.path.exists(p) and duracao(p) > 2:
+        return {"arquivo": p, "nome": url}
+    tmp = p[:-4] + ".tmp"
+    try:
+        r = subprocess.run(["yt-dlp", url, "--no-playlist", "--quiet", "--no-warnings",
+                            "-f", "bv*[height<=1080]/b[height<=1080]/b", "--download-sections", f"*0-{TRECHO_MAX}",
+                            "-o", tmp + ".%(ext)s", "--print", "after_move:%(title)s"],
+                           capture_output=True, text=True, timeout=300)
+        baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))), None)
+        if r.returncode != 0 or not baixado:
+            print(f"aviso: não consegui baixar o link {url}: {(r.stderr or '').strip()[-200:]}", flush=True)
+            return None
+        ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+        os.remove(baixado)
+        print(f"link: {r.stdout.strip()[:80]} ({int(duracao(p))}s)", flush=True)
+        return {"arquivo": p, "nome": r.stdout.strip()[:120] or url}
+    except Exception as e:
+        print(f"aviso: link {url} falhou: {e}", flush=True)
+        return None
+
+
 def baixar_imagens_materia(urls, pasta):
     """Imagens da própria matéria (mostram a novidade de verdade). Converte tudo para JPG e descarta
     miniaturas. Devolve entradas de banco {id: {...}}."""

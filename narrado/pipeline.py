@@ -20,7 +20,7 @@ import assets  # noqa: E402
 import fala  # noqa: E402
 import render  # noqa: E402
 import voz  # noqa: E402
-from comum import Status, duracao, ffmpeg, gravar, ler, norm  # noqa: E402
+from comum import Status, duracao, ffmpeg, gravar, ler, norm, slug  # noqa: E402
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 RAW = os.environ.get("NARRADO_RAW", os.path.join(RAIZ, "..", ".narrado-cache", "raw"))
@@ -215,6 +215,25 @@ def garantir_assets(nomes, permitir_vazio=False, trailers=None):
     return jogos
 
 
+def juntar_links(jogos, links, nomes):
+    """Vídeos de links colados na tela entram como trailers (os primeiros) do jogo indicado — ou do principal."""
+    principal = nomes[0] if nomes else (jogos[0]["nome"] if jogos else "Vídeo")
+    for i, ln in enumerate(links):
+        alvo_nome = (ln.get("jogo") or principal).strip()
+        info = next((j for j in jogos if assets.mesmo_jogo(alvo_nome, j["nome"], 0.4) or
+                     norm(alvo_nome) == norm(j["nome"])), None)
+        if info is None:
+            # jogo sem material nenhum (ou só com link): cria a entrada para ele
+            info = {"chave": slug(alvo_nome), "nome": alvo_nome, "appid": None, "fonte": "Link",
+                    "screens": [], "trailers": []}
+            jogos.append(info)
+        ln["chave"] = info["chave"]
+        t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
+        if t:
+            info["trailers"].insert(0, t)
+    return [j for j in jogos if j["screens"] or j["trailers"]]
+
+
 def jogos_necessarios(job, cenas):
     """Só busca jogo que é assunto de algum tópico (mais o principal). Jogo só citado na lista não entra.
 
@@ -245,7 +264,11 @@ def preparar(pasta, st):
     nomes, n_trailers = jogos_necessarios(job, cenas)
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
-    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia")), trailers=n_trailers)
+    links = [x for x in (job.get("links_video") or []) if x.get("url")]
+    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links), trailers=n_trailers)
+    if links:
+        st.etapa("Baixando os vídeos dos links", 12)
+        jogos = juntar_links(jogos, links, nomes)
 
     st.etapa("Escolhendo os melhores trechos dos trailers", 18)
 
@@ -280,7 +303,7 @@ def preparar(pasta, st):
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
         "voz": {"modo": modo, "arquivo": os.path.basename(audio), "reducao_ruido": "auto"},
         "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
-        "nomes_busca": nomes, "trailers_busca": n_trailers, "cenas": cenas, "palavras": palavras, "faltando": faltando,
+        "nomes_busca": nomes, "trailers_busca": n_trailers, "links_video": links, "cenas": cenas, "palavras": palavras, "faltando": faltando,
         "banco": banco, "sprite": sprite,
         # aparência (a tela permite mudar e re-renderizar)
         "titulo_tela": (job.get("titulo_tela") or "").strip(), "titulo_gancho": bool(job.get("titulo_tela")),
@@ -330,6 +353,9 @@ def rerender(pasta, st):
     if any(m.get("jogo") not in ("materia", "proprio") for m in falta):
         garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]], permitir_vazio=True,
                         trailers=projeto.get("trailers_busca"))
+    for i, ln in enumerate(projeto.get("links_video") or []):
+        if ln.get("chave"):
+            assets.baixar_link_video(ln["url"], ln["chave"], RAW, i)  # já baixado: não faz nada
     urls = [m["url"] for m in falta if m.get("jogo") == "materia" and m.get("url")]
     if urls:
         assets.baixar_imagens_materia(urls, RAW)
