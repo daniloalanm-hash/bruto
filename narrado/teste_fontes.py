@@ -19,7 +19,7 @@ def ytdlp(alvo, pasta, nome, extra=()):
     t0 = time.time()
     out = os.path.join(pasta, nome + ".%(ext)s")
     r = subprocess.run(["yt-dlp", alvo, "--no-playlist", "--quiet", "--no-warnings", "--playlist-items", "1",
-                        "-f", "bv*[height<=1080]/b", "--download-sections", "*0-20", "-o", out,
+                        "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--download-sections", "*0-20", "-o", out,
                         "--print", "after_move:%(title)s|%(height)s|%(webpage_url)s", *extra],
                        capture_output=True, text=True, timeout=180)
     arq = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(nome + ".")), None)

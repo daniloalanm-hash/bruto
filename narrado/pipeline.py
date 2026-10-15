@@ -432,10 +432,15 @@ def teste_transcricao(pasta, st):
             pub(destino)
 
 
+TESTE_LINKS = ["https://x.com/RockstarGames/status/2110717537964953810"]
+
+
 def teste_fontes(pasta, st):
     import teste_fontes as tf
     job = ler(os.path.join(pasta, "job.json"))
-    rel = tf.testar((job.get("jogos") or [])[:2] + ["Silent Hill f"], os.path.join(pasta, "fontes"))
+    pf = os.path.join(pasta, "fontes")
+    os.makedirs(pf, exist_ok=True)
+    rel = {"links": {u: tf.ytdlp(u, pf, f"link{i}") for i, u in enumerate(TESTE_LINKS)}}
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, rel)
     print(json.dumps(rel, ensure_ascii=False, indent=1), flush=True)
