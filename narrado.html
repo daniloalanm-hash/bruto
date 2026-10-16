@@ -96,6 +96,20 @@
         <label class="field"><span>Links de vídeo (opcional) — trailer no X/Twitter, Dailymotion, Vimeo, Reddit… um por linha. Vai para o jogo principal; para outro jogo, escreva <code>Nome do jogo: link</code></span>
           <textarea id="linksVideo" rows="2" placeholder="https://x.com/RockstarGames/status/…"></textarea>
         </label>
+        <details class="box" id="boxBib">
+          <summary>Biblioteca de vídeos por jogo <span id="bibResumo" class="muted small"></span></summary>
+          <p class="muted small">Mande uma vez (vídeo, imagem ou link): entra sozinho em todo vídeo que falar daquele jogo, no lugar do material achado por busca.</p>
+          <ul id="bibLista" class="lista-lote"></ul>
+          <div class="row2">
+            <label class="field"><span>Jogo</span><input id="bibJogo" list="bibJogos" placeholder="Grand Theft Auto VI"><datalist id="bibJogos"></datalist></label>
+            <label class="field"><span>Link (opcional)</span><input id="bibLink" type="url" placeholder="https://x.com/…"></label>
+          </div>
+          <div class="row wrap">
+            <label class="btn small"><input type="file" id="bibArquivo" accept="video/*,image/*" hidden>Enviar vídeo ou imagem…</label>
+            <button id="btnBibLink" class="btn small" type="button">Salvar link</button>
+            <span id="bibStatus" class="muted small"></span>
+          </div>
+        </details>
         <div id="cenas" class="cenas"></div>
         <div class="row">
           <button id="btnAddCena" class="btn small">+ Tópico</button>
@@ -123,7 +137,12 @@
           <div class="tp-controles row wrap">
             <label class="chk"><input type="checkbox" id="tpAuto" checked><span>Rolagem automática enquanto você fala</span></label>
             <label class="field curto tp-vel"><span>Velocidade</span><input type="range" id="tpVel" min="1.6" max="3.6" step="0.1" value="2.6"></label>
-            <span class="muted small">Clique numa palavra para voltar o marcador até ela.</span>
+            <label class="chk"><input type="checkbox" id="tpRecomeca" checked><span>Errou e parou no meio? Volta sozinho para o começo da frase</span></label>
+          </div>
+          <div class="tp-nav row">
+            <button id="tpVolta" class="btn small" type="button">↑ Frase anterior</button>
+            <button id="tpAvanca" class="btn small" type="button">Próxima frase ↓</button>
+            <span class="muted small">Teclado: ↑ / ↓. Ou clique em qualquer palavra.</span>
           </div>
           <div class="teleprompter" id="teleprompter"></div>
           <ul class="dicas muted small">

@@ -11,7 +11,7 @@ module.exports = (req, res) => responder(res, async () => {
   if (q.lista) {
     const rels = await gh(`/repos/${REPO}/releases?per_page=30`);
     return {
-      videos: rels.filter((r) => r.tag_name.startsWith('narrado-')).map((r) => ({
+      videos: rels.filter((r) => r.tag_name.startsWith('narrado-') && r.tag_name !== 'narrado-biblioteca').map((r) => ({
         tag: r.tag_name,
         titulo: r.name.replace(/^Narrado · /, ''),
         criado: r.created_at,

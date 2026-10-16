@@ -176,3 +176,6 @@ audio { width: 100%; }
 .estimativa b.curto ~ #estimativaNota { color: var(--warn); }
 #estimativaNota { color: var(--in); }
 .aviso-video { display: block; margin-top: 4px; color: var(--warn); }
+.tp-nav { margin: 6px 0 8px; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lista-lote li.bib-usa { border-color: var(--in); }
+#boxBib summary { cursor: pointer; font-weight: 600; }

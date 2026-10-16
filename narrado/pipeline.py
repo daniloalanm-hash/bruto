@@ -215,6 +215,64 @@ def garantir_assets(nomes, permitir_vazio=False, trailers=None):
     return jogos
 
 
+BIB_TAG = "narrado-biblioteca"
+
+
+def _gh_baixar(padrao, destino):
+    """Baixa arquivos da release da biblioteca (gh CLI do Actions). Falha em silêncio (biblioteca é opcional)."""
+    os.makedirs(destino, exist_ok=True)
+    r = subprocess.run(["gh", "release", "download", BIB_TAG, "-p", padrao, "-D", destino, "--clobber"],
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
+
+def da_biblioteca(alvos):
+    """Itens da biblioteca (mandados uma vez pela tela) dos jogos deste vídeo. Devolve entradas no formato
+    dos links: {"jogo", "url"} para link e {"jogo", "arquivo"} para vídeo/imagem já pronto no RAW."""
+    tmp = os.path.join(RAW, "_bib")
+    if not _gh_baixar("biblioteca.json", tmp):
+        return []
+    try:
+        itens = ler(os.path.join(tmp, "biblioteca.json")) or []
+    except Exception:
+        return []
+    saida = []
+    for it in itens:
+        jogo = it.get("jogo") or ""
+        if not any(norm(jogo) == norm(a) or assets.mesmo_jogo(jogo, a, 0.4) or assets.mesmo_jogo(a, jogo, 0.4)
+                   for a in alvos if a):
+            continue
+        if it.get("tipo") == "link":
+            saida.append({"jogo": jogo, "url": it["url"], "bib": it["id"]})
+            continue
+        nome = it.get("nome") or ""
+        ext = nome.rsplit(".", 1)[-1]
+        final = os.path.join(RAW, f"lib_{it['id']}." + ("mp4" if ext in ("mp4", "mov", "webm", "m4v") else "jpg"))
+        if not os.path.exists(final):
+            pasta_p = os.path.join(tmp, it["id"])
+            if not _gh_baixar(f"{nome}.part*", pasta_p):
+                print(f"aviso: não baixei {nome} da biblioteca", flush=True)
+                continue
+            partes = sorted(os.listdir(pasta_p))
+            bruto = os.path.join(pasta_p, nome)
+            with open(bruto, "wb") as f:
+                for parte in partes:
+                    with open(os.path.join(pasta_p, parte), "rb") as g:
+                        f.write(g.read())
+            try:
+                if final.endswith(".mp4"):
+                    ffmpeg("-i", bruto, "-t", assets.TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                           "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, final)
+                else:
+                    ffmpeg("-i", bruto, "-frames:v", 1, "-q:v", 2, final)
+            except Exception as e:
+                print(f"aviso: arquivo da biblioteca {it.get('original') or nome} não abriu: {e}", flush=True)
+                continue
+        saida.append({"jogo": jogo, "arquivo": final, "bib": it["id"]})
+        print(f"biblioteca: {jogo} ← {it.get('original') or nome}", flush=True)
+    return saida
+
+
 def juntar_links(jogos, links, nomes):
     """Vídeos de links colados na tela entram como trailers (os primeiros) do jogo indicado — ou do principal."""
     principal = nomes[0] if nomes else (jogos[0]["nome"] if jogos else "Vídeo")
@@ -228,7 +286,13 @@ def juntar_links(jogos, links, nomes):
                     "screens": [], "trailers": []}
             jogos.append(info)
         ln["chave"] = info["chave"]
-        t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
+        if ln.get("arquivo"):  # item da biblioteca já baixado
+            if ln["arquivo"].endswith(".jpg"):
+                info["screens"].insert(0, ln["arquivo"])
+                continue
+            t = {"arquivo": ln["arquivo"], "nome": "biblioteca"}
+        else:
+            t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
         if t:
             # com vídeo oficial indicado por você, sai o material achado por busca (Dailymotion/YouTube)
             info["trailers"] = [x for x in info["trailers"] if not re.search(r"_[dy]\d+(_\w+)?\.mp4$", x["arquivo"])]
@@ -267,6 +331,8 @@ def preparar(pasta, st):
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
+    bib = da_biblioteca(list(dict.fromkeys(nomes + [c["assunto"] for c in cenas if c.get("assunto")])))
+    links += [b for b in bib if not any(b.get("url") and b["url"] == x["url"] for x in links)]
     jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links), trailers=n_trailers)
     if links:
         st.etapa("Baixando os vídeos dos links", 12)
@@ -360,8 +426,10 @@ def rerender(pasta, st):
         garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]], permitir_vazio=True,
                         trailers=projeto.get("trailers_busca"))
     for i, ln in enumerate(projeto.get("links_video") or []):
-        if ln.get("chave"):
+        if ln.get("chave") and ln.get("url"):
             assets.baixar_link_video(ln["url"], ln["chave"], RAW, i)  # já baixado: não faz nada
+    if any(m["arquivo"].startswith("lib_") for m in falta):
+        da_biblioteca(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
     urls = [m["url"] for m in falta if m.get("jogo") == "materia" and m.get("url")]
     if urls:
         assets.baixar_imagens_materia(urls, RAW)

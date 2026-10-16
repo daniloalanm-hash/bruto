@@ -195,7 +195,7 @@ function irPara(passo) {
     li.classList.toggle('ativo', p === passo);
     li.classList.toggle('feito', i < PASSOS.indexOf(passo));
   });
-  if (passo === 'roteiro') renderRoteiro();
+  if (passo === 'roteiro') { renderRoteiro(); carregarBib(); }
   if (passo === 'voz') renderTeleprompter();
   atualizarBotaoProximo();
   salvarRascunho();
@@ -362,6 +362,75 @@ $('#btnRoteiroVazio').addEventListener('click', () => {
   irPara('roteiro');
 });
 
+
+/* ---------------- biblioteca de mídias por jogo ---------------- */
+const bib = { itens: null };
+// mesmo jogo? palavras iguais (ou uma contida na outra) e o mesmo número de sequência ("GTA V" ≠ "GTA VI")
+const ROMANO = { ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10' };
+function nomeParecido(a, b) {
+  const pal = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/)
+    .filter((w) => w && !['the', 'of', 'and', 'de', 'do', 'da'].includes(w)).map((w) => ROMANO[w] || w);
+  const A = pal(a), B = pal(b);
+  if (!A.length || !B.length) return false;
+  const num = (L) => L.filter((w) => /^\d+$/.test(w)).join(',');
+  if (num(A) !== num(B)) return false;
+  const [m, M] = A.length <= B.length ? [A, B] : [B, A];
+  return m.every((w) => M.includes(w));
+}
+async function carregarBib() {
+  try { bib.itens = (await api('/api/biblioteca')).itens || []; } catch { bib.itens = bib.itens || []; }
+  renderBib();
+}
+function renderBib() {
+  if (!bib.itens) return;
+  const jogos = nomesJogos();
+  const usa = (it) => jogos.some((j) => nomeParecido(j, it.jogo));
+  const doVideo = bib.itens.filter(usa);
+  $('#bibResumo').textContent = bib.itens.length
+    ? `· ${bib.itens.length} ${bib.itens.length === 1 ? 'item' : 'itens'}${doVideo.length ? ` · ${doVideo.length} entram neste vídeo` : ''}` : '· vazia';
+  $('#bibJogos').replaceChildren(...[...new Set([...jogos, ...bib.itens.map((x) => x.jogo)])].map((j) => h('option', { value: j })));
+  if (!$('#bibJogo').value && jogos[0]) $('#bibJogo').value = jogos[0];
+  const ordem = [...bib.itens].sort((a, b) => Number(usa(b)) - Number(usa(a)));
+  $('#bibLista').replaceChildren(...ordem.map((it) => h('li', { class: usa(it) ? 'bib-usa' : '' },
+    h('div', {}, h('b', {}, it.jogo), h('span', { class: 'muted small' },
+      ` · ${it.tipo === 'link' ? it.url.replace(/^https?:\/\//, '').slice(0, 48) : (it.original || it.nome)}${usa(it) ? ' · entra neste vídeo ✓' : ''}`)),
+    h('button', { class: 'btn small icon danger', title: 'Tirar da biblioteca', onclick: async () => {
+      if (!confirm(`Tirar da biblioteca: ${it.jogo} — ${it.original || it.url || it.nome}?`)) return;
+      try { bib.itens = (await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'remover', id: it.id }) })).itens; renderBib(); }
+      catch (e) { toast(e.message, 'warn'); }
+    } }, '✕'))));
+}
+$('#jogos').addEventListener('input', () => renderBib());
+$('#btnBibLink').addEventListener('click', async () => {
+  const jogo = $('#bibJogo').value.trim(), url = $('#bibLink').value.trim();
+  if (!jogo || !/^https?:\/\//.test(url)) { toast('Informe o jogo e o link.', 'warn'); return; }
+  try {
+    bib.itens = (await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'salvar', item: { jogo, tipo: 'link', url } }) })).itens;
+    $('#bibLink').value = ''; renderBib(); toast('Link salvo na biblioteca.');
+  } catch (e) { toast(e.message, 'warn'); }
+});
+$('#bibArquivo').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; e.target.value = '';
+  const jogo = $('#bibJogo').value.trim();
+  if (!f) return;
+  if (!jogo) { toast('Diga de qual jogo é o arquivo.', 'warn'); return; }
+  if (f.size > 330e6) { toast('Arquivo grande demais (máx. 330 MB). Prefira 1080p.', 'warn'); return; }
+  const ext = ((f.name.split('.').pop() || 'mp4').toLowerCase().replace('jpeg', 'jpg'));
+  if (!/^(jpg|png|webp|mp4|mov|webm|m4v)$/.test(ext)) { toast('Formato não aceito (use mp4, mov, webm, jpg, png).', 'warn'); return; }
+  const nome = `lib-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const st = $('#bibStatus');
+  const PARTE = 3 * 1024 * 1024, total = Math.ceil(f.size / PARTE);
+  try {
+    for (let n = 0; n < total; n++) {
+      st.textContent = `Enviando ${f.name} (${n + 1}/${total})…`;
+      const base64 = await paraBase64(f.slice(n * PARTE, (n + 1) * PARTE));
+      await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'parte', nome, n, base64 }) });
+    }
+    bib.itens = (await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'salvar', item: { jogo, tipo: 'arquivo', nome, original: f.name } }) })).itens;
+    st.textContent = ''; renderBib(); toast(`${f.name} salvo na biblioteca de ${jogo}.`);
+  } catch (err) { st.textContent = `Erro: ${err.message}`; }
+});
+
 /* ---------------- 1b. roteiros em lote ---------------- */
 function lote() { try { return JSON.parse(ls.get(K.lote) || '[]'); } catch { return []; } }
 function salvarLote(l) { ls.set(K.lote, JSON.stringify(l.slice(0, 20))); }
@@ -488,7 +557,26 @@ $('#btnIrVoz').addEventListener('click', () => {
 
 /* ---------------- 3. voz ---------------- */
 // Teleprompter: o marcador avança no ritmo da fala, só enquanto o microfone capta voz; a frase atual fica em destaque.
-const tp = { palavras: [], frases: [], pos: 0, falando: 0, ultimo: 0 };
+const tp = { palavras: [], frases: [], pos: 0, falando: 0, ultimo: 0, pausou: false, posVoz: null };
+// frase em que o marcador está, e onde ela começa/termina (índices de palavra)
+function tpFrase() {
+  const k = Math.min(Math.max(Math.floor(tp.pos), 0), tp.palavras.length - 1);
+  const f = tp.palavras[k]?.frase ?? 0;
+  const ini = tp.frases[f]?.ini ?? 0;
+  const fim = (tp.frases[f + 1]?.ini ?? tp.palavras.length) - 1;
+  return { k, f, ini, fim };
+}
+function tpIrFrase(delta) {
+  if (!tp.palavras.length) return;
+  const { k, f, ini } = tpFrase();
+  let alvo = f + delta;
+  if (delta < 0 && k - ini >= 2) alvo = f; // no meio da frase: "voltar" é recomeçar ela
+  alvo = Math.min(Math.max(alvo, 0), tp.frases.length - 1);
+  tp.pos = tp.frases[alvo].ini;
+  tp.pausou = false;
+  tp.posVoz = tp.pos;
+  atualizarTp(true);
+}
 function renderTeleprompter() {
   tp.palavras = []; tp.frases = []; tp.pos = 0;
   const paragrafos = state.roteiro.cenas.filter((c) => c.texto.trim()).map((c) => {
@@ -499,7 +587,7 @@ function renderTeleprompter() {
       tp.frases.push({ el, ini: tp.palavras.length });
       for (const pal of frase.split(/\s+/).filter(Boolean)) {
         const k = tp.palavras.length;
-        const w = h('span', { class: 'tp-w', onclick: () => { tp.pos = k; atualizarTp(true); } }, pal);
+        const w = h('span', { class: 'tp-w', onclick: () => { tp.pos = k; tp.posVoz = k; tp.pausou = false; atualizarTp(true); } }, pal);
         tp.palavras.push({ el: w, frase: fi });
         el.append(w, ' ');
       }
@@ -528,13 +616,38 @@ function avancarTp(pico) {
   const dt = tp.ultimo ? Math.min((agora - tp.ultimo) / 1000, 0.1) : 0;
   tp.ultimo = agora;
   if (!$('#tpAuto').checked || !tp.palavras.length) return;
-  if (pico > 0.045) tp.falando = agora;
+  if (pico > 0.045) {
+    // voltou a falar depois de uma pausa: se parou no MEIO da frase, provavelmente errou e vai repetir a
+    // frase inteira — o marcador volta para o começo dela; se parou no fim, segue para a próxima
+    if (tp.pausou && $('#tpRecomeca').checked) {
+      // decide pelo ponto em que a voz parou (o marcador ainda anda um pouquinho depois)
+      tp.pos = tp.posVoz ?? tp.pos;
+      const { k, ini, fim } = tpFrase();
+      if (k - ini >= 2 && fim - k >= 2) tp.pos = ini;
+      else if (fim - k < 2 && fim + 1 < tp.palavras.length) tp.pos = fim + 1;
+      atualizarTp(true);
+    }
+    tp.pausou = false;
+    tp.falando = agora;
+    tp.posVoz = tp.pos;
+  } else if (tp.falando && agora - tp.falando > 900) {
+    tp.pausou = true;
+  }
   if (agora - tp.falando < 350) { // voz agora (ou há menos de 0,35 s): avança no ritmo escolhido
     const antes = Math.floor(tp.pos);
     tp.pos = Math.min(tp.pos + dt * Number($('#tpVel').value), tp.palavras.length - 1);
     if (Math.floor(tp.pos) !== antes) atualizarTp(true);
   }
 }
+$('#tpVolta').addEventListener('click', () => tpIrFrase(-1));
+$('#tpAvanca').addEventListener('click', () => tpIrFrase(1));
+document.addEventListener('keydown', (e) => {
+  if (state.passo !== 'voz' || state.voz.modo !== 'gravar') return;
+  if (e.target.closest('input, textarea, select')) return;
+  if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); tpIrFrase(-1); }
+  if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); tpIrFrase(1); }
+});
+
 function setVozModo(m) {
   state.voz.modo = m;
   $$('[data-voz]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.voz === m)));
