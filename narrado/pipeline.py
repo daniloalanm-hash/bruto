@@ -547,14 +547,15 @@ def teste_fontes(pasta, st):
     import urllib.request
     import zipfile
     ua = {"User-Agent": assets.UA}
-    html = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com/VI/trailer-1", headers=ua), timeout=30).read().decode("utf-8", "replace")
-    srcs = sorted(set(re.findall(r'(?:src|href)="([^"]+\.js[^"]*)"', html)) | set(re.findall(r'"(/VI/_next/static/chunks/[^"]+\.js)"', html)))
+    html = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com/videoplayer?id=rkoCtr1r", headers=ua), timeout=30).read().decode("utf-8", "replace")
+    srcs = sorted(set(re.findall(r'(?:src|href)="([^"]+\.js[^"]*)"', html)) | set(re.findall(r'"(/[^"]+/chunks/[^"]+\.js)"', html)))
     destino = os.path.join(pasta, "teste_js.zip")
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("pagina.html", html)
         z.writestr("lista.txt", "\n".join(srcs))
         for sname in srcs:
-            u = sname if sname.startswith("http") else "https://www.rockstargames.com" + sname
+            u = sname if sname.startswith("http") else ("https:" + sname if sname.startswith("//") else
+                                                        "https://www.rockstargames.com" + (sname if sname.startswith("/") else "/videoplayer/" + sname))
             try:
                 code = urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=30).read().decode("utf-8", "replace")
             except Exception as e:
