@@ -412,7 +412,7 @@ def baixar_rockstar(url, chave, pasta, limite=4):
     """Trailers oficiais do site da Rockstar (o player deles não é aceito pelo yt-dlp)."""
     saida = []
     for vid in ids_rockstar(url)[:limite]:
-        p = os.path.join(pasta, f"{chave}_r{vid}.mp4")
+        p = os.path.join(pasta, f"{chave}_r{vid}_e.mp4")  # _e: versão com janelas espalhadas
         try:
             if not (os.path.exists(p) and duracao(p) > 2):
                 src = arquivo_rockstar(vid)
