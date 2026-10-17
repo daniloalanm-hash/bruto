@@ -230,12 +230,15 @@ def da_biblioteca(alvos):
     """Itens da biblioteca (mandados uma vez pela tela) dos jogos deste vídeo. Devolve entradas no formato
     dos links: {"jogo", "url"} para link e {"jogo", "arquivo"} para vídeo/imagem já pronto no RAW."""
     tmp = os.path.join(RAW, "_bib")
-    if not _gh_baixar("biblioteca.json", tmp):
-        return []
-    try:
-        itens = ler(os.path.join(tmp, "biblioteca.json")) or []
-    except Exception:
-        return []
+    itens = []
+    fixa = os.path.join(os.path.dirname(os.path.abspath(__file__)), "biblioteca_fixa.json")
+    if os.path.exists(fixa):
+        itens += ler(fixa) or []
+    if _gh_baixar("biblioteca.json", tmp):
+        try:
+            itens += ler(os.path.join(tmp, "biblioteca.json")) or []
+        except Exception:
+            pass
     saida = []
     for it in itens:
         jogo = it.get("jogo") or ""
@@ -293,10 +296,14 @@ def juntar_links(jogos, links, nomes):
             t = {"arquivo": ln["arquivo"], "nome": "biblioteca"}
         else:
             t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
+            if not t:  # não é player de vídeo: tenta os clipes que a própria página carrega (site oficial)
+                t = assets.baixar_videos_site(ln["url"], info["chave"], RAW) or None
         if t:
             # com vídeo oficial indicado por você, sai o material achado por busca (Dailymotion/YouTube)
             info["trailers"] = [x for x in info["trailers"] if not re.search(r"_[dy]\d+(_\w+)?\.mp4$", x["arquivo"])]
-            info["trailers"].insert(0, t)
+            for x in reversed(t if isinstance(t, list) else [t]):
+                if all(x["arquivo"] != y["arquivo"] for y in info["trailers"]):
+                    info["trailers"].insert(0, x)
     return [j for j in jogos if j["screens"] or j["trailers"]]
 
 

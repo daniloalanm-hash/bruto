@@ -340,6 +340,62 @@ def baixar_link_video(url, chave, pasta, i):
         return None
 
 
+def videos_do_site(url, limite=14):
+    """Site oficial do jogo que não é player de vídeo (ex.: rockstargames.com/VI): procura os clipes .mp4 que a
+    própria página carrega (no HTML e nos scripts do mesmo site). Pega a versão até 1920 px de cada clipe."""
+    from urllib.parse import urljoin, urlparse
+    try:
+        html = _get(url).decode("utf-8", "replace")
+    except Exception as e:
+        print(f"aviso: não abri {url}: {e}", flush=True)
+        return []
+    base = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+    textos = [html]
+    for js in sorted(set(re.findall(r'(?:src|href)="([^"]+\.js)"', html)))[:80]:
+        alvo = urljoin(url, js)
+        if urlparse(alvo).netloc != urlparse(url).netloc:
+            continue
+        try:
+            textos.append(_get(alvo).decode("utf-8", "replace"))
+        except Exception:
+            continue
+    achados = []
+    for t in textos:
+        for m in re.findall(r'["\'(]((?:https?://[^"\'()\s]+|/[^"\'()\s]+)\.mp4)["\')]', t):
+            if m not in achados:
+                achados.append(m)
+    def largura(u):
+        n = re.match(r"(\d{3,4})", os.path.basename(u))
+        return int(n.group(1)) if n else 0
+    # cada clipe vem em várias larguras (450, 768, 1280, 1920, 2160…): fica a de 1920 (ou 1080/1440 no vertical);
+    # AV1 fica de fora (decodificar é lento)
+    bons = [u for u in achados if "_av1" not in u and largura(u) in (1920, 1080, 1440)]
+    if not bons:
+        bons = [u for u in achados if "_av1" not in u]
+    if len(bons) > limite:  # espalha pela lista (clipes de partes diferentes do site)
+        passo = len(bons) / limite
+        bons = [bons[int(i * passo)] for i in range(limite)]
+    return [urljoin(base, u) for u in bons]
+
+
+def baixar_videos_site(url, chave, pasta, limite=14):
+    """Baixa os clipes achados por videos_do_site como trailers (no máximo TRECHO_MAX s cada)."""
+    import hashlib
+    saida = []
+    for u in videos_do_site(url, limite):
+        p = os.path.join(pasta, f"{chave}_w{hashlib.md5(u.encode()).hexdigest()[:8]}.mp4")
+        try:
+            if not (os.path.exists(p) and duracao(p) > 1):
+                ffmpeg("-user_agent", UA, "-i", u, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                       "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+            if duracao(p) > 1:
+                saida.append({"arquivo": p, "nome": u.rsplit("/", 1)[-1]})
+        except Exception as e:
+            print(f"aviso: clipe {u} não baixou: {e}", flush=True)
+    print(f"site {url}: {len(saida)} clipes oficiais", flush=True)
+    return saida
+
+
 def baixar_imagens_materia(urls, pasta):
     """Imagens da própria matéria (mostram a novidade de verdade). Converte tudo para JPG e descarta
     miniaturas. Devolve entradas de banco {id: {...}}."""
