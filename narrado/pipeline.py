@@ -543,27 +543,25 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    import teste_fontes as tf  # noqa: F401
-    pf = os.path.join(pasta, "fontes")
-    os.makedirs(pf, exist_ok=True)
-    urls = assets.videos_do_site("https://www.rockstargames.com/VI", limite=200)
-    rel = {"total_urls": len(urls), "urls": urls, "clipes": []}
-    for u in urls[:60]:
-        import hashlib
-        p = os.path.join(RAW, f"teste_w{hashlib.md5(u.encode()).hexdigest()[:8]}.mp4")
-        try:
-            if not os.path.exists(p):
-                ffmpeg("-user_agent", assets.UA, "-i", u, "-t", 60, "-an", "-vf", "scale=-2:'min(1080,ih)'",
-                       "-c:v", "libx264", "-preset", "veryfast", "-crf", 22, p)
-            r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                                "stream=width,height", "-of", "csv=p=0", p], capture_output=True, text=True)
-            tb = assets.trechos_bons(p)
-            rel["clipes"].append({"u": u.rsplit("/", 1)[-1], "dur": round(duracao(p), 1), "wh": r.stdout.strip(),
-                                  "trechos": len(tb)})
-        except Exception as e:
-            rel["clipes"].append({"u": u.rsplit("/", 1)[-1], "erro": str(e)[-200:]})
-    destino = os.path.join(pasta, "teste_fontes.json")
-    gravar(destino, rel)
+    """Diagnóstico: junta os scripts da página de trailer da Rockstar que falam do player (para achar a API)."""
+    import urllib.request
+    import zipfile
+    ua = {"User-Agent": assets.UA}
+    html = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com/VI/trailer-1", headers=ua), timeout=30).read().decode("utf-8", "replace")
+    srcs = sorted(set(re.findall(r'(?:src|href)="([^"]+\.js[^"]*)"', html)) | set(re.findall(r'"(/VI/_next/static/chunks/[^"]+\.js)"', html)))
+    destino = os.path.join(pasta, "teste_js.zip")
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("pagina.html", html)
+        z.writestr("lista.txt", "\n".join(srcs))
+        for sname in srcs:
+            u = sname if sname.startswith("http") else "https://www.rockstargames.com" + sname
+            try:
+                code = urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=30).read().decode("utf-8", "replace")
+            except Exception as e:
+                z.writestr("erro_" + sname.rsplit("/", 1)[-1] + ".txt", str(e))
+                continue
+            if re.search(r"player|video|hls|m3u8", code, re.I):
+                z.writestr(sname.rsplit("/", 1)[-1], code)
     pub = publicador()
     if pub:
         pub(destino)
