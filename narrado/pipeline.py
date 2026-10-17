@@ -547,14 +547,29 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: trailers oficiais da Rockstar."""
-    rel = {}
-    for u in ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI"]:
-        ids = assets.ids_rockstar(u)
-        rel[u] = {"ids": ids, "arquivos": {v: assets.arquivo_rockstar(v) for v in ids}}
-    t = assets.baixar_rockstar("https://www.rockstargames.com/VI/trailer-1", "grandtheftautovi", RAW)
-    rel["baixados"] = [(x["arquivo"].rsplit("/", 1)[-1], round(duracao(x["arquivo"]), 1)) for x in t]
-    rel["trechos"] = {x["arquivo"].rsplit("/", 1)[-1]: len(assets.trechos_bons(x["arquivo"])) for x in t[:2]}
+    """Diagnóstico: JSON dos vídeos da Rockstar + por que o trailer não rendeu trechos."""
+    import urllib.request
+    rel = {"json": {}}
+    for vid in ["rkoCtr1r", "76orsa95", "cpys7u21"]:
+        for ctx in ("-context-site", "", "-context-embed"):
+            u = f"https://videos.rockstargames.com/v4/{vid}/data/en_us{ctx}.json"
+            try:
+                rel["json"][u] = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": assets.UA}), timeout=30).read().decode()[:1500]
+            except Exception as e:
+                rel["json"][u] = "ERRO " + str(e)
+    p = os.path.join(RAW, "grandtheftautovi_rrk721912.mp4")
+    if os.path.exists(p):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            q = assets.Quadros(p, tmp)
+            rel["cortes"] = len(q.cortes)
+            rel["nitidez"] = [round(assets.nitidez(q.em(t)) or -1) for t in range(10, 140, 10)]
+            import io
+            import contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                assets._trechos_bons(p, q)
+            rel["log"] = buf.getvalue()
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, rel)
     pub = publicador()
