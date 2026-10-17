@@ -543,53 +543,27 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    import teste_fontes as tf
-    job = ler(os.path.join(pasta, "job.json"))
+    import teste_fontes as tf  # noqa: F401
     pf = os.path.join(pasta, "fontes")
     os.makedirs(pf, exist_ok=True)
-    rel = {"links": {}, "paginas": {}}
-    import urllib.request
-    # endpoints candidatos do player da Rockstar + trechos dos JS que falam do player
-    for api in ["https://www.rockstargames.com/videoplayer/videos/get-video.json?id=rkoCtr1r&locale=en_us",
-                "https://www.rockstargames.com/videoplayer/videos/get-video.json?id=rkoCtr1r&locale=en_us&site=www"]:
+    urls = assets.videos_do_site("https://www.rockstargames.com/VI", limite=200)
+    rel = {"total_urls": len(urls), "urls": urls, "clipes": []}
+    for u in urls[:60]:
+        import hashlib
+        p = os.path.join(RAW, f"teste_w{hashlib.md5(u.encode()).hexdigest()[:8]}.mp4")
         try:
-            rel["paginas"][api] = {"resp": urllib.request.urlopen(urllib.request.Request(api, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")[:3000]}
+            if not os.path.exists(p):
+                ffmpeg("-user_agent", assets.UA, "-i", u, "-t", 60, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                       "-c:v", "libx264", "-preset", "veryfast", "-crf", 22, p)
+            r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                "stream=width,height", "-of", "csv=p=0", p], capture_output=True, text=True)
+            tb = assets.trechos_bons(p)
+            rel["clipes"].append({"u": u.rsplit("/", 1)[-1], "dur": round(duracao(p), 1), "wh": r.stdout.strip(),
+                                  "trechos": len(tb)})
         except Exception as e:
-            rel["paginas"][api] = {"erro": str(e)}
-    try:
-        html = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com/VI/trailer-1", headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
-        js = sorted(set(re.findall(r'/VI/_next/static/chunks/[^"\']+\.js', html)))
-        hits = []
-        for j in js:
-            try:
-                code = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com" + j, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
-            except Exception:
-                continue
-            for m in re.finditer(r'.{0,160}(?:m3u8|get-video|videoplayer|\.mp4|graph\.rockstargames|/videos/).{0,200}', code):
-                hits.append(j.rsplit("/", 1)[-1] + ": " + m.group(0))
-        rel["js"] = hits[:60]
-    except Exception as e:
-        rel["js"] = [str(e)]
-    for u in []:
-        try:
-            html = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
-            achados = sorted(set(re.findall(r'[^"\'\s<>]{0,120}(?:m3u8|\.mp4|videos/video/\d+|video_?[iI]d["\':=\s]+\w+|graph\.rockstargames\.com[^"\'\s]{0,200})[^"\'\s<>]{0,80}', html)))
-            rel["paginas"][u] = {"tam": len(html), "achados": achados[:40]}
-            nome_pg = os.path.join(pasta, f"teste_pagina_{u.rstrip('/').rsplit('/', 1)[-1]}.html")
-            with open(nome_pg, "w") as f:
-                f.write(html)
-            pub_ = publicador()
-            if pub_:
-                pub_(nome_pg)
-        except Exception as e:
-            rel["paginas"][u] = {"erro": str(e)}
-    for i, u in enumerate(TESTE_LINKS):
-        r = tf.ytdlp(u, pf, f"link{i}")
-        r["formatos"] = subprocess.run(["yt-dlp", "-F", u], capture_output=True, text=True).stdout[-600:]
-        rel["links"][u] = r
+            rel["clipes"].append({"u": u.rsplit("/", 1)[-1], "erro": str(e)[-200:]})
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, rel)
-    print(json.dumps(rel, ensure_ascii=False, indent=1), flush=True)
     pub = publicador()
     if pub:
         pub(destino)
