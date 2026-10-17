@@ -543,26 +543,30 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: junta os scripts da página de trailer da Rockstar que falam do player (para achar a API)."""
+    """Diagnóstico: módulo do videoplayer da Rockstar (para achar de onde vem o stream)."""
     import urllib.request
     import zipfile
     ua = {"User-Agent": assets.UA}
-    html = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com/videoplayer?id=rkoCtr1r", headers=ua), timeout=30).read().decode("utf-8", "replace")
-    srcs = sorted(set(re.findall(r'(?:src|href)="([^"]+\.js[^"]*)"', html)) | set(re.findall(r'"(/[^"]+/chunks/[^"]+\.js)"', html)))
+    base = ("https://media-rockstargames-com.akamaized.net/mfe-r19/prod/@rockstargames/modules-core-videoplayer/19.0.4/"
+            "e797f0440ad1188efd17f0cef9c8a2cac2b0d40120bc323aeceab6321298a639/")
     destino = os.path.join(pasta, "teste_js.zip")
+    vistos, fila = set(), ["remote-entry.js"]
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("pagina.html", html)
-        z.writestr("lista.txt", "\n".join(srcs))
-        for sname in srcs:
-            u = sname if sname.startswith("http") else ("https:" + sname if sname.startswith("//") else
-                                                        "https://www.rockstargames.com" + (sname if sname.startswith("/") else "/videoplayer/" + sname))
-            try:
-                code = urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=30).read().decode("utf-8", "replace")
-            except Exception as e:
-                z.writestr("erro_" + sname.rsplit("/", 1)[-1] + ".txt", str(e))
+        while fila and len(vistos) < 80:
+            nome = fila.pop(0)
+            if nome in vistos:
                 continue
-            if re.search(r"player|video|hls|m3u8", code, re.I):
-                z.writestr(sname.rsplit("/", 1)[-1], code)
+            vistos.add(nome)
+            try:
+                code = urllib.request.urlopen(urllib.request.Request(base + nome, headers=ua), timeout=30).read().decode("utf-8", "replace")
+            except Exception as e:
+                z.writestr("erro_" + nome.replace("/", "_") + ".txt", str(e))
+                continue
+            z.writestr(nome.replace("/", "_"), code)
+            for m in re.findall(r'["\']((?:\./)?[\w./-]+\.js)["\']', code):
+                m = m[2:] if m.startswith("./") else m
+                if not m.startswith("http") and m not in vistos:
+                    fila.append(m)
     pub = publicador()
     if pub:
         pub(destino)
