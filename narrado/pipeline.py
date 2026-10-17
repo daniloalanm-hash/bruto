@@ -542,11 +542,18 @@ def teste_fontes(pasta, st):
     os.makedirs(pf, exist_ok=True)
     rel = {"links": {}, "paginas": {}}
     import urllib.request
-    for u in ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI/launch-trailer"]:
+    for u in ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI/trailer-2",
+              "https://www.rockstargames.com/VI/launch-trailer"]:
         try:
             html = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
             achados = sorted(set(re.findall(r'[^"\'\s<>]{0,120}(?:m3u8|\.mp4|videos/video/\d+|video_?[iI]d["\':=\s]+\w+|graph\.rockstargames\.com[^"\'\s]{0,200})[^"\'\s<>]{0,80}', html)))
-            rel["paginas"][u] = {"tam": len(html), "achados": achados[:40], "trecho": html[:1500]}
+            rel["paginas"][u] = {"tam": len(html), "achados": achados[:40]}
+            nome_pg = os.path.join(pasta, f"teste_pagina_{u.rstrip('/').rsplit('/', 1)[-1]}.html")
+            with open(nome_pg, "w") as f:
+                f.write(html)
+            pub_ = publicador()
+            if pub_:
+                pub_(nome_pg)
         except Exception as e:
             rel["paginas"][u] = {"erro": str(e)}
     for i, u in enumerate(TESTE_LINKS):
