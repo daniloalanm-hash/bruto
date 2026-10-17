@@ -1001,6 +1001,12 @@ async function carregarProjeto() {
   const info = [`${fmtT(p.duracao || 0)} min${(p.duracao || 0) < MONETIZA ? ' ⚠️ abaixo de 1 min (não monetiza no TikTok)' : ''}`, `versão ${p.versao}`];
   if (p.voz?.modo === 'gravada') info.push(p.voz.reducao_aplicada ? `redução de ruído ligada (fundo ${p.voz.ruido_db} dB)` : 'gravação limpa, sem redução de ruído');
   $('#infoVideo').textContent = `${p.titulo} · ${info.join(' · ')}`;
+  if (p.avisos_voz?.length) {
+    // conferência automática do corte da voz: pontos onde a fala foi emendada colada em outra tomada
+    $('#infoVideo').append(h('span', { class: 'aviso-video' }, ' 🎧 Confira o áudio em: ',
+      ...p.avisos_voz.map((a, i) => h('a', { href: '#', onclick: (e) => { e.preventDefault(); pularPara(Math.max(0, a.t - 1.5)); } },
+        `${i ? ', ' : ''}${fmtT(a.t)} (${a.onde} de "${a.texto}")`))));
+  }
   if (p.sem_video?.length) {
     $('#infoVideo').append(h('span', { class: 'aviso-video' },
       ` ⚠️ Sem vídeo nítido de ${p.sem_video.join(', ')} (usei imagens). Para ter trailer, cole o link do vídeo oficial (X, Dailymotion, Vimeo…) em "Links de vídeo" no roteiro e gere de novo.`));

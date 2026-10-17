@@ -499,6 +499,7 @@ def finalizar(pasta, projeto, audio, st, p0):
     info = voz.montar(audio_limpo(audio), projeto["palavras"], wav, MODELO_RNN, projeto["voz"]["modo"], forcar)
     projeto["duracao_voz"] = info["duracao"]
     projeto["voz"].update({"ruido_db": info["ruido_db"], "reducao_aplicada": info["reducao_ruido"]})
+    projeto["avisos_voz"] = info.get("avisos") or []
 
     st.etapa("Montando cenas, transições e legenda", p0 + 8)
     faixa = 100 - (p0 + 8) - 6
