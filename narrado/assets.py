@@ -373,6 +373,41 @@ def arquivo_rockstar(vid):
     return None
 
 
+def baixar_espalhado(src, p, janelas=10, cada=14.0):
+    """Baixa um vídeo para virar banco de trechos. Vídeo curto: os primeiros TRECHO_MAX s. Vídeo longo (gameplay
+    de 20+ min): janelas espalhadas pelo vídeo todo, juntas num arquivo — senão só sobra o comecinho."""
+    total = 0.0
+    try:
+        r = run(["ffprobe", "-v", "error", "-user_agent", UA, "-show_entries", "format=duration", "-of", "csv=p=0", src])
+        total = float(r.stdout.strip() or 0)
+    except Exception:
+        total = 0.0
+    if total < TRECHO_MAX * 2:
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+        return
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        partes = []
+        ini, fim = total * 0.04, total * 0.96 - cada
+        for k in range(janelas):
+            t0 = ini + (fim - ini) * k / max(janelas - 1, 1)
+            q = os.path.join(tmp, f"j{k:02d}.mp4")
+            try:
+                ffmpeg("-user_agent", UA, "-ss", f"{t0:.1f}", "-i", src, "-t", f"{cada:.1f}", "-an",
+                       "-vf", "scale=-2:'min(1080,ih)',fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", 20,
+                       "-video_track_timescale", "15360", q)
+                if duracao(q) > 2:
+                    partes.append(q)
+            except Exception as e:
+                print(f"aviso: janela {k} não baixou: {e}", flush=True)
+        lista = os.path.join(tmp, "lista.txt")
+        with open(lista, "w") as f:
+            f.writelines(f"file '{x}'\n" for x in partes)
+        ffmpeg("-f", "concat", "-safe", 0, "-i", lista, "-c", "copy", p)
+    print(f"vídeo longo ({total / 60:.0f} min): {len(partes)} janelas de {cada:.0f}s espalhadas", flush=True)
+
+
 def baixar_rockstar(url, chave, pasta, limite=4):
     """Trailers oficiais do site da Rockstar (o player deles não é aceito pelo yt-dlp)."""
     saida = []
@@ -384,8 +419,7 @@ def baixar_rockstar(url, chave, pasta, limite=4):
                 if not src:
                     print(f"aviso: vídeo {vid} da Rockstar sem arquivo público", flush=True)
                     continue
-                ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
-                       "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+                baixar_espalhado(src, p)
             if duracao(p) > 2:
                 saida.append({"arquivo": p, "nome": f"Rockstar {vid}"})
         except Exception as e:
@@ -767,7 +801,7 @@ def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=Non
     if y < 38:            # escuro demais para celular
         conta["escuro"] += 1
         return None
-    if s < 10 and y < 70:  # cartela de texto (fundo escuro sem cor)
+    if s < 10 and y < 50:  # cartela de texto (fundo escuro sem cor); cena noturna dessaturada passa
         conta["cartela"] += 1
         return None
     # EAST (rápido) no meio e nas pontas; a leitura do Tesseract (lenta) só no meio, por último

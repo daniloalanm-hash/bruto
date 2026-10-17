@@ -547,14 +547,21 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: quadros do An Extended Look (Rockstar)."""
-    src = "https://videos-rockstargames-com.akamaized.net/v4/rk721912/flv/en-us-1080p.mp4"
-    info = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,width,height,pix_fmt,color_transfer,r_frame_rate:format=duration",
-                           "-of", "json", src], capture_output=True, text=True).stdout
+    """Diagnóstico: An Extended Look (Rockstar) espalhado + trechos escolhidos."""
+    p = os.path.join(RAW, "teste_rk721912.mp4")
+    if os.path.exists(p):
+        os.remove(p)
+    assets.baixar_espalhado("https://videos-rockstargames-com.akamaized.net/v4/rk721912/flv/en-us-1080p.mp4", p)
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        tb = assets.trechos_bons(p)
     grade = os.path.join(pasta, "teste_grade.jpg")
-    ffmpeg("-i", src, "-vf", "fps=1/20,scale=320:-2,tile=4x3", "-frames:v", 1, grade)
+    sel = "+".join(f"between(t,{c['t'] + 0.3:.2f},{c['t'] + 0.34:.2f})" for c in tb[:12]) or "1"
+    ffmpeg("-i", p, "-vf", f"select='{sel}',scale=320:-2,tile=4x3", "-frames:v", 1, "-vsync", "vfr", grade)
     destino = os.path.join(pasta, "teste_fontes.json")
-    gravar(destino, {"info": info})
+    gravar(destino, {"dur": duracao(p), "trechos": tb, "log": buf.getvalue()})
     pub = publicador()
     if pub:
         pub(destino)
