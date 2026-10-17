@@ -340,6 +340,60 @@ def baixar_link_video(url, chave, pasta, i):
         return None
 
 
+def ids_rockstar(url):
+    """Ids dos vídeos do player da Rockstar citados numa página do site (trailers do GTA VI etc.).
+    A página do trailer pedido vem primeiro."""
+    try:
+        html = _get(url).decode("utf-8", "replace").replace('\\"', '"')
+    except Exception as e:
+        print(f"aviso: não abri {url}: {e}", flush=True)
+        return []
+    vids = re.findall(r'\{"key":"([\w-]+)","id":\{[^}]*"all":"(\w+)"\},"player":"rockstar"', html)
+    vids += [("", v) for v in re.findall(r'videoplayer\?id=(\w+)', html)]
+    pedido = url.rstrip("/").rsplit("/", 1)[-1]
+    vids.sort(key=lambda kv: kv[0] != pedido)
+    return list(dict.fromkeys(v for _, v in vids))
+
+
+def arquivo_rockstar(vid):
+    """URL do maior arquivo (até 1080p) de um vídeo do player da Rockstar (JSON público do videos.rockstargames.com)."""
+    for ctx in ("-context-site", "", "-context-embed"):
+        try:
+            d = json.loads(_get(f"https://videos.rockstargames.com/v4/{vid}/data/en_us{ctx}.json")).get("data") or {}
+        except Exception:
+            continue
+        files = ((d.get("video") or {}).get("files")) or []
+        def alt(f):
+            m = re.search(r"(\d{3,4})", str(f.get("resolution") or ""))
+            return int(m.group(1)) if m else 0
+        bons = sorted((f for f in files if f.get("src")), key=lambda f: (alt(f) <= 1080, alt(f)), reverse=True)
+        if bons:
+            src = bons[0]["src"]
+            return src if src.startswith("http") else "https://videos.rockstargames.com" + ("" if src.startswith("/") else "/") + src
+    return None
+
+
+def baixar_rockstar(url, chave, pasta, limite=4):
+    """Trailers oficiais do site da Rockstar (o player deles não é aceito pelo yt-dlp)."""
+    saida = []
+    for vid in ids_rockstar(url)[:limite]:
+        p = os.path.join(pasta, f"{chave}_r{vid}.mp4")
+        try:
+            if not (os.path.exists(p) and duracao(p) > 2):
+                src = arquivo_rockstar(vid)
+                if not src:
+                    print(f"aviso: vídeo {vid} da Rockstar sem arquivo público", flush=True)
+                    continue
+                ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                       "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+            if duracao(p) > 2:
+                saida.append({"arquivo": p, "nome": f"Rockstar {vid}"})
+        except Exception as e:
+            print(f"aviso: vídeo {vid} da Rockstar falhou: {e}", flush=True)
+    print(f"Rockstar {url}: {len(saida)} trailers oficiais", flush=True)
+    return saida
+
+
 def videos_do_site(url, limite=14):
     """Site oficial do jogo que não é player de vídeo (ex.: rockstargames.com/VI): procura os clipes .mp4 que a
     própria página carrega (no HTML e nos scripts do mesmo site). Pega a versão até 1920 px de cada clipe."""

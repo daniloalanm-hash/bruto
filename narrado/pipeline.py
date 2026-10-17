@@ -295,7 +295,11 @@ def juntar_links(jogos, links, nomes):
                 continue
             t = {"arquivo": ln["arquivo"], "nome": "biblioteca"}
         else:
-            t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
+            t = None
+            if "rockstargames.com" in ln["url"]:
+                t = assets.baixar_rockstar(ln["url"], info["chave"], RAW) or None
+            if not t:
+                t = assets.baixar_link_video(ln["url"], info["chave"], RAW, i)
             if not t:  # não é player de vídeo: tenta os clipes que a própria página carrega (site oficial)
                 t = assets.baixar_videos_site(ln["url"], info["chave"], RAW) or None
         if t:
@@ -543,30 +547,16 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: módulo do videoplayer da Rockstar (para achar de onde vem o stream)."""
-    import urllib.request
-    import zipfile
-    ua = {"User-Agent": assets.UA}
-    base = ("https://media-rockstargames-com.akamaized.net/mfe-r19/prod/@rockstargames/modules-core-videoplayer/19.0.4/"
-            "e797f0440ad1188efd17f0cef9c8a2cac2b0d40120bc323aeceab6321298a639/")
-    destino = os.path.join(pasta, "teste_js.zip")
-    vistos, fila = set(), ["remote-entry.js"]
-    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
-        while fila and len(vistos) < 80:
-            nome = fila.pop(0)
-            if nome in vistos:
-                continue
-            vistos.add(nome)
-            try:
-                code = urllib.request.urlopen(urllib.request.Request(base + nome, headers=ua), timeout=30).read().decode("utf-8", "replace")
-            except Exception as e:
-                z.writestr("erro_" + nome.replace("/", "_") + ".txt", str(e))
-                continue
-            z.writestr(nome.replace("/", "_"), code)
-            mapa = re.search(r'\.u=e=>"js/"\+\{([^}]*)\}', code)
-            if mapa:
-                for h_ in re.findall(r':"([0-9a-f]{32})"', mapa.group(1)):
-                    fila.append(f"js/{h_}.js")
+    """Diagnóstico: trailers oficiais da Rockstar."""
+    rel = {}
+    for u in ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI"]:
+        ids = assets.ids_rockstar(u)
+        rel[u] = {"ids": ids, "arquivos": {v: assets.arquivo_rockstar(v) for v in ids}}
+    t = assets.baixar_rockstar("https://www.rockstargames.com/VI/trailer-1", "grandtheftautovi", RAW)
+    rel["baixados"] = [(x["arquivo"].rsplit("/", 1)[-1], round(duracao(x["arquivo"]), 1)) for x in t]
+    rel["trechos"] = {x["arquivo"].rsplit("/", 1)[-1]: len(assets.trechos_bons(x["arquivo"])) for x in t[:2]}
+    destino = os.path.join(pasta, "teste_fontes.json")
+    gravar(destino, rel)
     pub = publicador()
     if pub:
         pub(destino)
