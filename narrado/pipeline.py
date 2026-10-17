@@ -532,7 +532,7 @@ def teste_transcricao(pasta, st):
             pub(destino)
 
 
-TESTE_LINKS = ["https://player.vimeo.com/video/899035578", "https://www.rockstargames.com/videos"]
+TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.rockstargames.com/videos/video/rkoCtr1r"]
 
 
 def teste_fontes(pasta, st):
@@ -542,8 +542,28 @@ def teste_fontes(pasta, st):
     os.makedirs(pf, exist_ok=True)
     rel = {"links": {}, "paginas": {}}
     import urllib.request
-    for u in ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI/trailer-2",
-              "https://www.rockstargames.com/VI/launch-trailer"]:
+    # endpoints candidatos do player da Rockstar + trechos dos JS que falam do player
+    for api in ["https://www.rockstargames.com/videoplayer/videos/get-video.json?id=rkoCtr1r&locale=en_us",
+                "https://www.rockstargames.com/videoplayer/videos/get-video.json?id=rkoCtr1r&locale=en_us&site=www"]:
+        try:
+            rel["paginas"][api] = {"resp": urllib.request.urlopen(urllib.request.Request(api, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")[:3000]}
+        except Exception as e:
+            rel["paginas"][api] = {"erro": str(e)}
+    try:
+        html = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com/VI/trailer-1", headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
+        js = sorted(set(re.findall(r'/VI/_next/static/chunks/[^"\']+\.js', html)))
+        hits = []
+        for j in js:
+            try:
+                code = urllib.request.urlopen(urllib.request.Request("https://www.rockstargames.com" + j, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
+            except Exception:
+                continue
+            for m in re.finditer(r'.{0,160}(?:m3u8|get-video|videoplayer|\.mp4|graph\.rockstargames|/videos/).{0,200}', code):
+                hits.append(j.rsplit("/", 1)[-1] + ": " + m.group(0))
+        rel["js"] = hits[:60]
+    except Exception as e:
+        rel["js"] = [str(e)]
+    for u in []:
         try:
             html = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
             achados = sorted(set(re.findall(r'[^"\'\s<>]{0,120}(?:m3u8|\.mp4|videos/video/\d+|video_?[iI]d["\':=\s]+\w+|graph\.rockstargames\.com[^"\'\s]{0,200})[^"\'\s<>]{0,80}', html)))
