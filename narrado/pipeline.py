@@ -532,7 +532,7 @@ def teste_transcricao(pasta, st):
             pub(destino)
 
 
-TESTE_LINKS = ["https://x.com/RockstarGames/status/2110717537964953810"]
+TESTE_LINKS = ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI/trailer-2", "https://www.rockstargames.com/VI/launch-trailer", "https://vimeo.com/899035578"]
 
 
 def teste_fontes(pasta, st):
@@ -542,10 +542,9 @@ def teste_fontes(pasta, st):
     os.makedirs(pf, exist_ok=True)
     rel = {"links": {}}
     for i, u in enumerate(TESTE_LINKS):
-        jogos = juntar_links([], [{"url": u, "jogo": "Grand Theft Auto VI"}], ["Grand Theft Auto VI"])
-        banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"))
-        rel["links"][u] = {"jogos": [(j["nome"], [t["arquivo"] for t in j["trailers"]]) for j in jogos],
-                           "trechos": len(banco), "exemplo": list(banco.values())[:3]}
+        r = tf.ytdlp(u, pf, f"link{i}")
+        r["formatos"] = subprocess.run(["yt-dlp", "-F", u], capture_output=True, text=True).stdout[-600:]
+        rel["links"][u] = r
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, rel)
     print(json.dumps(rel, ensure_ascii=False, indent=1), flush=True)
