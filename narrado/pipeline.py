@@ -563,10 +563,10 @@ def teste_fontes(pasta, st):
                 z.writestr("erro_" + nome.replace("/", "_") + ".txt", str(e))
                 continue
             z.writestr(nome.replace("/", "_"), code)
-            for m in re.findall(r'["\']((?:\./)?[\w./-]+\.js)["\']', code):
-                m = m[2:] if m.startswith("./") else m
-                if not m.startswith("http") and m not in vistos:
-                    fila.append(m)
+            mapa = re.search(r'\.u=e=>"js/"\+\{([^}]*)\}', code)
+            if mapa:
+                for h_ in re.findall(r':"([0-9a-f]{32})"', mapa.group(1)):
+                    fila.append(f"js/{h_}.js")
     pub = publicador()
     if pub:
         pub(destino)
