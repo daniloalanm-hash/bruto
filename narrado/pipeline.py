@@ -532,7 +532,7 @@ def teste_transcricao(pasta, st):
             pub(destino)
 
 
-TESTE_LINKS = ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI/trailer-2", "https://www.rockstargames.com/VI/launch-trailer", "https://vimeo.com/899035578"]
+TESTE_LINKS = ["https://player.vimeo.com/video/899035578", "https://www.rockstargames.com/videos"]
 
 
 def teste_fontes(pasta, st):
@@ -540,7 +540,15 @@ def teste_fontes(pasta, st):
     job = ler(os.path.join(pasta, "job.json"))
     pf = os.path.join(pasta, "fontes")
     os.makedirs(pf, exist_ok=True)
-    rel = {"links": {}}
+    rel = {"links": {}, "paginas": {}}
+    import urllib.request
+    for u in ["https://www.rockstargames.com/VI/trailer-1", "https://www.rockstargames.com/VI/launch-trailer"]:
+        try:
+            html = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": tf.UA}), timeout=30).read().decode("utf-8", "replace")
+            achados = sorted(set(re.findall(r'[^"\'\s<>]{0,120}(?:m3u8|\.mp4|videos/video/\d+|video_?[iI]d["\':=\s]+\w+|graph\.rockstargames\.com[^"\'\s]{0,200})[^"\'\s<>]{0,80}', html)))
+            rel["paginas"][u] = {"tam": len(html), "achados": achados[:40], "trecho": html[:1500]}
+        except Exception as e:
+            rel["paginas"][u] = {"erro": str(e)}
     for i, u in enumerate(TESTE_LINKS):
         r = tf.ytdlp(u, pf, f"link{i}")
         r["formatos"] = subprocess.run(["yt-dlp", "-F", u], capture_output=True, text=True).stdout[-600:]
