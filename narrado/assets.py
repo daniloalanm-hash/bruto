@@ -373,7 +373,7 @@ def arquivo_rockstar(vid):
     return None
 
 
-def baixar_espalhado(src, p, janelas=10, cada=14.0):
+def baixar_espalhado(src, p, janelas=18, cada=12.0):
     """Baixa um vídeo para virar banco de trechos. Vídeo curto: os primeiros TRECHO_MAX s. Vídeo longo (gameplay
     de 20+ min): janelas espalhadas pelo vídeo todo, juntas num arquivo — senão só sobra o comecinho."""
     total = 0.0
