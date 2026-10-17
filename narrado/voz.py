@@ -12,6 +12,8 @@ from comum import ffmpeg, run
 PAD_IN, PAD_OUT = 0.25, 0.40   # até onde se procura o som real antes/depois de cada trecho
 FOLGA_IN, FOLGA_OUT = 0.03, 0.06  # folga mínima depois do fim real do som (não come consoante)
 GAP_KEEP = 0.30                # pausas menores que isso ficam como estão (respiro natural dentro da frase)
+GAP_EMENDA = 0.70              # fala contígua na gravação (nada descartado no meio) com pausa até isso fica INTEIRA,
+                               # mesmo atravessando trechos do silencedetect: emendar ali só cria um degrau no áudio
 GAP_NEW = 0.06                 # pausas maiores viram isso (ritmo de vídeo curto)
 RUIDO_LIMITE = -58             # dB médio nos silêncios acima do qual a redução de ruído liga
 
@@ -196,11 +198,26 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
     for w in mant:
         k = pos[id(w)]
         b = blocos[-1] if blocos else None
-        if b and b["ultimo"] == k - 1 and todas[k - 1]["c"] == w["c"] and w["s"] - todas[k - 1]["e"] < GAP_KEEP:
+        vao = w["s"] - todas[k - 1]["e"] if k else 9.0
+        if b and b["ultimo"] == k - 1 and (vao < GAP_KEEP or vao < GAP_EMENDA):
             b["e"], b["ultimo"] = w["e"], k
             b["pal"].append(w)
         else:
             blocos.append({"s": w["s"], "e": w["e"], "primeiro": k, "ultimo": k, "pal": [w]})
+    # palavrinha solta ("e", "em", "o") que sobrou do começo de uma tomada abandonada: emendada sozinha entre duas
+    # tomadas vira um soluço no áudio. Melhor perder a palavrinha do que deixar o picote.
+    soltos = []
+    for b in blocos:
+        w = b["pal"][0]
+        nucleo = re.sub(r"[^\wÀ-ÿ]", "", w["w"])
+        prox = todas[b["ultimo"] + 1] if b["ultimo"] + 1 < len(todas) else None
+        if (len(blocos) > 1 and len(b["pal"]) == 1 and len(nucleo) <= 3 and w["e"] - w["s"] < 0.45
+                and prox is not None and not prox["manter"]):
+            w["manter"] = False
+            soltos.append(w["w"])
+    if soltos:
+        blocos = [b for b in blocos if b["pal"][0]["manter"]]
+        print(f"voz: palavras soltas de tomada abandonada removidas: {soltos}")
     db, passo = envelope(src)
     definir_cortes(blocos, todas, db, passo)
 
