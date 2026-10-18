@@ -610,6 +610,33 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
            "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-c:a", "copy", "-movflags", "+faststart", destino)
 
 
+def conferir_video(arquivo, total):
+    """Procura imagem congelada (>1,2 s parada) e tela preta no vídeo sem legenda. Devolve [{t, tipo, dur}]."""
+    r = run(["ffmpeg", "-hide_banner", "-i", arquivo, "-vf",
+             "freezedetect=n=-55dB:d=1.2,blackdetect=d=0.3:pix_th=0.08", "-an", "-f", "null", "-"])
+    avisos = []
+    ini = None
+    for ln in r.stderr.splitlines():
+        m = re.search(r"freeze_start: ([\d.]+)", ln)
+        if m:
+            ini = float(m.group(1))
+        m = re.search(r"freeze_end: ([\d.]+)", ln)
+        if m and ini is not None:
+            avisos.append({"t": round(ini, 2), "tipo": "congelada", "dur": round(float(m.group(1)) - ini, 2)})
+            ini = None
+        m = re.search(r"black_start:([\d.]+) black_end:([\d.]+)", ln)
+        if m:
+            a, b = float(m.group(1)), float(m.group(2))
+            avisos.append({"t": round(a, 2), "tipo": "preta", "dur": round(b - a, 2)})
+    if ini is not None and total - ini > 1.2:
+        avisos.append({"t": round(ini, 2), "tipo": "congelada", "dur": round(total - ini, 2)})
+    # o fim do vídeo (meio segundo de folga depois da última fala) pode ficar parado
+    avisos = [a for a in avisos if not (a["tipo"] == "congelada" and a["t"] > total - 1.0)]
+    if avisos:
+        print(f"conferência da imagem: {avisos}", flush=True)
+    return avisos
+
+
 def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fontes, progresso=None):
     pasta_trab = os.path.abspath(pasta_trab)
     seg_dir = os.path.join(pasta_trab, "seg")
@@ -797,6 +824,11 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo),
            "-map", "[vlimpo]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "veryfast",
            "-crf", 17, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", limpo)
+    # conferência da imagem (antes da legenda, que mexe a cada palavra e esconderia o congelamento)
+    try:
+        projeto["avisos_video"] = conferir_video(limpo, total)
+    except Exception as e:
+        print(f"aviso: conferência da imagem falhou: {e}", flush=True)
     # 2) legenda, chamada e emojis por cima
     legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho, total)
     if diag:

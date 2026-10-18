@@ -621,7 +621,71 @@ function renderRoteiro() {
   });
   estimativa();
   salvarRascunho();
+  renderGanchos();
 }
+/* ---------------- ganchos alternativos ---------------- */
+function renderGanchos() {
+  const r = state.roteiro;
+  const atual = (r.cenas[0]?.texto || '').trim();
+  $('#listaGanchos').replaceChildren(...(r.ganchos || []).map((g) => h('li', { class: g.texto.trim() === atual ? 'atual' : '' },
+    h('div', { class: 'g-txt' },
+      h('span', { class: 'muted small' }, ({ original: 'Original', curiosidade: 'Curiosidade', numero: 'Número', contraste: 'Contraste' })[g.estrategia] || g.estrategia || ''),
+      h('span', { class: 'g-tit' }, g.titulo_tela || ''),
+      h('span', {}, g.texto)),
+    g.texto.trim() === atual ? h('span', { class: 'muted small' }, 'em uso')
+      : h('button', { class: 'btn small primary', onclick: () => usarGancho(g) }, 'Usar'))));
+}
+function usarGancho(g) {
+  const r = state.roteiro;
+  if (!r.cenas.length) r.cenas.push({ texto: '', destaques: [], assunto: null });
+  // guarda a abertura atual entre as opções para poder voltar
+  const c0 = r.cenas[0];
+  if (c0.texto.trim() && !(r.ganchos || []).some((x) => x.texto.trim() === c0.texto.trim())) {
+    r.ganchos = [{ estrategia: 'original', texto: c0.texto, titulo_tela: r.titulo_tela || '', destaques: c0.destaques || [] }, ...(r.ganchos || [])];
+  }
+  c0.texto = g.texto;
+  c0.destaques = (g.destaques || []).filter((d) => g.texto.includes(d));
+  if (g.titulo_tela) r.titulo_tela = g.titulo_tela;
+  renderRoteiro();
+  renderGanchos();
+  toast('Gancho trocado. Confira se o segundo tópico continua fazendo sentido.');
+}
+$('#btnGanchos').addEventListener('click', async () => {
+  const r = state.roteiro;
+  const btn = $('#btnGanchos');
+  if (!r.cenas.length || !r.cenas[0].texto.trim()) { toast('Escreva o roteiro primeiro.', 'warn'); return; }
+  btn.classList.add('busy');
+  try {
+    const m = state.materia || {};
+    const res = await gemini(`Você escreve ganchos de vídeos curtos virais de games (TikTok/Reels), em português do Brasil, falado e natural.
+
+Abaixo está o roteiro de um vídeo. Escreva 3 ALTERNATIVAS para o PRIMEIRO tópico (a abertura), cada uma com uma estratégia diferente:
+1. "curiosidade": abre uma pergunta ou mistério que só se resolve assistindo;
+2. "numero": começa pelo número/dado mais surpreendente da matéria;
+3. "contraste": choque entre o esperado e o que aconteceu (ou polêmica real da notícia).
+
+Regras: a primeira frase tem no máximo 14 palavras; o tópico inteiro tem mais ou menos o mesmo tamanho do original (${r.cenas[0].texto.split(/\s+/).length} palavras); ele precisa emendar naturalmente com o 2º tópico; nada de "neste vídeo"; números em algarismos; sem emojis; não invente fatos que não estão na matéria.
+Para cada uma: "titulo_tela" (3 a 6 palavras em MAIÚSCULAS, aparece grande na tela) e "destaques" (2 a 3 expressões copiadas do texto).
+
+Responda SOMENTE com JSON: {"ganchos": [{"estrategia": "curiosidade", "texto": "...", "titulo_tela": "...", "destaques": ["..."]}]}
+
+ABERTURA ATUAL: ${r.cenas[0].texto}
+SEGUNDO TÓPICO: ${r.cenas[1]?.texto || ''}
+ROTEIRO COMPLETO: ${r.cenas.map((c) => c.texto).join(' ')}
+
+MATÉRIA: ${m.titulo || ''}
+${(m.texto || '').slice(0, 6000)}`);
+    const novos = (res.ganchos || []).filter((g) => g && g.texto).map((g) => ({
+      estrategia: String(g.estrategia || ''), texto: String(g.texto).trim(), titulo_tela: String(g.titulo_tela || '').trim(), destaques: g.destaques || [],
+    }));
+    if (!novos.length) throw new Error('A IA não devolveu ganchos. Tente de novo.');
+    const orig = { estrategia: 'original', texto: r.cenas[0].texto, titulo_tela: r.titulo_tela || '', destaques: r.cenas[0].destaques || [] };
+    r.ganchos = [orig, ...novos];
+    salvarRascunho();
+    renderGanchos();
+  } catch (e) { toast(e.message, 'warn', 7000); } finally { btn.classList.remove('busy'); }
+});
+
 $('#titulo').addEventListener('input', (e) => { state.roteiro.titulo = e.target.value; salvarRascunho(); });
 $('#tituloTela').addEventListener('input', (e) => { state.roteiro.titulo_tela = e.target.value; salvarRascunho(); });
 $('#jogos').addEventListener('change', () => { state.roteiro.jogos = nomesJogos(); renderRoteiro(); });
@@ -1091,6 +1155,12 @@ async function carregarProjeto() {
     $('#infoVideo').append(h('span', { class: 'aviso-video' }, ' 🎧 Confira o áudio em: ',
       ...p.avisos_voz.map((a, i) => h('a', { href: '#', onclick: (e) => { e.preventDefault(); pularPara(Math.max(0, a.t - 1.5)); } },
         `${i ? ', ' : ''}${fmtT(a.t)} (${a.onde} de "${a.texto}")`))));
+  }
+  if (p.avisos_video?.length) {
+    // conferência automática da imagem: trecho congelado ou tela preta
+    $('#infoVideo').append(h('span', { class: 'aviso-video' }, ' 🎬 Confira a imagem em: ',
+      ...p.avisos_video.map((a, i) => h('a', { href: '#', onclick: (e) => { e.preventDefault(); pularPara(Math.max(0, a.t - 0.5)); } },
+        `${i ? ', ' : ''}${fmtT(a.t)} (${a.tipo === 'preta' ? 'tela preta' : 'imagem parada'} ${String(a.dur).replace('.', ',')} s)`))));
   }
   if (p.sem_video?.length) {
     $('#infoVideo').append(h('span', { class: 'aviso-video' },

@@ -185,3 +185,10 @@ audio { width: 100%; }
 .lista-pauta li .pauta-txt { display: grid; gap: 2px; min-width: 0; }
 .lista-pauta li .pauta-txt b { overflow-wrap: anywhere; }
 .lista-pauta li.feito { opacity: .55; }
+
+.ganchos { padding: 10px 12px; margin: 6px 0 10px; }
+.ganchos .row { align-items: center; gap: 10px; }
+.ganchos li { align-items: flex-start; }
+.ganchos li .g-txt { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.ganchos li .g-tit { font-weight: 800; letter-spacing: .02em; }
+.ganchos li.atual { border-color: var(--in); }
