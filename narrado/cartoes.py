@@ -531,12 +531,16 @@ def momento_do_nome(projeto, nome, cena_min=0):
     toks = [t for t in re.findall(r"[a-z0-9]+", _norm(nome)) if len(t) >= 3 and t not in ("the", "and")]
     if not toks:
         return None
-    alvo = toks[0]
     ws = sorted((w for w in projeto["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None),
                 key=lambda w: w["ns"])
-    for w in ws:
-        if w["cena"] >= cena_min and re.sub(r"[^a-z0-9]", "", _norm(w.get("legenda") or w["w"])).startswith(alvo):
-            return w["cena"], w["ns"]
+    lim = lambda w: re.sub(r"[^a-z0-9]", "", _norm(w.get("legenda") or w["w"]))
+    alvo = toks[:2]  # palavra exata (não "carros" para "Car") e, se houver, a seguinte também
+    for i, w in enumerate(ws):
+        if w["cena"] < cena_min or lim(w) != alvo[0]:
+            continue
+        if len(alvo) > 1 and (i + 1 >= len(ws) or lim(ws[i + 1]) != alvo[1]):
+            continue
+        return w["cena"], w["ns"]
     return None
 
 
