@@ -459,16 +459,16 @@ async function buscarMateria(url) {
   if (!m || m.texto.length < 200) m = await api(`/api/artigo?url=${encodeURIComponent(url)}`);
   return m;
 }
-$('#btnLote').addEventListener('click', async () => {
-  const links = [...new Set($('#linksLote').value.split(/\s+/).map((x) => x.trim()).filter((x) => /^https?:\/\//.test(x)))].slice(0, 6);
-  if (!links.length) { toast('Cole pelo menos um link (um por linha).', 'warn'); return; }
-  const st = $('#statusLote'), btn = $('#btnLote');
+// pautas = [{ url, reserva? }] — "reserva" é a matéria usada se o site da notícia bloquear a leitura
+async function gerarLote(pautas, st, btn) {
+  const links = pautas.map((p) => p.url);
   btn.classList.add('busy');
   let ok = 0;
   for (const [i, url] of links.entries()) {
     try {
       st.textContent = `(${i + 1}/${links.length}) Lendo a matéria…`;
-      const m = await buscarMateria(url);
+      let m = pautas[i].pronta || await buscarMateria(url).catch((e) => { if (pautas[i].reserva) return null; throw e; });
+      if ((!m || (m.texto || '').length < 200) && pautas[i].reserva) m = pautas[i].reserva;
       st.textContent = `(${i + 1}/${links.length}) Escrevendo o roteiro: ${m.titulo}`;
       const r = await roteiroComTamanho(m, +$('#duracao').value, (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; });
       if (!r.cenas.length) throw new Error('roteiro vazio');
@@ -478,9 +478,71 @@ $('#btnLote').addEventListener('click', async () => {
     } catch (e) { toast(`Não consegui fazer o roteiro de ${url}: ${e.message}`, 'warn', 8000); }
   }
   st.textContent = `${ok} de ${links.length} roteiros prontos.`;
-  if (ok) $('#linksLote').value = '';
   btn.classList.remove('busy');
+  return ok;
+}
+$('#btnLote').addEventListener('click', async () => {
+  const links = [...new Set($('#linksLote').value.split(/\s+/).map((x) => x.trim()).filter((x) => /^https?:\/\//.test(x)))].slice(0, 6);
+  if (!links.length) { toast('Cole pelo menos um link (um por linha).', 'warn'); return; }
+  if (await gerarLote(links.map((url) => ({ url })), $('#statusLote'), $('#btnLote'))) $('#linksLote').value = '';
 });
+
+/* ---------------- 1c. pauta do dia (Radar Games) ---------------- */
+const RADAR = 'https://radar-games.vercel.app';
+// potencial de vídeo narrado: nota do radar + o que rende imagem de jogo e curiosidade; resultado de campeonato rende menos
+function potencial(i) {
+  const bonus = { vazamento: 0.6, rumor: 0.4, lancamento: 0.5, noticia: 0.2, esports: -0.8 }[i.tipo] || 0;
+  return (i.nota || 0) + bonus + (i.confiabilidade === 'rumor' ? -0.1 : 0);
+}
+let pauta = [];
+async function carregarPauta() {
+  const st = $('#statusPauta');
+  try {
+    const r = await fetch(`${RADAR}/api/pauta`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`o radar respondeu ${r.status}`);
+    const d = await r.json();
+    const ed = d.edicoes && d.edicoes[0];
+    if (!ed) { st.textContent = 'O radar ainda não tem edição.'; return; }
+    const usados = new Set(lote().map((x) => x.materia && x.materia.url).filter(Boolean));
+    pauta = ed.itens.map((i) => ({ ...i, pot: potencial(i), feito: usados.has(i.fonte.url) })).sort((a, b) => b.pot - a.pot);
+    let marcadas = 0;
+    pauta.forEach((i) => { i.marcada = !i.feito && marcadas < 5 && ++marcadas > 0; });
+    const dia = new Date(`${ed.data}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
+    st.innerHTML = `Edição de ${dia} · <a href="${RADAR}/games/${ed.data}" target="_blank" rel="noopener">abrir o radar</a>`;
+    renderPauta();
+  } catch (e) { st.textContent = `Não consegui carregar a pauta do radar (${e.message}).`; }
+}
+function renderPauta() {
+  $('#listaPauta').replaceChildren(...pauta.map((i) => {
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = i.marcada;
+    cb.addEventListener('change', () => { i.marcada = cb.checked; atualizaBtnPauta(); });
+    return h('li', { class: i.feito ? 'feito' : '', onclick: (ev) => { if (ev.target !== cb && ev.target.tagName !== 'A') cb.click(); } }, cb,
+      h('div', { class: 'pauta-txt' },
+        h('b', {}, i.titulo),
+        h('span', { class: 'muted small' }, `${i.tipo} · nota ${i.nota} · `,
+          h('a', { href: i.fonte.url, target: '_blank', rel: 'noopener' }, i.fonte.nome), i.feito ? ' · já tem roteiro' : '')));
+  }));
+  atualizaBtnPauta();
+}
+function atualizaBtnPauta() {
+  const n = pauta.filter((i) => i.marcada).length;
+  $('#btnPauta').disabled = !n;
+  $('#btnPauta').textContent = n ? `Escrever ${n} roteiro${n > 1 ? 's' : ''}` : 'Escrever roteiros das marcadas';
+}
+$('#btnPauta').addEventListener('click', async () => {
+  const sel = pauta.filter((i) => i.marcada).slice(0, 6);
+  const fontes = (i) => i.fonte.nome ? ` (fonte: ${i.fonte.nome})` : '';
+  const limpo = (md) => md.replace(/^#+\s*/gm, '').replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
+  await gerarLote(sel.map((i) => ({
+    url: i.fonte.url,
+    // a matéria completa que o radar já adaptou para o blog vale mais que o site de origem (que às vezes bloqueia)
+    pronta: i.artigo && i.artigo.length > 800 ? { url: i.fonte.url, titulo: i.titulo, resumo: i.resumo, texto: limpo(i.artigo), imagem: '' } : null,
+    reserva: { url: i.fonte.url, titulo: i.titulo, resumo: i.resumo, texto: `${i.titulo}. ${i.resumo}${fontes(i)}`, imagem: '' },
+  })), $('#statusPauta'), $('#btnPauta'));
+  carregarPauta();
+});
+carregarPauta();
 
 /* ---------------- 2. roteiro ---------------- */
 function nomesJogos() { return $('#jogos').value.split('\n').map((s) => s.trim()).filter(Boolean); }

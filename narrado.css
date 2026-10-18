@@ -179,3 +179,9 @@ audio { width: 100%; }
 .tp-nav { margin: 6px 0 8px; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lista-lote li.bib-usa { border-color: var(--in); }
 #boxBib summary { cursor: pointer; font-weight: 600; }
+
+.lista-pauta li { justify-content: flex-start; flex-wrap: nowrap; align-items: flex-start; cursor: pointer; }
+.lista-pauta li input { margin-top: 3px; flex: none; }
+.lista-pauta li .pauta-txt { display: grid; gap: 2px; min-width: 0; }
+.lista-pauta li .pauta-txt b { overflow-wrap: anywhere; }
+.lista-pauta li.feito { opacity: .55; }
