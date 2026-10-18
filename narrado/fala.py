@@ -115,7 +115,7 @@ def _distribuir(segs, mapa, trechos):
     return saida
 
 
-def transcrever(src, modelo="medium", dicas="", modo="isolado", model=None):
+def transcrever(src, modelo="medium", dicas="", modo="paralelo", model=None):
     """Transcreve os trechos falados com tempo por palavra; cada palavra sabe de qual trecho (tomada) veio.
 
     Trechos curtos são empacotados (com silêncio entre eles) numa mesma janela do Whisper, e cada palavra
