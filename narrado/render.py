@@ -750,7 +750,7 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
 def conferir_video(arquivo, total):
     """Procura imagem congelada (>1,2 s parada) e tela preta no vídeo sem legenda. Devolve [{t, tipo, dur}]."""
     r = run(["ffmpeg", "-hide_banner", "-i", arquivo, "-vf",
-             "freezedetect=n=-55dB:d=1.2,blackdetect=d=0.3:pix_th=0.08", "-an", "-f", "null", "-"])
+             "freezedetect=n=-55dB:d=1.2,blackdetect=d=0.6:pix_th=0.03:pic_th=0.99", "-an", "-f", "null", "-"])
     avisos = []
     ini = None
     for ln in r.stderr.splitlines():
@@ -788,6 +788,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     # pouco material (jogo novo com 1 trailer só): cortes um pouco mais longos em vez de repetir trecho.
     # Com material de sobra continua o ritmo normal (CUT).
     uso = {}
+    tarefas = []
     distintos = max(len(banco), 1)
     corte = min(max(CUT, total / distintos * 0.85), CUT * 1.7)
     if corte > CUT + 0.05:
@@ -836,15 +837,33 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             if j == 0 and tr:
                 fx = {"pan_leak": "leak"}.get(tr, tr) if tr in ("flash", "zoom", "glitch", "leak", "pan_leak") else None
             src = os.path.join(pasta_raw, m["arquivo"])
-            if m.get("cartao"):
-                seg_cartao(src, d, out, fx)
-            elif m["tipo"] == "v" and m.get("proprio"):
-                seg_video_proprio(src, m.get("t", 0) + rep * 2.5, d, out, fx)
-            elif m["tipo"] == "v":
-                seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)
-            else:
-                seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio") or m.get("encaixar")), pre=_recorte(m))
             usados_cena[-1]["cortes"].append(mid)
+            # as decisões são sequenciais (uso de cada trecho); a codificação roda depois, 3 por vez
+            tarefas.append((k, mid, m, src, d, out, fx, rep, midias))
+            lista.append(out)
+            k += 1
+        if progresso:
+            progresso(fi + 1, len(faixas) * 2)
+
+    def codificar(tf):
+        k, mid, m, src, d, out, fx, rep, midias = tf
+        if m.get("cartao"):
+            seg_cartao(src, d, out, fx)
+        elif m["tipo"] == "v" and m.get("proprio"):
+            seg_video_proprio(src, m.get("t", 0) + rep * 2.5, d, out, fx)
+        elif m["tipo"] == "v":
+            seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)
+        else:
+            seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio") or m.get("encaixar")), pre=_recorte(m))
+        return tf
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        for i, tf in enumerate(ex.map(codificar, tarefas), 1):
+            if progresso and i % 10 == 0:
+                progresso(len(faixas) + round(len(faixas) * i / len(tarefas)), len(faixas) * 2)
+    for k, mid, m, src, d, out, fx, rep, midias in tarefas:
+        if True:
             ds = duracao(out)
             if abs(ds - d) > 0.08:
                 print(f"aviso: segmento {k} ({mid}) saiu com {ds:.2f}s em vez de {d:.2f}s", flush=True)
@@ -860,10 +879,6 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                         seg_imagem(os.path.join(pasta_raw, next(
                             (banco[x]["arquivo"] for x in midias if banco[x]["tipo"] == "i"), m["arquivo"])), d, out, k, fx)
                     diag[-1]["refeito"] = round(duracao(out), 2)
-            lista.append(out)
-            k += 1
-        if progresso:
-            progresso(fi + 1, len(faixas))
     lst = os.path.join(pasta_trab, "lista.txt")
     with open(lst, "w") as f:
         f.writelines(f"file '{p}'\n" for p in lista)
