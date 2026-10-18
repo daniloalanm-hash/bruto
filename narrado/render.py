@@ -298,6 +298,13 @@ def transicoes(projeto, faixas):
         esc = str(projeto["cenas"][c].get("transicao") or "auto")
         if esc in TRANSICOES:
             res[c] = esc
+        elif L["W"] > L["H"]:
+            # YouTube: efeito só na virada de capítulo (pan + woosh); dentro do capítulo, corte seco ou zoom leve
+            if projeto["cenas"][c].get("capitulo"):
+                res[c] = "pan_dir" if auto_k % 2 == 0 else "pan_esq"
+                auto_k += 1
+            else:
+                res[c] = "zoom" if fi % 4 == 0 else "seco"
         else:
             res[c] = AUTO_TRANSICOES[auto_k % len(AUTO_TRANSICOES)]
             auto_k += 1
