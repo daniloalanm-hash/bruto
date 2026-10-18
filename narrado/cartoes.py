@@ -509,13 +509,15 @@ def capa_do_jogo(appid, raw, destino):
                         pass
     if not os.path.exists(poster) and not os.path.exists(arte):
         raise RuntimeError("sem arte na Steam")
-    bg = _fundo(fundo if os.path.exists(fundo) else (arte if os.path.exists(arte) else poster)).convert("RGBA")
+    # fundo: o wallpaper da loja; sem ele, uma screenshot do jogo (sempre a cena do próprio jogo, desfocada)
+    base_fundo = fundo if os.path.exists(fundo) else (arte if os.path.exists(arte) else poster)
+    bg = _fundo(base_fundo).convert("RGBA")
     with Image.open(poster if os.path.exists(poster) else arte) as im:
         im = im.convert("RGB")
         if os.path.exists(poster):
             esc = min(820 / im.width, 1230 / im.height)
         else:
-            esc = min(980 / im.width, 700 / im.height)
+            esc = min(1040 / im.width, 760 / im.height)
         im = im.resize((int(im.width * esc), int(im.height * esc)))
     x, y = (W - im.width) // 2, int(H * 0.42 - im.height / 2)
     sombra = Image.new("RGBA", (W, H), (0, 0, 0, 0))
