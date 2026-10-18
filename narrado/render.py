@@ -396,7 +396,7 @@ def marcar_destaques(projeto):
 
 
 def blocos_legenda(projeto):
-    por_palavra = projeto.get("legenda_estilo") == "palavra"
+    por_palavra = projeto.get("legenda_estilo") == "palavra" and L["H"] > L["W"]
     pal = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and str(w.get("legenda", "")).strip()
            and w.get("cena") is not None]
     blocos, cur = [], []
@@ -463,6 +463,8 @@ def _quebra_titulo(txt, max_linha=14):
 def legenda_ass(projeto, destino, corte_gancho):
     """Legenda em blocos (estilo/cor/altura do projeto) + título grande do gancho. Devolve os blocos."""
     nome_estilo = projeto.get("legenda_estilo") if projeto.get("legenda_estilo") in ESTILOS_LEGENDA else "classico"
+    if nome_estilo == "palavra" and L["W"] > L["H"]:
+        nome_estilo = "classico"  # YouTube: frases curtas embaixo leem melhor que palavra solta
     fonte, tam, contorno, sombra, caixa = ESTILOS_LEGENDA[nome_estilo]
     cor = CORES.get(projeto.get("legenda_cor"), CORES["amarelo"])
     try:
@@ -484,6 +486,7 @@ def legenda_ass(projeto, destino, corte_gancho):
               f"Style: Tit,Anton,132,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,10,0,5,60,60,0,1",
               f"Style: TitG,Anton,{TIT_TAM},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,1,0,1,13,8,5,30,30,0,1",
               f"Style: TitBox,Anton,{TIT_TAM},&H00000000,&H00000000,&H00{cor},&H00{cor},0,0,0,0,100,100,1,0,3,20,0,5,30,30,0,1",
+              f"Style: Marca,Montserrat Black,{32 if L['H'] > L['W'] else 28},&H8CFFFFFF,&H8CFFFFFF,&HB4000000,&HB4000000,0,0,0,0,100,100,3,0,1,1.5,0,5,0,0,0,1",
               "Style: Fundo,Anton,10,&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
               f"Style: Capit,Montserrat Black,46,&H00000000,&H00000000,&H00{cor},&H00{cor},0,0,0,0,100,100,1,0,3,14,0,7,0,0,0,1",
               "Style: CapitN,Montserrat Black,30,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,2,0,1,3,2,7,0,0,0,1",
@@ -523,6 +526,15 @@ def legenda_ass(projeto, destino, corte_gancho):
             linhas.append(f"Dialogue: 4,{_ts(a0)},{_ts(a1)},CapitN,,0,0,0,,{{\\move(-700,52,96,52,0,260)\\t(3200,3500,\\alpha&HFF&)}}"
                           f"CAPÍTULO {n_cap - 1}")
             linhas.append(f"Dialogue: 4,{_ts(a0)},{_ts(a1)},Capit,,0,0,0,,{ent}{cap.upper()}")
+    # marca d'água do canal (discreta, o vídeo todo)
+    marca = str(projeto.get("marca_dagua") or "").strip()
+    if marca:
+        fim_v = max([b["fim"] for b in blocos] + [1.0]) + 1.0
+        if L["W"] > L["H"]:
+            pos = rf"\an3\pos({W - 36},{H - 26})"
+        else:
+            pos = rf"\an5\pos({L['cx']},{int(H * 0.845)})"
+        linhas.append(f"Dialogue: 0,{_ts(0)},{_ts(fim_v + 5)},Marca,,0,0,0,,{{{pos}}}{marca}")
     # chamada dos primeiros ~2 s
     fim_tit = fim_titulo(projeto, corte_gancho)
     if fim_tit:

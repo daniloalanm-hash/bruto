@@ -38,14 +38,17 @@ const K = {
 };
 // aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
 const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji',
-  'enquadramento', 'transicoes_modo', 'musica', 'capas'];
+  'enquadramento', 'transicoes_modo', 'musica', 'capas', 'marca_dagua'];
 // visual de referência (out/2026): janela 4:5, legenda palavra por palavra, whip pan só na troca de jogo, capa, trilha
-const VISUAL_REFERENCIA = { enquadramento: 'moldura', legenda_estilo: 'palavra', transicoes_modo: 'por_jogo', emoji: false, musica: true, capas: true, zoom_enfase: false };
+const VISUAL_REFERENCIA = { enquadramento: 'moldura', legenda_estilo: 'palavra', transicoes_modo: 'por_jogo', emoji: false, musica: false, capas: true, zoom_enfase: false, marca_dagua: '@jogandosemplano' };
 function estiloSalvo() {
   let e = {};
   try { e = JSON.parse(ls.get(K.estilo) || '{}'); } catch { e = {}; }
   if ((e.versao || 1) < 2) { // uma vez: adota o visual de referência (dá para voltar na aba Cenas)
-    e = { ...e, ...VISUAL_REFERENCIA, versao: 2 };
+    e = { ...e, ...VISUAL_REFERENCIA, versao: 3 };
+    ls.set(K.estilo, JSON.stringify(e));
+  } else if (e.versao < 3) { // TikTok: a música entra pelo app (som em alta); marca d'água do canal
+    e = { ...e, musica: false, marca_dagua: e.marca_dagua ?? '@jogandosemplano', versao: 3 };
     ls.set(K.estilo, JSON.stringify(e));
   }
   const { versao, ...resto } = e;
@@ -54,7 +57,7 @@ function estiloSalvo() {
 function salvarEstilo(p) {
   const e = {};
   for (const k of CHAVES_ESTILO) if (p[k] !== undefined) e[k] = p[k];
-  e.versao = 2;
+  e.versao = 3;
   ls.set(K.estilo, JSON.stringify(e));
 }
 const ls = {
@@ -1043,6 +1046,8 @@ function montarJob() {
     ...estiloSalvo(),
     titulo: r.titulo, titulo_tela: r.titulo_tela || '', fonte: state.materia?.url || '',
     formato: r.formato === 'horizontal' ? 'horizontal' : 'vertical',
+    // YouTube não tem som em alta: lá a trilha de fundo vem do Bruto; no TikTok, do app
+    ...(r.formato === 'horizontal' ? { musica: true } : {}),
     jogos: r.jogos,
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
@@ -1601,6 +1606,9 @@ function renderAparencia() {
       campoChk('Efeitos sonoros (woosh, pop, impacto)', p.sfx !== false, muda('sfx')),
       campoChk('Zoom nas palavras destacadas', p.zoom_enfase !== false, muda('zoom_enfase')),
       campoChk('Emojis', p.emoji !== false, muda('emoji')),
+      (() => { const i = h('input', { type: 'text', value: p.marca_dagua || '', placeholder: '@seucanal (vazio = sem marca)', style: { maxWidth: '200px' } });
+        i.addEventListener('change', () => { p.marca_dagua = i.value.trim(); salvarEstilo(p); marcarSujo(); });
+        return h('label', { class: 'field curto' }, h('span', {}, "Marca d'água"), i); })(),
       campoChk(`Música de fundo${p.trilha?.nome ? ` (${p.trilha.nome})` : ' (envie na biblioteca com o jogo "Trilha")'}`, p.musica !== false, muda('musica'))),
   );
 }

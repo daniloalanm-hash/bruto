@@ -60,6 +60,7 @@ ESTILO_PADRAO = {
     # visual de referência (TikTok de notícia de games): janela 4:5 com fundo desfocado, legenda palavra por
     # palavra, whip pan só na troca de jogo, capa do jogo na 1ª aparição, trilha de fundo
     "enquadramento": "moldura", "transicoes_modo": "por_jogo", "musica": True, "capas": True,
+    "marca_dagua": "@jogandosemplano",
 }
 
 
