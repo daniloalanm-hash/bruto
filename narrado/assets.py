@@ -408,6 +408,54 @@ def baixar_espalhado(src, p, janelas=18, cada=12.0):
     print(f"vídeo longo ({total / 60:.0f} min): {len(partes)} janelas de {cada:.0f}s espalhadas", flush=True)
 
 
+def gameplay_longo(nome, chave, pasta, janelas=24, cada=10.0):
+    """Vídeo longo (YouTube): uma gameplay comprida do Dailymotion (de preferência sem comentário), da qual saem
+    janelas espalhadas — variedade de cenas que trailer nenhum dá para 5-10 min de vídeo."""
+    import shutil
+    import subprocess
+    if not shutil.which("yt-dlp"):
+        return None
+    cands = []
+    for termo in (f"{nome} gameplay no commentary", f"{nome} gameplay walkthrough", f"{nome} gameplay"):
+        try:
+            d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
+                {"search": termo, "fields": "id,title,duration", "limit": 15, "sort": "relevance"})))
+        except Exception as e:
+            print(f"aviso: busca de gameplay falhou ({termo}): {e}", flush=True)
+            continue
+        for k, v in enumerate(d.get("list", [])):
+            t, dur = v.get("title", ""), v.get("duration") or 0
+            if not titulo_do_jogo(nome, t) or RUIM_DM.search(t) or not 600 <= dur <= 4 * 3600:
+                continue
+            if any(c[1] == v["id"] for c in cands):
+                continue
+            bonus = (2 if re.search(r"no commentary|sem coment|nocommentary", t, re.I) else 0) + \
+                (1 if re.search(r"4k|1080|pc|max settings|ultra", t, re.I) else 0) - \
+                (2 if re.search(r"live|stream|react|facecam|let'?s play", t, re.I) else 0)
+            cands.append((-bonus + k * 0.1, v["id"], t, dur))
+    cands.sort()
+    for _, vid, titulo, dur in cands[:5]:
+        p = os.path.join(pasta, f"{chave}_g_{vid}.mp4")
+        if os.path.exists(p):
+            return {"arquivo": p, "nome": titulo}
+        alt, _canal = _info_dm(vid)
+        if alt and alt < 720:
+            continue
+        try:
+            r = subprocess.run(["yt-dlp", "-g", "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]/b",
+                                f"https://www.dailymotion.com/video/{vid}"], capture_output=True, text=True, timeout=90)
+            url = (r.stdout or "").strip().splitlines()[0] if r.returncode == 0 and r.stdout.strip() else ""
+            if not url:
+                continue
+            baixar_espalhado(url, p, janelas=janelas, cada=cada)
+            if os.path.exists(p) and duracao(p) > 60:
+                print(f"gameplay longa: {titulo} ({dur // 60} min) → {int(duracao(p))}s em janelas", flush=True)
+                return {"arquivo": p, "nome": titulo}
+        except Exception as e:
+            print(f"aviso: gameplay {titulo}: {e}", flush=True)
+    return None
+
+
 def baixar_rockstar(url, chave, pasta, limite=4):
     """Trailers oficiais do site da Rockstar (o player deles não é aceito pelo yt-dlp)."""
     saida = []

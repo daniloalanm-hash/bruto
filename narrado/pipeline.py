@@ -325,9 +325,13 @@ def jogos_necessarios(job, cenas):
     if not assuntos:  # roteiro sem assuntos marcados: comportamento antigo (todos da lista)
         nomes = list(dict.fromkeys(lista))
     trailers = {}
+    longo = job.get("formato") == "horizontal"  # YouTube: 5-10 min pedem muito mais material
     for n in nomes:
         q = assuntos.count(n)
-        trailers[n] = assets.MAX_TRAILERS if n == principal else (2 if q >= 2 else 1)
+        if longo:
+            trailers[n] = 6 if n == principal else (4 if q >= 6 else 3 if q >= 3 else 2)
+        else:
+            trailers[n] = assets.MAX_TRAILERS if n == principal else (2 if q >= 2 else 1)
     pulados = [n for n in lista if n not in nomes]
     if pulados:
         print(f"jogos citados sem tópico próprio (não busco material): {pulados}", flush=True)
@@ -355,6 +359,18 @@ def preparar(pasta, st):
         st.etapa("Baixando os vídeos dos links", 12)
         jogos = juntar_links(jogos, links, nomes)
 
+    if job.get("formato") == "horizontal" and nomes:
+        # YouTube: gameplay longa dos jogos com mais tempo de tela (janelas espalhadas = cenas variadas)
+        st.etapa("Buscando gameplay para o vídeo longo", 14)
+        assuntos = [c.get("assunto") for c in cenas if c.get("assunto")]
+        top = sorted(dict.fromkeys(nomes), key=lambda n: -assuntos.count(n))[:2]
+        for n in top:
+            j = next((x for x in jogos if assets.mesmo_jogo(n, x["nome"], 0.4) or norm(n) == norm(x["nome"])), None)
+            if not j:
+                continue
+            g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
+            if g:
+                j["trailers"].append(g)
     st.etapa("Escolhendo os melhores trechos dos trailers", 18)
 
     def prog(k, n):
@@ -586,24 +602,19 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: Wikimedia Commons para consoles, pessoas e empresas."""
+    """Diagnóstico: gameplay longa do Dailymotion em janelas (vídeo do YouTube)."""
     import io
     import contextlib
-    buf, saidas = io.StringIO(), []
-    termos = ["Xbox Series X", "PlayStation 5", "DualSense", "Xbox Wireless Controller", "Steam Deck",
-              "Nintendo Switch 2", "Gamescom", "Hideo Kojima"]
-    rel = {}
+    buf, rel, saidas = io.StringIO(), {}, []
     with contextlib.redirect_stdout(buf):
-        for k, t in enumerate(termos):
-            try:
-                achados = assets.imagens_commons(t, RAW, n=3)
-                rel[t] = achados
-                for a in achados[:1]:
-                    out = os.path.join(pasta, f"teste_commons_{k}.jpg")
-                    ffmpeg("-i", os.path.join(RAW, a["arquivo"]), "-vf", "scale=480:-2", "-frames:v", 1, out)
-                    saidas.append(out)
-            except Exception as e:
-                rel[t] = {"erro": str(e)}
+        for k, nome in enumerate(["The Witcher 3: Wild Hunt", "Grand Theft Auto V"]):
+            g = assets.gameplay_longo(nome, f"teste{k}", RAW)
+            rel[nome] = g
+            if g:
+                grade = os.path.join(pasta, f"teste_gameplay_{k}.jpg")
+                ffmpeg("-i", g["arquivo"], "-vf", "fps=1/10,scale=320:-2,tile=4x3", "-frames:v", 1, grade)
+                saidas.append(grade)
+                rel[nome]["dur"] = duracao(g["arquivo"])
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, {"rel": rel, "log": buf.getvalue()})
     pub = publicador()
