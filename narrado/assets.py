@@ -982,3 +982,64 @@ def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):
         m["sprite"] = k
     folha.save(destino, quality=80)
     return {"colunas": col, "largura": tw, "altura": th}
+
+
+# ---------------------------------------------------------------- Wikimedia Commons (licença livre)
+
+COMMONS_UA = "BrutoNarrado/1.0 (https://bruto-nu.vercel.app; github.com/daniloalanm-hash)"
+_RUIM_COMMONS = re.compile(r"logo|icon|map|flag|diagram|chart|screenshot|svg|signature|coat.of.arms|seal|"
+                           r"wordmark|banner|button|symbol|\.pdf|\.tif", re.I)
+
+
+def imagens_commons(termo, pasta, n=3, largura=1600):
+    """Fotos com licença livre do Wikimedia Commons (console, pessoa, empresa, evento).
+    Devolve entradas de banco com autor/licença para crédito."""
+    import hashlib
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    q = urllib.parse.urlencode({
+        "action": "query", "format": "json", "generator": "search", "gsrsearch": f"{termo} filetype:bitmap",
+        "gsrnamespace": 6, "gsrlimit": 20, "prop": "imageinfo", "iiprop": "url|size|extmetadata|mime",
+        "iiurlwidth": largura})
+    req = urllib.request.Request(f"https://commons.wikimedia.org/w/api.php?{q}", headers={"User-Agent": COMMONS_UA})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = _json.loads(r.read())
+    pags = sorted((d.get("query") or {}).get("pages", {}).values(), key=lambda p: p.get("index", 99))
+    palavras = [w for w in re.findall(r"[a-z0-9]+", termo.lower()) if len(w) > 1]
+    out = []
+    for p in pags:
+        ii = (p.get("imageinfo") or [{}])[0]
+        titulo = p.get("title", "")
+        if not ii or ii.get("mime") not in ("image/jpeg", "image/png", "image/webp") or _RUIM_COMMONS.search(titulo):
+            continue
+        if ii.get("width", 0) < 900 or ii.get("height", 0) < 600:
+            continue
+        tnorm = titulo.lower()
+        if sum(w in tnorm for w in palavras) < max(1, len(palavras) - 1):
+            continue  # o nome do arquivo tem que falar do que foi pedido
+        meta = ii.get("extmetadata") or {}
+        lic = (meta.get("LicenseShortName") or {}).get("value", "")
+        if not re.search(r"CC|Public domain|PD", lic, re.I):
+            continue
+        url = ii.get("thumburl") or ii.get("url")
+        h = hashlib.sha1(url.encode()).hexdigest()[:10]
+        destino = os.path.join(pasta, f"commons_{h}.jpg")
+        try:
+            if not os.path.exists(destino):
+                bruto = destino + ".orig"
+                req = urllib.request.Request(url, headers={"User-Agent": COMMONS_UA})
+                with urllib.request.urlopen(req, timeout=40) as r, open(bruto, "wb") as f:
+                    f.write(r.read())
+                ffmpeg("-i", bruto, "-frames:v", 1, "-q:v", 2, destino)
+                os.remove(bruto)
+        except Exception as e:
+            print(f"aviso: commons {titulo}: {e}", flush=True)
+            continue
+        autor = re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()[:80]
+        out.append({"tipo": "i", "jogo": "commons", "arquivo": os.path.basename(destino), "url": url,
+                    "credito": f"{autor} / {lic} / Wikimedia Commons".strip(" /"), "titulo": titulo, "termo": termo})
+        if len(out) >= n:
+            break
+    print(f"commons '{termo}': {[x['titulo'] for x in out]}", flush=True)
+    return out

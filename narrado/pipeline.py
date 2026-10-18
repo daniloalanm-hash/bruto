@@ -558,20 +558,26 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: placares com logos do Liquipedia."""
+    """Diagnóstico: Wikimedia Commons para consoles, pessoas e empresas."""
     import io
     import contextlib
-    saidas, buf = [], io.StringIO()
-    casos = [(["FURIA", "MVK"], ["leagueoflegends"]), (["FURIA", "Team Spirit"], ["counterstrike"]),
-             (["paiN Gaming", "Fluxo"], ["leagueoflegends", "freefire"]), (["Sentinels", "Fnatic"], ["valorant"])]
+    buf, saidas = io.StringIO(), []
+    termos = ["Xbox Series X", "PlayStation 5 console", "Nintendo Switch 2", "Xbox controller", "Phil Spencer",
+              "Gabe Newell", "Ubisoft headquarters", "Steam Deck"]
+    rel = {}
     with contextlib.redirect_stdout(buf):
-        for k, (times, wk) in enumerate(casos):
-            logos = [cartoes.logo_do_time(t, wk, RAW) for t in times]
-            out = os.path.join(pasta, f"teste_placar_{k}.jpg")
-            cartoes.placar("2-1", times, logos, "teste de placar", None, FONTES, out)
-            saidas.append(out)
+        for k, t in enumerate(termos):
+            try:
+                achados = assets.imagens_commons(t, RAW, n=3)
+                rel[t] = achados
+                for a in achados[:1]:
+                    out = os.path.join(pasta, f"teste_commons_{k}.jpg")
+                    ffmpeg("-i", os.path.join(RAW, a["arquivo"]), "-vf", "scale=480:-2", "-frames:v", 1, out)
+                    saidas.append(out)
+            except Exception as e:
+                rel[t] = {"erro": str(e)}
     destino = os.path.join(pasta, "teste_fontes.json")
-    gravar(destino, {"log": buf.getvalue()})
+    gravar(destino, {"rel": rel, "log": buf.getvalue()})
     pub = publicador()
     if pub:
         pub(destino, *saidas)
