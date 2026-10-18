@@ -171,7 +171,7 @@ Para cada tópico informe:
 - "texto": o que será falado.
 - "destaques": 2 a 4 palavras ou expressões curtas do próprio texto (copiadas exatamente) que merecem destaque colorido na legenda.
 - "assunto": nome do jogo de que esse trecho está falando (para mostrar imagens desse jogo). Se o trecho fala de uma empresa, campeonato, time ou console, use o jogo da matéria mais ligado a ele (ex.: greve na Activision → "Call of Duty: Modern Warfare 4"; final do VALORANT Champions → "VALORANT"). Use null se for um comentário geral ou se nenhum jogo da matéria tiver relação — aí aparece o jogo principal ou a manchete da notícia. NUNCA ponha um jogo que não tem a ver com aquele trecho.
-- "numero": se o tópico tiver UM número de impacto (preço, valor em dinheiro, porcentagem, quantidade grande, placar), {"valor": "o número como está no texto, ex.: R$ 379, 4 mil, 35%, 2-1", "rotulo": "o que ele significa em 2 a 5 palavras, ex.: preço no Brasil"} — vira uma cartela grande na tela no momento em que ele é falado. Datas e anos não contam. No máximo 4 tópicos com número; nos outros, null.
+- "numero": se o tópico tiver UM número de impacto (preço, valor em dinheiro, porcentagem, quantidade grande, placar), {"valor": "o número como está no texto, ex.: R$ 379, 4 mil, 35%, 2-1", "rotulo": "o que ele significa em 2 a 5 palavras, ex.: preço no Brasil"} — vira uma cartela grande na tela no momento em que ele é falado. Se for PLACAR de esports, acrescente "times": ["time do 1º número", "time do 2º número"] com os nomes oficiais (ex.: {"valor": "2-1", "rotulo": "final do upper bracket", "times": ["LOUD", "Team Vitality"]}) — vira um placar com os logos. Datas e anos não contam. No máximo 4 tópicos com número; nos outros, null.
 - "emoji": UM emoji que combine com a emoção do tópico (ex.: 💀 fim/morte, 💰 dinheiro, 😱 surpresa, 🔥 hype, 🏆 recorde, ⏳ tempo). Use em no máximo metade dos tópicos; nos outros, null.
 
 Também:
@@ -316,7 +316,8 @@ function roteiroDaIA(r, materia) {
     cenas: (r.cenas || []).filter((c) => c.texto).map((c) => ({
       texto: c.texto, destaques: c.destaques || [], assunto: c.assunto || null, emoji: c.emoji || null,
       numero: c.numero && c.numero.valor && String(c.texto).includes(String(c.numero.valor).split(' ')[0])
-        ? { valor: String(c.numero.valor), rotulo: String(c.numero.rotulo || '') } : null,
+        ? { valor: String(c.numero.valor), rotulo: String(c.numero.rotulo || ''),
+          ...(Array.isArray(c.numero.times) && c.numero.times.length === 2 ? { times: c.numero.times.map(String) } : {}) } : null,
     })),
     post: r.post && typeof r.post === 'object' ? { legenda: r.post.legenda || '', hashtags: r.post.hashtags || [] } : null,
   };
