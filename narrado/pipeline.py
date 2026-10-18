@@ -558,47 +558,23 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: fontes de imagem para esports (Liquipedia, og:image das fontes, Dailymotion)."""
-    import gzip
-    import json as _json
-    import urllib.parse
-    import urllib.request
-    rel = {}
-
-    def get(url, ua="BrutoNarrado/1.0 (https://bruto-nu.vercel.app; daniloalanm-hash)"):
-        req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept-Encoding": "gzip"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            b = r.read()
-            return gzip.decompress(b) if r.headers.get("Content-Encoding") == "gzip" else b
-    for wiki, time_ in (("valorant", "LOUD"), ("valorant", "Team Vitality"), ("counterstrike", "FURIA"),
-                        ("leagueoflegends", "T1")):
-        try:
-            q = urllib.parse.urlencode({"action": "query", "titles": time_, "prop": "pageimages|images",
-                                        "pithumbsize": 600, "format": "json", "redirects": 1, "imlimit": 20})
-            d = _json.loads(get(f"https://liquipedia.net/{wiki}/api.php?{q}"))
-            rel[f"liquipedia_{wiki}_{time_}"] = d
-        except Exception as e:
-            rel[f"liquipedia_{wiki}_{time_}"] = {"erro": str(e)}
-        import time as _t
-        _t.sleep(2.2)
-    for u in ("https://dotesports.com/valorant/news/vct-champions-2026-vit-vs-loud",
-              "https://www.vlr.gg/754736/team-vitality-vs-loud-valorant-champions-2026-ubf"):
-        try:
-            html = get(u, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128 Safari/537.36").decode("utf8", "ignore")
-            rel[u] = re.findall(r'<meta[^>]+(?:og:image|twitter:image)[^>]*>', html)[:4]
-        except Exception as e:
-            rel[u] = {"erro": str(e)}
-    try:
-        d = _json.loads(get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
-            {"search": "LOUD Vitality VALORANT Champions", "fields": "id,title,duration,owner.screenname", "limit": 8})))
-        rel["dailymotion"] = d.get("list")
-    except Exception as e:
-        rel["dailymotion"] = {"erro": str(e)}
+    """Diagnóstico: placares com logos do Liquipedia."""
+    import io
+    import contextlib
+    saidas, buf = [], io.StringIO()
+    casos = [(["LOUD", "Team Vitality"], ["valorant"]), (["FURIA", "MVK"], ["leagueoflegends"]),
+             (["T1", "Gen.G"], ["leagueoflegends"]), (["FURIA", "Team Spirit"], ["counterstrike"])]
+    with contextlib.redirect_stdout(buf):
+        for k, (times, wk) in enumerate(casos):
+            logos = [cartoes.logo_do_time(t, wk, RAW) for t in times]
+            out = os.path.join(pasta, f"teste_placar_{k}.jpg")
+            cartoes.placar("2-1", times, logos, "teste de placar", None, FONTES, out)
+            saidas.append(out)
     destino = os.path.join(pasta, "teste_fontes.json")
-    gravar(destino, rel)
+    gravar(destino, {"log": buf.getvalue()})
     pub = publicador()
     if pub:
-        pub(destino)
+        pub(destino, *saidas)
 
 
 def main():

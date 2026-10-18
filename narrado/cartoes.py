@@ -243,6 +243,129 @@ def momento_do_numero(projeto, cena, valor):
     return None
 
 
+# ---------------------------------------------------------------- esports: logos (Liquipedia) e placar
+
+LIQUI_UA = "BrutoNarrado/1.0 (https://bruto-nu.vercel.app; github.com/daniloalanm-hash)"
+WIKIS = [("valorant", "valorant"), ("counter-strike", "counterstrike"), ("cs2", "counterstrike"), ("cs:go", "counterstrike"),
+         ("league of legends", "leagueoflegends"), ("lol", "leagueoflegends"), ("dota", "dota2"),
+         ("rainbow six", "rainbowsix"), ("r6", "rainbowsix"), ("rocket league", "rocketleague"),
+         ("overwatch", "overwatch"), ("apex", "apexlegends"), ("fortnite", "fortnite"), ("free fire", "freefire"),
+         ("pubg mobile", "pubgmobile"), ("pubg", "pubg"), ("mobile legends", "mobilelegends"),
+         ("street fighter", "fighters"), ("tekken", "fighters"), ("call of duty", "callofduty"),
+         ("ea sports fc", "easportsfc"), ("fifa", "easportsfc")]
+_ultimo_liqui = [0.0]
+
+
+def wikis_do_projeto(projeto, cena=None):
+    textos = [cena.get("assunto") or "", cena.get("texto") or ""] if cena else []
+    textos += [j.get("nome", "") for j in projeto.get("jogos", [])] + [str(projeto.get("titulo") or "")]
+    achados = []
+    for t in textos:
+        tn = _norm(t)
+        for chave, wiki in WIKIS:
+            if re.search(rf"(?<![a-z]){re.escape(chave)}(?![a-z])", tn) and wiki not in achados:
+                achados.append(wiki)
+    return achados or ["valorant", "counterstrike", "leagueoflegends"]
+
+
+def _liqui(wiki, params):
+    """API do Liquipedia (regra deles: User-Agent próprio, gzip e no máximo 1 consulta a cada 2 s)."""
+    import gzip
+    import json
+    import time
+    import urllib.parse
+    import urllib.request
+    espera = 2.1 - (time.time() - _ultimo_liqui[0])
+    if espera > 0:
+        time.sleep(espera)
+    q = urllib.parse.urlencode({**params, "format": "json"})
+    req = urllib.request.Request(f"https://liquipedia.net/{wiki}/api.php?{q}",
+                                 headers={"User-Agent": LIQUI_UA, "Accept-Encoding": "gzip"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            b = r.read()
+            return json.loads(gzip.decompress(b) if r.headers.get("Content-Encoding") == "gzip" else b)
+    finally:
+        _ultimo_liqui[0] = time.time()
+
+
+def logo_do_time(nome, wikis, raw):
+    """PNG do logo do time (versão para fundo escuro), baixado do Liquipedia e guardado em cache."""
+    import urllib.request
+    chave = re.sub(r"\W+", "_", _norm(nome)).strip("_")
+    destino = os.path.join(raw, f"logo_{chave}.png")
+    if os.path.exists(destino):
+        return destino
+    alvo = re.sub(r"[^a-z0-9]", "", _norm(nome))
+    for wiki in wikis[:3]:
+        try:
+            d = _liqui(wiki, {"action": "query", "titles": nome, "redirects": 1, "prop": "images", "imlimit": 500})
+            pags = list((d.get("query") or {}).get("pages", {}).values())
+            if not pags or "missing" in pags[0]:
+                continue
+            titulo = re.sub(r"[^a-z0-9]", "", _norm(pags[0].get("title", nome)))
+            cand = []
+            for im in pags[0].get("images", []):
+                arq = im["title"].split(":", 1)[-1]
+                base = re.sub(r"[^a-z0-9]", "", _norm(re.sub(r"(\d{4})?\s*(allmode|darkmode|lightmode).*$", "", arq, flags=re.I)))
+                if base not in (alvo, titulo) or not re.search(r"allmode|darkmode", arq, re.I):
+                    continue
+                ano = max([int(x) for x in re.findall(r"(?:19|20)\d\d", arq)] or [0])
+                cand.append((ano, "darkmode" in arq.lower(), im["title"]))
+            if not cand:
+                continue
+            escolhido = max(cand)[2]
+            info = _liqui(wiki, {"action": "query", "titles": escolhido, "prop": "imageinfo", "iiprop": "url"})
+            url = list(info["query"]["pages"].values())[0]["imageinfo"][0]["url"]
+            req = urllib.request.Request(url, headers={"User-Agent": LIQUI_UA})
+            with urllib.request.urlopen(req, timeout=30) as r, open(destino, "wb") as f:
+                f.write(r.read())
+            print(f"logo de {nome}: {escolhido} ({wiki})", flush=True)
+            return destino
+        except Exception as e:
+            print(f"aviso: logo de {nome} no Liquipedia ({wiki}): {e}", flush=True)
+    return None
+
+
+def placar(valor, times, logos, rotulo, img, fontes, destino):
+    """Placar: logo e nome de cada time, o resultado no meio e o contexto embaixo."""
+    from PIL import Image, ImageDraw
+    bg = _fundo(img).convert("RGBA")
+    d = ImageDraw.Draw(bg)
+    cy = 520
+    f_val = _fonte(fontes, "Anton-Regular.ttf", 190)
+    f_nome = _fonte(fontes, "Montserrat-Black.ttf", 44)
+    pts = re.split(r"\s*[-x×a]\s*", str(valor).strip(), maxsplit=1)
+    centro = f"{pts[0]} - {pts[1]}" if len(pts) == 2 else str(valor)
+    d.text((W // 2, cy), centro, font=f_val, fill=AMARELO, anchor="mm", stroke_width=9, stroke_fill=(0, 0, 0))
+    for lado, (nome, logo) in enumerate(zip(times[:2], (list(logos) + [None, None])[:2])):
+        cx = 175 if lado == 0 else W - 175
+        if logo and os.path.exists(logo):
+            with Image.open(logo) as im:
+                im = im.convert("RGBA")
+                esc = min(250 / im.width, 230 / im.height)
+                im = im.resize((max(1, int(im.width * esc)), max(1, int(im.height * esc))))
+                bg.alpha_composite(im, (cx - im.width // 2, cy - 40 - im.height // 2))
+        else:  # sem logo: as iniciais do time num anel
+            d.ellipse((cx - 105, cy - 145, cx + 105, cy + 65), outline=AMARELO, width=8)
+            ini = "".join(p[0] for p in re.findall(r"[A-Za-z0-9]+", str(nome))[:3]).upper() or "?"
+            d.text((cx, cy - 40), ini, font=_fonte(fontes, "Anton-Regular.ttf", 110 if len(ini) < 3 else 84),
+                   fill=(255, 255, 255), anchor="mm")
+        nome_txt = str(nome).upper()
+        while d.textlength(nome_txt, font=f_nome) > 360 and f_nome.size > 26:
+            f_nome = _fonte(fontes, "Montserrat-Black.ttf", f_nome.size - 4)
+        d.text((cx, cy + 150), nome_txt, font=f_nome, fill=(255, 255, 255), anchor="mm", stroke_width=4, stroke_fill=(0, 0, 0))
+    if rotulo:
+        f_rot = _fonte(fontes, "Montserrat-Black.ttf", 52)
+        y = cy + 260
+        d.rectangle((W // 2 - 70, y - 40, W // 2 + 70, y - 30), fill=AMARELO)
+        for ln in _quebrar(d, str(rotulo).upper().split(), f_rot, 900)[:2]:
+            d.text((W // 2, y + 30), " ".join(ln), font=f_rot, fill=(255, 255, 255), anchor="mm", stroke_width=4, stroke_fill=(0, 0, 0))
+            y += 68
+    bg.convert("RGB").save(destino, quality=92)
+    return destino
+
+
 # ---------------------------------------------------------------- integração com o projeto
 
 def _quadro_da_cena(projeto, cena, raw, pasta_tmp):
@@ -314,8 +437,14 @@ def aplicar(projeto, raw, fontes, pasta_trab):
         mid = f"cartao_num_{k}"
         arq = f"cartao_{tag}_num{k}.jpg"
         try:
-            numero(num["valor"], num.get("rotulo"), _quadro_da_cena(projeto, k, raw, pasta_trab), fontes,
-                   os.path.join(raw, arq))
+            fundo = _quadro_da_cena(projeto, k, raw, pasta_trab)
+            times = [t for t in (num.get("times") or []) if t][:2]
+            if len(times) == 2 and re.fullmatch(r"\s*\d{1,3}\s*[-x×a]\s*\d{1,3}\s*", str(num["valor"])):
+                wk = wikis_do_projeto(projeto, c)
+                logos = [logo_do_time(t, wk, raw) for t in times]
+                placar(num["valor"], times, logos, num.get("rotulo"), fundo, fontes, os.path.join(raw, arq))
+            else:
+                numero(num["valor"], num.get("rotulo"), fundo, fontes, os.path.join(raw, arq))
             if mid not in banco:
                 novo = True
             banco[mid] = {"tipo": "i", "jogo": "cartao", "arquivo": arq, "cartao": "numero", "cena": k,

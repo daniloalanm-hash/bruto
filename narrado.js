@@ -472,6 +472,17 @@ async function gerarLote(pautas, st, btn) {
     try {
       st.textContent = `(${i + 1}/${links.length}) Lendo a matéria…`;
       let m = pautas[i].pronta || await buscarMateria(url).catch((e) => { if (pautas[i].reserva) return null; throw e; });
+      if (m && pautas[i].fotosDe && !(m.imagens || []).length) {
+        // texto veio pronto do radar: as fotos vêm das fontes da notícia (principal + secundárias)
+        st.textContent = `(${i + 1}/${links.length}) Buscando as fotos da notícia…`;
+        const fotos = [];
+        for (const u of pautas[i].fotosDe.slice(0, 3)) {
+          const a = await buscarMateria(u).catch(() => null);
+          for (const f of (a && a.imagens) || []) if (!fotos.includes(f)) fotos.push(f);
+          if (fotos.length >= 6) break;
+        }
+        m = { ...m, imagens: fotos.slice(0, 8), imagem: fotos[0] || '' };
+      }
       if ((!m || (m.texto || '').length < 200) && pautas[i].reserva) m = pautas[i].reserva;
       st.textContent = `(${i + 1}/${links.length}) Escrevendo o roteiro: ${m.titulo}`;
       const r = await roteiroComTamanho(m, +$('#duracao').value, (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; });
@@ -541,6 +552,7 @@ $('#btnPauta').addEventListener('click', async () => {
   await gerarLote(sel.map((i) => ({
     url: i.fonte.url,
     // a matéria completa que o radar já adaptou para o blog vale mais que o site de origem (que às vezes bloqueia)
+    fotosDe: [i.fonte.url, ...(i.fontesSecundarias || []).map((f) => f.url)].filter(Boolean),
     pronta: i.artigo && i.artigo.length > 800 ? { url: i.fonte.url, site: i.fonte.nome, titulo: i.titulo, resumo: i.resumo, texto: limpo(i.artigo), imagem: '' } : null,
     reserva: { url: i.fonte.url, site: i.fonte.nome, titulo: i.titulo, resumo: i.resumo, texto: `${i.titulo}. ${i.resumo}${fontes(i)}`, imagem: '' },
   })), $('#statusPauta'), $('#btnPauta'));
