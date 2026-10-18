@@ -522,6 +522,7 @@ def voz_previa(audio, pasta):
 def finalizar(pasta, projeto, audio, st, p0):
     completar_cenas(sorted(projeto["palavras"], key=lambda w: w["s"]))
     integrar_proprias(pasta, projeto)
+    render.definir_formato(projeto)  # cartões e render no tamanho certo (9:16 ou 16:9)
     try:
         if cartoes.aplicar(projeto, RAW, FONTES, os.path.join(pasta, "trab")):
             projeto["sprite"] = assets.sprite(projeto["banco"], RAW, os.path.join(pasta, "cenas.jpg"))

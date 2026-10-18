@@ -101,8 +101,75 @@ def _arredondar(im, raio):
     return out
 
 
+def _marcadas(destaques):
+    marcar = set()
+    for ds in destaques or []:
+        marcar |= {_norm(p).strip(".,:;!?\"'()") for p in str(ds).split() if len(p) > 2}
+    return marcar
+
+
+def _escrever_manchete(d, linhas, x0, y, f_tit, tam, alt_linha, marcar):
+    espaco = d.textlength(" ", font=f_tit)
+    for linha in linhas:
+        x = x0
+        marc = [_norm(p).strip(".,:;!?\"'()") in marcar for p in linha]
+        for i, p in enumerate(linha):
+            wp = d.textlength(p, font=f_tit)
+            if marc[i]:
+                fim = x + wp + (espaco if i + 1 < len(linha) and marc[i + 1] else 6)
+                d.rectangle((x - (0 if i and marc[i - 1] else 6), y + int(tam * 0.18), fim, y + int(tam * 1.12)), fill=AMARELO)
+            d.text((x, y), p, font=f_tit, fill=(17, 17, 17))
+            x += wp + espaco
+        y += alt_linha
+    return y
+
+
+def _manchete_horizontal(titulo, site, img, destaques, fontes, destino):
+    """16:9 (YouTube): cartão largo com a manchete à esquerda e a foto da matéria à direita."""
+    from PIL import Image, ImageDraw, ImageFilter
+    bg = _fundo(img).convert("RGBA")
+    larg, pad = 1520, 56
+    x0, topo = (W - larg) // 2, 130
+    foto = None
+    if img and os.path.exists(img):
+        with Image.open(img) as im:
+            foto = im.convert("RGB")
+    fw, fh = (640, 360) if foto is not None else (0, 0)
+    interna = larg - 2 * pad - (fw + pad if fw else 0)
+    rasc = ImageDraw.Draw(bg)
+    for tam in (72, 66, 60, 54, 48):
+        f_tit = _fonte(fontes, "Montserrat-Black.ttf", tam)
+        linhas = _quebrar(rasc, str(titulo or "").split(), f_tit, interna)
+        if len(linhas) <= 5:
+            break
+    linhas = linhas[:5]
+    alt_linha = int(tam * 1.22)
+    alt_txt = 56 + 34 + alt_linha * len(linhas)
+    alt = 2 * pad + max(alt_txt, fh)
+    topo = max(50, int(H * 0.42 - alt / 2))  # centrado acima da legenda
+    sombra = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(sombra).rounded_rectangle((x0, topo + 16, x0 + larg, topo + alt + 16), 44, fill=(0, 0, 0, 150))
+    bg = Image.alpha_composite(bg, sombra.filter(ImageFilter.GaussianBlur(24)))
+    d = ImageDraw.Draw(bg)
+    d.rounded_rectangle((x0, topo, x0 + larg, topo + alt), 40, fill=(255, 255, 255, 255))
+    f_selo = _fonte(fontes, "Montserrat-Black.ttf", 32)
+    selo = (site or "NOTÍCIA").upper()
+    ws = d.textlength(selo, font=f_selo)
+    y = topo + pad + max(0, (alt - 2 * pad - alt_txt) // 2)
+    d.rounded_rectangle((x0 + pad, y, x0 + pad + ws + 38, y + 56), 12, fill=(229, 57, 53))
+    d.text((x0 + pad + 19, y + 28), selo, font=f_selo, fill=(255, 255, 255), anchor="lm")
+    d.text((x0 + pad + ws + 60, y + 28), "NOTÍCIA", font=f_selo, fill=(150, 150, 150), anchor="lm")
+    _escrever_manchete(d, linhas, x0 + pad, y + 56 + 34, f_tit, tam, alt_linha, _marcadas(destaques))
+    if fw:
+        bg.alpha_composite(_arredondar(_cobrir(foto, fw, fh), 24), (x0 + larg - pad - fw, topo + (alt - fh) // 2))
+    bg.convert("RGB").save(destino, quality=92)
+    return destino
+
+
 def manchete(titulo, site, img, destaques, fontes, destino):
     """Cartão no formato de notícia: site, manchete com marca-texto nas palavras-chave e a foto da matéria."""
+    if W > H:
+        return _manchete_horizontal(titulo, site, img, destaques, fontes, destino)
     from PIL import Image, ImageDraw, ImageFilter
     bg = _fundo(img).convert("RGBA")
     x0, larg, pad = 70, 940, 48
@@ -179,15 +246,15 @@ def numero(valor, rotulo, img, fontes, destino):
     tam = 330
     while tam > 110:
         f_val = _fonte(fontes, "Anton-Regular.ttf", tam)
-        if d.textlength(valor, font=f_val) <= 960:
+        if d.textlength(valor, font=f_val) <= min(W * 0.89, 1500):
             break
         tam -= 10
-    cy = 560
+    cy = int(H * 0.29) if H > W else int(H * 0.36)
     d.text((W // 2, cy), valor, font=f_val, fill=AMARELO, anchor="mm", stroke_width=10, stroke_fill=(0, 0, 0))
     if rotulo:
         f_rot = _fonte(fontes, "Montserrat-Black.ttf", 58)
-        linhas = _quebrar(d, str(rotulo).upper().split(), f_rot, 900)[:3]
-        y = cy + tam // 2 + 70
+        linhas = _quebrar(d, str(rotulo).upper().split(), f_rot, min(W * 0.83, 1400))[:3 if H > W else 2]
+        y = d.textbbox((W // 2, cy), valor, font=f_val, anchor="mm", stroke_width=10)[3] + 95
         d.rectangle((W // 2 - 70, y - 40, W // 2 + 70, y - 30), fill=AMARELO)
         for ln in linhas:
             d.text((W // 2, y + 34), " ".join(ln), font=f_rot, fill=(255, 255, 255), anchor="mm",
@@ -338,14 +405,14 @@ def placar(valor, times, logos, rotulo, img, fontes, destino):
     from PIL import Image, ImageDraw
     bg = _fundo(img).convert("RGBA")
     d = ImageDraw.Draw(bg)
-    cy = 520
-    f_val = _fonte(fontes, "Anton-Regular.ttf", 190)
+    cy = 520 if H > W else int(H * 0.38)
+    f_val = _fonte(fontes, "Anton-Regular.ttf", 190 if H > W else 220)
     f_nome = _fonte(fontes, "Montserrat-Black.ttf", 44)
     pts = re.split(r"\s*[-x×a]\s*", str(valor).strip(), maxsplit=1)
     centro = f"{pts[0]} - {pts[1]}" if len(pts) == 2 else str(valor)
     d.text((W // 2, cy), centro, font=f_val, fill=AMARELO, anchor="mm", stroke_width=9, stroke_fill=(0, 0, 0))
     for lado, (nome, logo) in enumerate(zip(times[:2], (list(logos) + [None, None])[:2])):
-        cx = 175 if lado == 0 else W - 175
+        cx = (175 if H > W else int(W * 0.24)) if lado == 0 else (W - 175 if H > W else int(W * 0.76))
         if logo and os.path.exists(logo):
             with Image.open(logo) as im:
                 im = im.convert("RGBA")
@@ -363,9 +430,9 @@ def placar(valor, times, logos, rotulo, img, fontes, destino):
         d.text((cx, cy + 150), nome_txt, font=f_nome, fill=(255, 255, 255), anchor="mm", stroke_width=4, stroke_fill=(0, 0, 0))
     if rotulo:
         f_rot = _fonte(fontes, "Montserrat-Black.ttf", 52)
-        y = cy + 260
+        y = cy + (260 if H > W else 250)
         d.rectangle((W // 2 - 70, y - 40, W // 2 + 70, y - 30), fill=AMARELO)
-        for ln in _quebrar(d, str(rotulo).upper().split(), f_rot, 900)[:2]:
+        for ln in _quebrar(d, str(rotulo).upper().split(), f_rot, min(W * 0.83, 1400))[:2]:
             d.text((W // 2, y + 30), " ".join(ln), font=f_rot, fill=(255, 255, 255), anchor="mm", stroke_width=4, stroke_fill=(0, 0, 0))
             y += 68
     bg.convert("RGB").save(destino, quality=92)

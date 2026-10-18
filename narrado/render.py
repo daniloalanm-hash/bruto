@@ -56,6 +56,33 @@ EMOJI_PALAVRAS = [  # (raízes da palavra destacada, emoji) — em ordem de prio
 
 _crops = {}
 
+# ---------------------------------------------------------------- formato (vertical 9:16 ou horizontal 16:9)
+
+LAYOUTS = {
+    "vertical": {"W": 1080, "H": 1920, "cx": 540, "tit_y": 0.42, "tit_larg": (900, 960), "tit_max": 12,
+                 "leg_altura": 0.615, "leg_escala": 1.0, "leg_limite": (0.35, 0.82), "fg": (90, 520, -120),
+                 "cobre": 1.25, "zoom_v": 0.07, "emoji": True},
+    # YouTube: legenda menor embaixo, cortes mais longos, movimento de câmera mais calmo
+    "horizontal": {"W": 1920, "H": 1080, "cx": 960, "tit_y": 0.46, "tit_larg": (1340, 1440), "tit_max": 24,
+                   "leg_altura": 0.86, "leg_escala": 0.58, "leg_limite": (0.5, 0.92), "fg": (240, 140, 0),
+                   "cobre": 1.15, "zoom_v": 0.04, "emoji": False},
+}
+L = dict(LAYOUTS["vertical"])
+
+
+def definir_formato(projeto):
+    """Ajusta dimensões e layout de todos os módulos de render para o formato do projeto."""
+    global W, H, CUT
+    import comum
+    nome = "horizontal" if (projeto or {}).get("formato") == "horizontal" else "vertical"
+    L.clear()
+    L.update(LAYOUTS[nome])
+    W, H = L["W"], L["H"]
+    CUT = 3.2 if nome == "horizontal" else 1.7
+    for mod in (comum, efeitos, cartoes):
+        mod.W, mod.H = W, H
+    return nome
+
 
 def area_util(src, t):
     """Detecta tarjas pretas (letterbox) do trailer para recortar só a imagem útil."""
@@ -135,12 +162,13 @@ def _nitidez(src):
 def seg_video(src, t0, dur, out, zoom_in, trans):
     t0 = _inicio_seguro(src, t0, dur)
     n, pad = _quadros_exatos(dur)
-    z = f"1+0.07*t/{dur:.3f}" if zoom_in else f"1.07-0.07*t/{dur:.3f}"
+    zv = L["zoom_v"]
+    z = f"1+{zv}*t/{dur:.3f}" if zoom_in else f"{1 + zv}-{zv}*t/{dur:.3f}"
     if trans in PUNCH:
         z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
     c = area_util(src, t0)
     pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
-    vf = (f"{pre}crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale={W}:{H},"
+    vf = (f"{pre}crop='min(iw,ih*{W}/{H})':'min(ih,iw*{H}/{W})',scale={W}:{H},"
           f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
           f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
           _fx_transicao(trans) + pad)
@@ -166,8 +194,8 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
         punch = f"+{PUNCH[trans]}*max(0\\,1-t/{TRANS})" if trans in PUNCH else ""
         z = f"(1.0+0.05*t/{dur:.3f}{punch})"
         vf = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=30:2,"
-              f"eq=brightness=-0.12[bg];[b]scale={W - 90}:{H - 520}:force_original_aspect_ratio=decrease[fg];"
-              f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1,fps={FPS},"
+              f"eq=brightness=-0.12[bg];[b]scale={W - L['fg'][0]}:{H - L['fg'][1]}:force_original_aspect_ratio=decrease[fg];"
+              f"[bg][fg]overlay=(W-w)/2:(H-h)/2{L['fg'][2]:+d},setsar=1,fps={FPS},"
               f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans))
         ffmpeg("-loop", 1, "-t", f"{dur:.3f}", "-i", src, "-filter_complex", vf, "-frames:v", n,
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
@@ -175,7 +203,8 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
     pans = ["x='iw/2-(iw/zoom/2)'", f"x='(iw-iw/zoom)*on/{n}'", f"x='(iw-iw/zoom)*(1-on/{n})'"]
     punch = f"+{PUNCH[trans]}*max(0\\,1-on/{int(TRANS * FPS)})" if trans in PUNCH else ""
     # cobre 1350x2400 (paisagem ou retrato, ex.: screenshot de celular) e faz o Ken Burns
-    vf = (f"{pre}scale=1350:2400:force_original_aspect_ratio=increase,crop=1350:2400,"
+    cw, ch = int(W * L["cobre"]) // 2 * 2, int(H * L["cobre"]) // 2 * 2
+    vf = (f"{pre}scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch},"
           f"zoompan=z='1.05+0.10*on/{n}{punch}':{pans[k % 3]}:y='ih/2-(ih/zoom/2)':d={n}:s={W}x{H}:fps={FPS},"
           f"setsar=1,eq=contrast=1.05:saturation=1.1" + _fx_transicao(trans))
     ffmpeg("-loop", 1, "-i", src, "-frames:v", n, "-vf", vf,
@@ -370,9 +399,11 @@ def legenda_ass(projeto, destino, corte_gancho):
     fonte, tam, contorno, sombra, caixa = ESTILOS_LEGENDA[nome_estilo]
     cor = CORES.get(projeto.get("legenda_cor"), CORES["amarelo"])
     try:
-        altura = min(max(float(projeto.get("legenda_altura", ALTURA_PADRAO)), 0.35), 0.82)
+        chave_alt = "legenda_altura" if L["W"] < L["H"] else "legenda_altura_h"  # cada formato tem a sua altura
+        altura = min(max(float(projeto.get(chave_alt, L["leg_altura"])), L["leg_limite"][0]), L["leg_limite"][1])
     except (TypeError, ValueError):
-        altura = ALTURA_PADRAO
+        altura = L["leg_altura"]
+    tam, contorno, sombra = int(tam * L["leg_escala"]), max(3, int(contorno * L["leg_escala"])), int(sombra * L["leg_escala"])
     y = int(H * altura)
     destaque = (rf"{{\c&H000000&\3c&H{cor}&\bord{contorno + 16}\shad0}}" if caixa else rf"{{\c&H{cor}&}}")
     normal = rf"{{\c&HFFFFFF&\3c&H000000&\bord{contorno}\shad{sombra}}}" if caixa else r"{\c&HFFFFFF&}"
@@ -398,7 +429,7 @@ def legenda_ass(projeto, destino, corte_gancho):
             partes.append((destaque if id(w) in marcadas else normal) + t)
         b["palavras_destaque"] = [norm(w["legenda"]) for w in b["pal"] if id(w) in marcadas]
         b["destaque"] = bool(b["palavras_destaque"])
-        pop = rf"{{\an5\pos(540,{y})\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)}}"
+        pop = rf"{{\an5\pos({L['cx']},{y})\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)}}"
         ini = b["ini"]
         if esconde_ate:
             if b["fim"] <= esconde_ate + 0.15:
@@ -446,24 +477,30 @@ def titulo_ass(estilo, titulo, cor, fim):
     faixa:    faixa colorida de ponta a ponta atravessa a tela com a linha-chave; o resto em branco gigante;
     simples:  texto menor no topo (estilo antigo).
     """
-    ls = _quebra_titulo(titulo.upper(), 12 if estilo != "simples" else 14)
+    ls = _quebra_titulo(titulo.upper(), L["tit_max"] if estilo != "simples" else L["tit_max"] + 2)
+    cx = L["cx"]
     if estilo == "simples":
         y_tit = int(H * 0.25)
         texto = r"\N".join(ls)
         if len(ls) > 1:
             texto = r"\N".join(ls[:-1]) + rf"\N{{\c&H{cor}&}}" + ls[-1]
-        anim = (rf"{{\an5\pos(540,{y_tit})\fscx60\fscy60\alpha&HFF&\t(0,120,\alpha&H00&\fscx106\fscy106)"
+        anim = (rf"{{\an5\pos({L['cx']},{y_tit})\fscx60\fscy60\alpha&HFF&\t(0,120,\alpha&H00&\fscx106\fscy106)"
                 rf"\t(120,220,\fscx100\fscy100)\fad(0,180)}}")
         return [f"Dialogue: 1,{_ts(0.05)},{_ts(fim)},Tit,,0,0,0,,{anim}{texto}"]
     ev = []
     chave = len(ls) - 1  # linha-chave: a última (é onde costuma estar o nome/fato)
-    largura_alvo = [900 if i == chave else 960 for i in range(len(ls))]
+    largura_alvo = [L["tit_larg"][0] if i == chave else L["tit_larg"][1] for i in range(len(ls))]
     escalas = [min(max(largura_alvo[i] / max(_largura_texto(l), 1), 0.3), 2.6) for i, l in enumerate(ls)]
     caps = [TIT_TAM * CAPS * e for e in escalas]
     pad = 34
     gaps = 46
     total = sum(caps) + gaps * (len(ls) - 1) + 2 * pad
-    y = H * 0.42 - total / 2
+    if total > H * 0.8:  # horizontal: a chamada não pode passar da altura da tela
+        f = H * 0.8 / total
+        escalas = [e * f for e in escalas]
+        caps = [c * f for c in caps]
+        total = H * 0.8
+    y = H * L["tit_y"] - total / 2
     sai = int((fim - 0.05) * 1000)
     for i, linha in enumerate(ls):
         if i == chave:
@@ -481,31 +518,31 @@ def titulo_ass(estilo, titulo, cor, fim):
                       rf"{{\an7\move(-{W},{yc - alt // 2},0,{yc - alt // 2},0,170)\p1\1c&H{cor}&\1a&H00&\bord0\shad0\fad(0,150)}}"
                       rf"m 0 0 l {W} 0 {W} {alt} 0 {alt}{{\p0}}")
             ev.append(rf"Dialogue: 3,{_ts(0.02 + d / 1000)},{_ts(fim)},TitG,,0,0,0,,"
-                      rf"{{\an5\q2\move(-600,{yt},540,{yt},0,170)\fscx{ep}\fscy{ep}\1c&H000000&\bord0\shad0\fad(0,150)}}{linha}")
+                      rf"{{\an5\q2\move(-600,{yt},{cx},{yt},0,170)\fscx{ep}\fscy{ep}\1c&H000000&\bord0\shad0\fad(0,150)}}{linha}")
             continue
         if i == chave:
             # adesivo: retângulo do tamanho da palavra, na cor de destaque, inclinado; texto preto por cima
             bw, bh = int(larg + 2 * pad + 20), int(caps[i] + 2 * pad)
-            comum = rf"\org(540,{yc})\frz3\alpha&HFF&\t({d},{d + 70},\alpha&H00&)\t({sai - 160},{sai},\alpha&HFF&)"
+            comum = rf"\org({cx},{yc})\frz3\alpha&HFF&\t({d},{d + 70},\alpha&H00&)\t({sai - 160},{sai},\alpha&HFF&)"
             slam = rf"\fscx145\fscy145\t({d},{d + 160},\fscx100\fscy100)"
             ev.append(rf"Dialogue: 2,{_ts(0.02)},{_ts(fim)},Fundo,,0,0,0,,"
-                      rf"{{\an5\pos(540,{yc}){comum}{slam}\p1\1c&H{cor}&\bord0\shad0}}"
+                      rf"{{\an5\pos({cx},{yc}){comum}{slam}\p1\1c&H{cor}&\bord0\shad0}}"
                       rf"m 0 0 l {bw} 0 {bw} {bh} 0 {bh}{{\p0}}")
             ev.append(rf"Dialogue: 3,{_ts(0.02)},{_ts(fim)},TitG,,0,0,0,,"
-                      rf"{{\an5\q2\pos(540,{yt}){comum}\fscx{int(ep * 1.45)}\fscy{int(ep * 1.45)}"
+                      rf"{{\an5\q2\pos({cx},{yt}){comum}\fscx{int(ep * 1.45)}\fscy{int(ep * 1.45)}"
                       rf"\t({d},{d + 160},\fscx{ep}\fscy{ep})\1c&H000000&\bord0\shad0}}{linha}")
             continue
         tremida = (rf"\t({d + 150},{d + 185},\frz{2.5 if i % 2 else -2.5})"
                    rf"\t({d + 185},{d + 225},\frz{-1.5 if i % 2 else 1.5})\t({d + 225},{d + 260},\frz0)")
         ev.append(rf"Dialogue: 2,{_ts(0.02)},{_ts(fim)},TitG,,0,0,0,,"
-                  rf"{{\an5\q2\pos(540,{yt})\fscx{int(ep * 1.45)}\fscy{int(ep * 1.45)}\alpha&HFF&\t({d},{d + 70},\alpha&H00&)"
+                  rf"{{\an5\q2\pos({cx},{yt})\fscx{int(ep * 1.45)}\fscy{int(ep * 1.45)}\alpha&HFF&\t({d},{d + 70},\alpha&H00&)"
                   rf"\t({d},{d + 150},\fscx{ep}\fscy{ep}){tremida}\t({sai - 160},{sai},\alpha&HFF&)}}{linha}")
     return ev
 
 
 def escolher_emojis(projeto, blocos):
     """No máximo 1 emoji por tópico, só em bloco com palavra destacada (ou o emoji que o roteiro sugeriu)."""
-    if not projeto.get("emoji", True) or not os.path.exists(EMOJI_FONTE):
+    if not projeto.get("emoji" if L["emoji"] else "emoji_h", L["emoji"]) or not os.path.exists(EMOJI_FONTE):
         return []
     eventos, usados_cena = [], set()
     n_topicos = len({b["cena"] for b in blocos})
@@ -579,6 +616,7 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
 
     É o único passo de um ajuste "só de legenda": não refaz cenas, voz nem efeitos.
     """
+    definir_formato(projeto)
     pasta_trab = os.path.abspath(pasta_trab)
     os.makedirs(pasta_trab, exist_ok=True)
     tl = projeto.get("timeline") or []
@@ -601,7 +639,7 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
         entradas += ["-i", png]
         idx = entradas.count("-i") - 1
         a0, a1 = e["ini"], e["fim"]
-        y_emo = y_leg - 285
+        y_emo = y_leg - int(285 * L["leg_escala"])
         grafo.append(f"{v}[{idx}:v]overlay=x=(W-w)/2:y='{y_emo}-36*max(0\\,1-(t-{a0:.3f})/0.16)':"
                      f"enable='between(t\\,{a0:.3f}\\,{a1:.3f})'[ve{i}]")
         v = f"[ve{i}]"
@@ -638,6 +676,7 @@ def conferir_video(arquivo, total):
 
 
 def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fontes, progresso=None):
+    definir_formato(projeto)
     pasta_trab = os.path.abspath(pasta_trab)
     seg_dir = os.path.join(pasta_trab, "seg")
     shutil.rmtree(seg_dir, ignore_errors=True)
