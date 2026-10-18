@@ -604,12 +604,15 @@ function renderRoteiro() {
     dest.addEventListener('input', () => { c.destaques = dest.value.split(',').map((s) => s.trim()).filter(Boolean); salvarRascunho(); });
     const emo = h('input', { type: 'text', value: c.emoji || '', placeholder: '—', maxlength: 4, class: 'emoji-in', title: 'Emoji que aparece sobre a legenda deste tópico (vazio = automático)' });
     emo.addEventListener('input', () => { c.emoji = emo.value.trim() || null; salvarRascunho(); });
+    const foto = h('input', { type: 'text', value: c.imagem || '', placeholder: 'ex.: Xbox Series X', title: 'Foto real de console, pessoa, empresa ou evento (Wikimedia Commons). Vazio = só material do jogo.' });
+    foto.addEventListener('input', () => { c.imagem = foto.value.trim() || null; salvarRascunho(); });
     const mover = (d) => { const j = i + d; if (j < 0 || j >= r.cenas.length) return; [r.cenas[i], r.cenas[j]] = [r.cenas[j], r.cenas[i]]; renderRoteiro(); };
     box.append(h('div', { class: 'cena' },
       h('div', { class: 'campos' }, txt,
         h('div', { class: 'linha2' },
           h('label', { class: 'field' }, h('span', {}, 'Destaques na legenda'), dest),
           h('label', { class: 'field' }, h('span', {}, 'Jogo na tela'), sel),
+          h('label', { class: 'field' }, h('span', {}, 'Foto de'), foto),
           h('label', { class: 'field curto' }, h('span', {}, 'Emoji'), emo),
           h('div', { class: 'acoes' },
             h('button', { class: 'btn small icon', title: 'Subir', onclick: () => mover(-1) }, '↑'),

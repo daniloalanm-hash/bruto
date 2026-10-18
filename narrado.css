@@ -30,7 +30,7 @@ body.nr { display: block; height: auto; min-height: 100%; }
 .cena::before { counter-increment: cena; content: counter(cena); font-weight: 700; color: var(--accent); text-align: center; padding-top: 6px; }
 .cena .campos { display: flex; flex-direction: column; gap: 8px; }
 .cena textarea { min-height: 54px; font-size: 14px; }
-.cena .linha2 { display: grid; grid-template-columns: 1fr 210px 64px auto; gap: 8px; align-items: end; }
+.cena .linha2 { display: grid; grid-template-columns: 1fr 190px 170px 64px auto; gap: 8px; align-items: end; }
 .emoji-in { text-align: center; font-size: 18px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cena .acoes { display: flex; gap: 4px; }
