@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 
+import cartoes
 import efeitos
 from comum import FPS, W, H, duracao, ffmpeg, norm, run
 
@@ -178,6 +179,18 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
           f"zoompan=z='1.05+0.10*on/{n}{punch}':{pans[k % 3]}:y='ih/2-(ih/zoom/2)':d={n}:s={W}x{H}:fps={FPS},"
           f"setsar=1,eq=contrast=1.05:saturation=1.1" + _fx_transicao(trans))
     ffmpeg("-loop", 1, "-i", src, "-frames:v", n, "-vf", vf,
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+
+
+def seg_cartao(src, dur, out, trans):
+    """Cartão gerado (manchete/número): entra com um "pop" (zoom que assenta em 0,22 s) e respira devagar.
+    Sem Ken Burns de recorte — o texto do cartão não pode sair da tela."""
+    n = max(1, int(round(dur * FPS)))
+    punch = f"+{PUNCH[trans]}*max(0\\,1-t/{TRANS})" if trans in PUNCH else ""
+    z = f"(1.0+0.025*t/{dur:.3f}+0.07*max(0\\,1-t/0.22){punch})"
+    vf = (f"scale={W}:{H},setsar=1,fps={FPS},"
+          f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans))
+    ffmpeg("-loop", 1, "-t", f"{dur + 0.2:.3f}", "-i", src, "-vf", vf, "-frames:v", n,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
 
 
@@ -614,8 +627,20 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         tr = trans_cena.get(c)
         usados_cena.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": [],
                             "entrada": tipos.get(c, "inicio"), "transicao": tr or "inicio"})
+        # cartela de número: entra no corte em que o número é falado
+        fixo = {}
+        for cid, cm in banco.items():
+            if cm.get("cartao") == "numero" and cm.get("cena") == c and n >= 2:
+                t_num = cartoes.momento_do_numero(projeto, c, cm.get("valor"))
+                jn = 1 if t_num is None else min(max(int((t_num - a) / (dur / n)), 0), n - 1)
+                fixo[jn] = cid
         for j in range(n):
-            mid = midias[j % len(midias)]
+            if j < len(midias):
+                mid = midias[j]
+            else:  # na 2ª volta do rodízio, cartão não repete (a manchete já apareceu neste tópico)
+                giro = [x for x in midias if not banco[x].get("cartao")] or midias
+                mid = giro[(j - len(midias)) % len(giro)]
+            mid = fixo.get(j) or mid
             m = banco[mid]
             rep = j // len(midias)
             d = dur / n
@@ -624,7 +649,9 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             if j == 0 and tr:
                 fx = {"pan_leak": "leak"}.get(tr, tr) if tr in ("flash", "zoom", "glitch", "leak", "pan_leak") else None
             src = os.path.join(pasta_raw, m["arquivo"])
-            if m["tipo"] == "v" and m.get("proprio"):
+            if m.get("cartao"):
+                seg_cartao(src, d, out, fx)
+            elif m["tipo"] == "v" and m.get("proprio"):
                 seg_video_proprio(src, m.get("t", 0) + rep * 2.5, d, out, fx)
             elif m["tipo"] == "v":
                 seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)

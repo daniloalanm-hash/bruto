@@ -164,12 +164,14 @@ REGRAS
 - Se o vídeo for uma lista (vários jogos, várias datas), diga no começo quantos itens são ("são 5 jogos, e o último...") para a pessoa ficar até o fim.
 - Números em algarismos (2026, 30, 11). Sem reticências, sem emojis, sem hashtags, sem aspas.
 - Use os nomes dos jogos exatamente como aparecem na loja da Steam.
+- Em "jogos", liste os jogos que aparecem ou representam o assunto. Notícia de empresa, console, esports ou mercado também tem jogos: os da empresa ou do campeonato citados na matéria (ex.: Activision → Call of Duty; campeonato de CS2 → Counter-Strike 2). Se a matéria não ligar o assunto a nenhum jogo, deixe a lista vazia — o vídeo usa a manchete e as imagens da notícia.
 - Não invente fatos que não estão na matéria.
 
 Para cada tópico informe:
 - "texto": o que será falado.
 - "destaques": 2 a 4 palavras ou expressões curtas do próprio texto (copiadas exatamente) que merecem destaque colorido na legenda.
-- "assunto": nome do jogo de que esse trecho está falando (para mostrar imagens desse jogo). Use null se for um comentário geral — aí aparece o jogo principal. NUNCA ponha um jogo que não está sendo citado naquele trecho.
+- "assunto": nome do jogo de que esse trecho está falando (para mostrar imagens desse jogo). Se o trecho fala de uma empresa, campeonato, time ou console, use o jogo da matéria mais ligado a ele (ex.: greve na Activision → "Call of Duty: Modern Warfare 4"; final do VALORANT Champions → "VALORANT"). Use null se for um comentário geral ou se nenhum jogo da matéria tiver relação — aí aparece o jogo principal ou a manchete da notícia. NUNCA ponha um jogo que não tem a ver com aquele trecho.
+- "numero": se o tópico tiver UM número de impacto (preço, valor em dinheiro, porcentagem, quantidade grande, placar), {"valor": "o número como está no texto, ex.: R$ 379, 4 mil, 35%, 2-1", "rotulo": "o que ele significa em 2 a 5 palavras, ex.: preço no Brasil"} — vira uma cartela grande na tela no momento em que ele é falado. Datas e anos não contam. No máximo 4 tópicos com número; nos outros, null.
 - "emoji": UM emoji que combine com a emoção do tópico (ex.: 💀 fim/morte, 💰 dinheiro, 😱 surpresa, 🔥 hype, 🏆 recorde, ⏳ tempo). Use em no máximo metade dos tópicos; nos outros, null.
 
 Também:
@@ -177,7 +179,7 @@ Também:
 - "post": legenda para publicar o vídeo no TikTok/Reels: {"legenda": "1 a 2 frases que instigam + pergunta + o mesmo pedido de salvar/compartilhar do fim do vídeo", "hashtags": ["#5 a 8 hashtags relevantes, em português quando fizer sentido"]}.
 
 Responda SOMENTE com JSON:
-{"titulo": "...", "titulo_tela": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "emoji": null}], "post": {"legenda": "...", "hashtags": ["#..."]}}
+{"titulo": "...", "titulo_tela": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "emoji": null, "numero": null}], "post": {"legenda": "...", "hashtags": ["#..."]}}
 
 MATÉRIA
 Título: ${materia.titulo || ''}
@@ -313,6 +315,8 @@ function roteiroDaIA(r, materia) {
     jogos: (r.jogos || []).filter(Boolean),
     cenas: (r.cenas || []).filter((c) => c.texto).map((c) => ({
       texto: c.texto, destaques: c.destaques || [], assunto: c.assunto || null, emoji: c.emoji || null,
+      numero: c.numero && c.numero.valor && String(c.texto).includes(String(c.numero.valor).split(' ')[0])
+        ? { valor: String(c.numero.valor), rotulo: String(c.numero.rotulo || '') } : null,
     })),
     post: r.post && typeof r.post === 'object' ? { legenda: r.post.legenda || '', hashtags: r.post.hashtags || [] } : null,
   };
@@ -533,12 +537,12 @@ function atualizaBtnPauta() {
 $('#btnPauta').addEventListener('click', async () => {
   const sel = pauta.filter((i) => i.marcada).slice(0, 6);
   const fontes = (i) => i.fonte.nome ? ` (fonte: ${i.fonte.nome})` : '';
-  const limpo = (md) => md.replace(/^#+\s*/gm, '').replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
+  const limpo = (md) => md.split(/\n\s*\n/).filter((p) => !/loja ?dos ?gifts/i.test(p)).join('\n\n').replace(/^#+\s*/gm, '').replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
   await gerarLote(sel.map((i) => ({
     url: i.fonte.url,
     // a matéria completa que o radar já adaptou para o blog vale mais que o site de origem (que às vezes bloqueia)
-    pronta: i.artigo && i.artigo.length > 800 ? { url: i.fonte.url, titulo: i.titulo, resumo: i.resumo, texto: limpo(i.artigo), imagem: '' } : null,
-    reserva: { url: i.fonte.url, titulo: i.titulo, resumo: i.resumo, texto: `${i.titulo}. ${i.resumo}${fontes(i)}`, imagem: '' },
+    pronta: i.artigo && i.artigo.length > 800 ? { url: i.fonte.url, site: i.fonte.nome, titulo: i.titulo, resumo: i.resumo, texto: limpo(i.artigo), imagem: '' } : null,
+    reserva: { url: i.fonte.url, site: i.fonte.nome, titulo: i.titulo, resumo: i.resumo, texto: `${i.titulo}. ${i.resumo}${fontes(i)}`, imagem: '' },
   })), $('#statusPauta'), $('#btnPauta'));
   carregarPauta();
 });
@@ -807,6 +811,7 @@ function montarJob() {
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
     imagens_materia: state.materia?.imagens || [],
+    materia: state.materia ? { titulo: state.materia.titulo || '', url: state.materia.url || '', site: state.materia.site || '' } : null,
     links_video: r.links || [],
     voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
   };
@@ -1274,7 +1279,7 @@ function trazerTomada(g) {
 }
 
 /* ---------------- 4c. ajustes: cenas ---------------- */
-const nomeJogo = (chave) => ({ proprio: 'Suas mídias', materia: 'Imagens da matéria' }[chave] || state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
+const nomeJogo = (chave) => ({ proprio: 'Suas mídias', materia: 'Imagens da matéria', cartao: 'Manchete e números' }[chave] || state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
 function mini(mid, extra = {}) {
   const p = state.projeto, m = p.banco[mid], sp = p.sprite;
   const k = m?.sprite ?? 0;
@@ -1450,6 +1455,7 @@ function renderGrade() {
   const grupos = [...p.jogos];
   if (Object.values(p.banco).some((m) => m.jogo === 'materia')) grupos.push({ chave: 'materia', nome: 'Imagens da matéria' });
   if (Object.values(p.banco).some((m) => m.jogo === 'proprio')) grupos.push({ chave: 'proprio', nome: 'Suas mídias' });
+  if (Object.values(p.banco).some((m) => m.jogo === 'cartao')) grupos.push({ chave: 'cartao', nome: 'Manchete e números' });
   $('#filtroJogos').replaceChildren(...grupos.map((j) => h('button', {
     class: `btn small${j.chave === filtroJogo ? ' accent' : ''}`, onclick: () => { filtroJogo = j.chave; renderGrade(); },
   }, j.nome)));
@@ -1462,7 +1468,7 @@ function renderGrade() {
         const c = p.cenas[troca.cena];
         c.midias = c.midias || [];
         if (troca.pos < c.midias.length) c.midias[troca.pos] = id; else c.midias.push(id);
-        if (p.banco[id].jogo !== c.jogo && !['proprio', 'materia'].includes(p.banco[id].jogo)) c.jogo = p.banco[id].jogo;
+        if (p.banco[id].jogo !== c.jogo && !['proprio', 'materia', 'cartao'].includes(p.banco[id].jogo)) c.jogo = p.banco[id].jogo;
         $('#dlgTroca').close(); marcarSujo(); renderCenas();
       },
     },

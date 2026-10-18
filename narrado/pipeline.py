@@ -17,6 +17,7 @@ from difflib import SequenceMatcher
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import assets  # noqa: E402
+import cartoes  # noqa: E402
 import fala  # noqa: E402
 import render  # noqa: E402
 import voz  # noqa: E402
@@ -336,7 +337,10 @@ def jogos_necessarios(job, cenas):
 def preparar(pasta, st):
     job = ler(os.path.join(pasta, "job.json"))
     cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto"),
-              **({"emoji": c["emoji"]} if c.get("emoji") else {})}
+              **({"emoji": c["emoji"]} if c.get("emoji") else {}),
+              # "numero" presente (mesmo null) = a IA já decidiu; ausente (roteiro antigo) = detecta no texto
+              **({"numero": c["numero"] if isinstance(c.get("numero"), dict) and c["numero"].get("valor") else None}
+                 if "numero" in c else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes, n_trailers = jogos_necessarios(job, cenas)
 
@@ -344,7 +348,7 @@ def preparar(pasta, st):
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
     bib = da_biblioteca(list(dict.fromkeys(nomes + [c["assunto"] for c in cenas if c.get("assunto")])))
     links += [b for b in bib if not any(b.get("url") and b["url"] == x["url"] for x in links)]
-    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links), trailers=n_trailers)
+    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links or (job.get("materia") or {}).get("titulo")), trailers=n_trailers)
     if links:
         st.etapa("Baixando os vídeos dos links", 12)
         jogos = juntar_links(jogos, links, nomes)
@@ -384,6 +388,7 @@ def preparar(pasta, st):
     cenas = planejar(cenas, banco, jogos)
     projeto = {
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
+        "materia": job.get("materia") or {},
         "voz": {"modo": modo, "arquivo": os.path.basename(audio), "reducao_ruido": "auto"},
         "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
         "nomes_busca": nomes, "trailers_busca": n_trailers, "links_video": links, "sem_video": sem_video, "cenas": cenas, "palavras": palavras, "faltando": faltando,
@@ -492,6 +497,11 @@ def voz_previa(audio, pasta):
 def finalizar(pasta, projeto, audio, st, p0):
     completar_cenas(sorted(projeto["palavras"], key=lambda w: w["s"]))
     integrar_proprias(pasta, projeto)
+    try:
+        if cartoes.aplicar(projeto, RAW, FONTES, os.path.join(pasta, "trab")):
+            projeto["sprite"] = assets.sprite(projeto["banco"], RAW, os.path.join(pasta, "cenas.jpg"))
+    except Exception as e:
+        print(f"aviso: cartões não gerados: {e}", flush=True)
     st.etapa("Tratando a voz", p0)
     escolha = projeto["voz"].get("reducao_ruido", "auto")
     forcar = None if escolha == "auto" else escolha == "sim"
