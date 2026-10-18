@@ -602,26 +602,23 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: baixa um vídeo de referência (TikTok) para análise da edição."""
+    """Diagnóstico: transcreve o vídeo de referência (ritmo da fala e trilha nas pausas)."""
     import subprocess
     url = os.environ.get("NARRADO_REF", "https://vt.tiktok.com/ZSgMxk6Jp/")
-    destino = os.path.join(pasta, "teste_ref.mp4")
+    ref = os.path.join(pasta, "ref.mp4")
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "yt-dlp", "curl_cffi"], capture_output=True, timeout=300)
-    tent = []
-    r = None
-    for extra in (["--impersonate", "chrome"], ["--impersonate", "safari"], []):
-        r = subprocess.run([sys.executable, "-m", "yt_dlp", url, "--no-playlist", "--no-warnings", *extra,
-                            "-f", "b[height<=1920]/bv*+ba/b", "--merge-output-format", "mp4", "-o", destino,
-                            "--print", "after_move:%(title)s|%(uploader)s|%(duration)s"],
-                           capture_output=True, text=True, timeout=300)
-        tent.append({"extra": extra, "ok": r.returncode == 0, "err": r.stderr[-600:], "out": r.stdout[-600:]})
-        if r.returncode == 0 and os.path.exists(destino):
-            break
-    info = os.path.join(pasta, "teste_fontes.json")
-    gravar(info, {"tentativas": tent})
+    subprocess.run([sys.executable, "-m", "yt_dlp", url, "--impersonate", "chrome", "-f", "b", "-o", ref], capture_output=True, timeout=300)
+    from faster_whisper import WhisperModel
+    wav = os.path.join(pasta, "ref.wav")
+    ffmpeg("-i", ref, "-ac", 1, "-ar", 16000, wav)
+    m = WhisperModel(MODELO_WHISPER, device="cpu", compute_type="int8")
+    segs, _ = m.transcribe(wav, language="pt", word_timestamps=True, vad_filter=False)
+    pal = [{"w": w.word.strip(), "s": round(w.start, 2), "e": round(w.end, 2)} for sg in segs for w in (sg.words or [])]
+    destino = os.path.join(pasta, "teste_fontes.json")
+    gravar(destino, {"palavras": pal})
     pub = publicador()
     if pub:
-        pub(info, *([destino] if os.path.exists(destino) else []))
+        pub(destino)
 
 
 def main():
