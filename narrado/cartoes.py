@@ -462,6 +462,26 @@ def _quadro_da_cena(projeto, cena, raw, pasta_tmp):
     return None
 
 
+def _baixar_capa(appid, destino):
+    """Pôster vertical 600x900 da biblioteca da Steam (o mesmo que aparece na Steam/PlayStation Store)."""
+    import urllib.request
+    for url in (f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900_2x.jpg",
+                f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900.jpg",
+                f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900_2x.jpg",
+                f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg"):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                dados = r.read()
+            if len(dados) > 20000:
+                with open(destino, "wb") as f:
+                    f.write(dados)
+                return destino
+        except Exception:
+            continue
+    raise RuntimeError("sem pôster na Steam")
+
+
 def aplicar(projeto, raw, fontes, pasta_trab):
     """Gera os cartões do projeto e (na 1ª vez) coloca cada um no tópico certo. Devolve True se o banco mudou."""
     if projeto.get("cartoes") is False or "materia" not in projeto:
@@ -496,7 +516,31 @@ def aplicar(projeto, raw, fontes, pasta_trab):
         except Exception as e:
             print(f"aviso: cartão de manchete não gerado: {e}", flush=True)
 
-    # 2) números
+    # 2) capa do jogo (pôster vertical da Steam) quando ele aparece pela 1ª vez — como nos vídeos de referência
+    if projeto.get("capas", True) and H > W:
+        vistos = set()
+        for k, c in enumerate(cenas):
+            ch = c.get("jogo")
+            if k == 0 or not ch or ch in vistos:
+                continue
+            vistos.add(ch)
+            j = next((x for x in projeto.get("jogos", []) if x.get("chave") == ch), None)
+            if not j or not j.get("appid"):
+                continue
+            mid = f"capa_{ch}"
+            arq = f"capa_{j['appid']}.jpg"
+            try:
+                if not os.path.exists(os.path.join(raw, arq)):
+                    _baixar_capa(j["appid"], os.path.join(raw, arq))
+                if mid not in banco:
+                    novo = True
+                banco[mid] = {"tipo": "i", "jogo": ch, "arquivo": arq, "encaixar": True, "capa": True}
+                if primeira and mid not in c.get("midias", []):
+                    c.setdefault("midias", []).insert(0, mid)
+            except Exception as e:
+                print(f"aviso: capa de {j.get('nome')} não baixou: {e}", flush=True)
+
+    # 3) números
     feitos = 0
     for k, c in enumerate(cenas):
         if k == 0 or feitos >= MAX_NUMEROS:

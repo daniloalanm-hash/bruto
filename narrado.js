@@ -37,11 +37,24 @@ const K = {
   duracao: 'bruto:narrado:duracao', ritmo: 'bruto:narrado:ritmo',
 };
 // aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
-const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji'];
-function estiloSalvo() { try { return JSON.parse(ls.get(K.estilo) || '{}'); } catch { return {}; } }
+const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji',
+  'enquadramento', 'transicoes_modo', 'musica', 'capas'];
+// visual de referência (out/2026): janela 4:5, legenda palavra por palavra, whip pan só na troca de jogo, capa, trilha
+const VISUAL_REFERENCIA = { enquadramento: 'moldura', legenda_estilo: 'palavra', transicoes_modo: 'por_jogo', emoji: false, musica: true, capas: true, zoom_enfase: false };
+function estiloSalvo() {
+  let e = {};
+  try { e = JSON.parse(ls.get(K.estilo) || '{}'); } catch { e = {}; }
+  if ((e.versao || 1) < 2) { // uma vez: adota o visual de referência (dá para voltar na aba Cenas)
+    e = { ...e, ...VISUAL_REFERENCIA, versao: 2 };
+    ls.set(K.estilo, JSON.stringify(e));
+  }
+  const { versao, ...resto } = e;
+  return resto;
+}
 function salvarEstilo(p) {
   const e = {};
   for (const k of CHAVES_ESTILO) if (p[k] !== undefined) e[k] = p[k];
+  e.versao = 2;
   ls.set(K.estilo, JSON.stringify(e));
 }
 const ls = {
@@ -560,7 +573,8 @@ $('#bibArquivo').addEventListener('change', async (e) => {
   if (!jogo) { toast('Diga de qual jogo é o arquivo.', 'warn'); return; }
   if (f.size > 330e6) { toast('Arquivo grande demais (máx. 330 MB). Prefira 1080p.', 'warn'); return; }
   const ext = ((f.name.split('.').pop() || 'mp4').toLowerCase().replace('jpeg', 'jpg'));
-  if (!/^(jpg|png|webp|mp4|mov|webm|m4v)$/.test(ext)) { toast('Formato não aceito (use mp4, mov, webm, jpg, png).', 'warn'); return; }
+  if (!/^(jpg|png|webp|mp4|mov|webm|m4v|mp3|m4a|wav|ogg|aac)$/.test(ext)) { toast('Formato não aceito (use mp4, mov, webm, jpg, png ou, para trilha, mp3/m4a/wav).', 'warn'); return; }
+  if (/^(mp3|m4a|wav|ogg|aac)$/.test(ext) && !/^(trilha|trilhas|m[uú]sica|m[uú]sicas)$/i.test(jogo)) { toast('Áudio vai como trilha de fundo: escreva "Trilha" no campo Jogo.', 'warn'); return; }
   const nome = `lib-${Math.random().toString(36).slice(2, 10)}.${ext}`;
   const st = $('#bibStatus');
   const PARTE = 3 * 1024 * 1024, total = Math.ceil(f.size / PARTE);
@@ -1383,7 +1397,8 @@ function assinaturaEstrutural(p) {
     palavras: p.palavras.map((w) => [w.manter ? 1 : 0, w.cena]),
     cenas: p.cenas.map((c) => [c.midias, c.entrada || 'auto', c.transicao || 'auto', c.jogo]),
     voz: p.voz?.reducao_ruido,
-    outros: [p.jl_quadros, p.transicao_gancho, p.sfx, p.zoom_enfase, p.titulo_estilo, !!(p.titulo_gancho !== false && p.titulo_tela)],
+    outros: [p.jl_quadros, p.transicao_gancho, p.sfx, p.zoom_enfase, p.titulo_estilo, !!(p.titulo_gancho !== false && p.titulo_tela),
+      p.enquadramento, p.transicoes_modo, p.musica],
     proprias: (p.proprias || []).map((x) => [x.id, x.cena]),
   });
 }
@@ -1570,7 +1585,10 @@ function renderAparencia() {
   tit.addEventListener('change', () => { p.titulo_tela = tit.value.trim(); if (p.titulo_tela) p.titulo_gancho = true; marcarSujo(); });
   $('#aparencia').replaceChildren(
     h('div', { class: 'grade-ap' },
-      campoSel('Legenda', p.legenda_estilo || 'classico', [['classico', 'Clássica (Anton)'], ['caixa', 'Caixa no destaque'], ['moderna', 'Moderna (Montserrat)']], muda('legenda_estilo')),
+      campoSel('Legenda', p.legenda_estilo || 'classico', [['palavra', 'Palavra por palavra (referência)'], ['classico', 'Clássica (Anton)'], ['caixa', 'Caixa no destaque'], ['moderna', 'Moderna (Montserrat)']], muda('legenda_estilo')),
+      ...(p.formato === 'horizontal' ? [] : [
+        campoSel('Enquadramento', p.enquadramento || 'cheio', [['moldura', 'Janela + fundo desfocado (referência)'], ['cheio', 'Tela cheia (corte 9:16)']], muda('enquadramento')),
+        campoSel('Transições', p.transicoes_modo || 'auto', [['por_jogo', 'Pan só quando muda o jogo (referência)'], ['auto', 'Variadas em todo tópico']], muda('transicoes_modo'))]),
       campoSel('Cor do destaque', p.legenda_cor || 'amarelo', [['amarelo', 'Amarelo'], ['verde', 'Verde'], ['vermelho', 'Vermelho'], ['ciano', 'Ciano'], ['rosa', 'Rosa']], muda('legenda_cor')),
       h('label', { class: 'field' }, h('span', {}, 'Altura da legenda'), altura, alturaTxt),
       campoSel('J-cut / L-cut', p.jl_quadros || 8, [4, 8, 12].map((q) => [q, `${q} quadros (~${(q / 30).toFixed(2).replace('.', ',')}s)`]), muda('jl_quadros', Number)),
@@ -1582,7 +1600,8 @@ function renderAparencia() {
       campoChk('Título no início', p.titulo_gancho !== false && !!p.titulo_tela, (v) => { p.titulo_gancho = v; marcarSujo(); }),
       campoChk('Efeitos sonoros (woosh, pop, impacto)', p.sfx !== false, muda('sfx')),
       campoChk('Zoom nas palavras destacadas', p.zoom_enfase !== false, muda('zoom_enfase')),
-      campoChk('Emojis', p.emoji !== false, muda('emoji'))),
+      campoChk('Emojis', p.emoji !== false, muda('emoji')),
+      campoChk(`Música de fundo${p.trilha?.nome ? ` (${p.trilha.nome})` : ' (envie na biblioteca com o jogo "Trilha")'}`, p.musica !== false, muda('musica'))),
   );
 }
 
@@ -1927,7 +1946,7 @@ function desenharPrevia(t) {
   if (leg) {
     const fonte = p.legenda_estilo === 'moderna' ? 'Montserrat' : 'Anton';
     const peso = p.legenda_estilo === 'moderna' ? '900 ' : '';
-    let tam = p.legenda_estilo === 'moderna' ? 44 : 54;
+    let tam = p.legenda_estilo === 'moderna' ? 44 : p.legenda_estilo === 'palavra' ? 38 : 54;
     g.textAlign = 'left'; g.textBaseline = 'middle'; g.lineJoin = 'round';
     const medir = () => { g.font = `${peso}${tam}px ${fonte}`; return leg.partes.reduce((a, x) => a + g.measureText(x.t + ' ').width, 0); };
     let larg = medir();

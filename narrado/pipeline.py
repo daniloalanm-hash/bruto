@@ -57,6 +57,9 @@ def chave_do_jogo(nome, jogos):
 ESTILO_PADRAO = {
     "jl_quadros": 8, "transicao_gancho": "pan", "titulo_estilo": "manchete", "legenda_estilo": "classico", "legenda_cor": "amarelo",
     "legenda_altura": 0.615, "sfx": True, "zoom_enfase": True, "emoji": True,
+    # visual de referência (TikTok de notícia de games): janela 4:5 com fundo desfocado, legenda palavra por
+    # palavra, whip pan só na troca de jogo, capa do jogo na 1ª aparição, trilha de fundo
+    "enquadramento": "moldura", "transicoes_modo": "por_jogo", "musica": True, "capas": True,
 }
 
 
@@ -243,6 +246,8 @@ def da_biblioteca(alvos):
     saida = []
     for it in itens:
         jogo = it.get("jogo") or ""
+        if norm(jogo) in NOMES_TRILHA:
+            continue  # música de fundo: é tratada em garantir_trilha
         if not any(norm(jogo) == norm(a) or assets.mesmo_jogo(jogo, a, 0.4) or assets.mesmo_jogo(a, jogo, 0.4)
                    for a in alvos if a):
             continue
@@ -310,6 +315,52 @@ def juntar_links(jogos, links, nomes):
                 if all(x["arquivo"] != y["arquivo"] for y in info["trailers"]):
                     info["trailers"].insert(0, x)
     return [j for j in jogos if j["screens"] or j["trailers"]]
+
+
+NOMES_TRILHA = {"trilha", "trilhas", "musica", "musicas", "trilha sonora"}
+
+
+def garantir_trilha(projeto):
+    """Música de fundo: arquivos de áudio da biblioteca com jogo "Trilha". Cada vídeo pega uma (em rodízio
+    pelo id do vídeo); re-render reaproveita a mesma. Sem trilha na biblioteca, o vídeo segue sem música."""
+    if "materia" not in projeto or projeto.get("musica") is False:
+        return
+    tri = projeto.get("trilha")
+    if tri and os.path.exists(os.path.join(RAW, tri.get("arquivo", ""))):
+        return
+    tmp = os.path.join(RAW, "_bib")
+    if not _gh_baixar("biblioteca.json", tmp):
+        return
+    try:
+        itens = [it for it in (ler(os.path.join(tmp, "biblioteca.json")) or [])
+                 if norm(it.get("jogo") or "") in NOMES_TRILHA and it.get("tipo") == "arquivo"]
+    except Exception:
+        return
+    if not itens:
+        return
+    import zlib
+    it = next((x for x in itens if tri and x.get("id") == tri.get("bib")), None) or \
+        itens[zlib.crc32(str(projeto.get("id") or projeto.get("titulo")).encode()) % len(itens)]
+    final = os.path.join(RAW, f"trilha_{it['id']}.m4a")
+    if not os.path.exists(final):
+        nome = it.get("nome") or ""
+        pasta_p = os.path.join(tmp, it["id"])
+        if not _gh_baixar(f"{nome}.part*", pasta_p):
+            print(f"aviso: trilha {nome} não baixou", flush=True)
+            return
+        bruto = os.path.join(pasta_p, nome)
+        with open(bruto, "wb") as f:
+            for parte in sorted(os.listdir(pasta_p)):
+                if parte.startswith(nome + ".part"):
+                    with open(os.path.join(pasta_p, parte), "rb") as g:
+                        f.write(g.read())
+        try:
+            ffmpeg("-i", bruto, "-vn", "-ac", 2, "-ar", 48000, "-af", "loudnorm=I=-16:TP=-2", "-c:a", "aac", "-b:a", "160k", final)
+        except Exception as e:
+            print(f"aviso: trilha {it.get('original')} não abriu: {e}", flush=True)
+            return
+    projeto["trilha"] = {"arquivo": os.path.basename(final), "nome": it.get("original") or nome, "bib": it["id"]}
+    print(f"trilha de fundo: {projeto['trilha']['nome']}", flush=True)
 
 
 def jogos_necessarios(job, cenas):
@@ -541,6 +592,10 @@ def finalizar(pasta, projeto, audio, st, p0):
     completar_cenas(sorted(projeto["palavras"], key=lambda w: w["s"]))
     integrar_proprias(pasta, projeto)
     render.definir_formato(projeto)  # cartões e render no tamanho certo (9:16 ou 16:9)
+    try:
+        garantir_trilha(projeto)
+    except Exception as e:
+        print(f"aviso: trilha de fundo: {e}", flush=True)
     try:
         if cartoes.aplicar(projeto, RAW, FONTES, os.path.join(pasta, "trab")):
             projeto["sprite"] = assets.sprite(projeto["banco"], RAW, os.path.join(pasta, "cenas.jpg"))

@@ -42,7 +42,7 @@ module.exports = (req, res) => responder(res, async () => {
 
   if (corpo.acao === 'parte') {
     const nome = String(corpo.nome || '').toLowerCase();
-    if (!/^lib-[a-z0-9]{4,20}\.(jpg|jpeg|png|webp|mp4|mov|webm|m4v)$/.test(nome)) throw httpError(400, 'Arquivo inválido.');
+    if (!/^lib-[a-z0-9]{4,20}\.(jpg|jpeg|png|webp|mp4|mov|webm|m4v|mp3|m4a|wav|ogg|aac)$/.test(nome)) throw httpError(400, 'Arquivo inválido.');
     const n = Number(corpo.n);
     if (!Number.isInteger(n) || n < 0 || n > 120) throw httpError(400, 'Parte inválida (arquivo grande demais?).');
     const buf = Buffer.from(String(corpo.base64 || ''), 'base64');
@@ -61,7 +61,7 @@ module.exports = (req, res) => responder(res, async () => {
       if (!/^https?:\/\//.test(String(it.url || ''))) throw httpError(400, 'Link inválido.');
       Object.assign(item, { tipo: 'link', url: String(it.url).slice(0, 500) });
     } else {
-      if (!/^lib-[a-z0-9]{4,20}\.(jpg|jpeg|png|webp|mp4|mov|webm|m4v)$/.test(String(it.nome || ''))) throw httpError(400, 'Arquivo inválido.');
+      if (!/^lib-[a-z0-9]{4,20}\.(jpg|jpeg|png|webp|mp4|mov|webm|m4v|mp3|m4a|wav|ogg|aac)$/.test(String(it.nome || ''))) throw httpError(400, 'Arquivo inválido.');
       Object.assign(item, { tipo: 'arquivo', nome: it.nome, original: String(it.original || '').slice(0, 120) });
     }
     const rel = await release(true);

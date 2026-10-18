@@ -129,14 +129,14 @@
         </label>
         <details class="box" id="boxBib">
           <summary>Biblioteca de vídeos por jogo <span id="bibResumo" class="muted small"></span></summary>
-          <p class="muted small">Mande uma vez (vídeo, imagem ou link): entra sozinho em todo vídeo que falar daquele jogo, no lugar do material achado por busca.</p>
+          <p class="muted small">Mande uma vez (vídeo, imagem ou link): entra sozinho em todo vídeo que falar daquele jogo, no lugar do material achado por busca. <b>Música de fundo:</b> envie mp3/m4a com o jogo <code>Trilha</code> — cada vídeo usa uma, baixinho, abaixando sozinha quando você fala.</p>
           <ul id="bibLista" class="lista-lote"></ul>
           <div class="row2">
             <label class="field"><span>Jogo</span><input id="bibJogo" list="bibJogos" placeholder="Grand Theft Auto VI"><datalist id="bibJogos"></datalist></label>
             <label class="field"><span>Link (opcional)</span><input id="bibLink" type="url" placeholder="https://x.com/…"></label>
           </div>
           <div class="row wrap">
-            <label class="btn small"><input type="file" id="bibArquivo" accept="video/*,image/*" hidden>Enviar vídeo ou imagem…</label>
+            <label class="btn small"><input type="file" id="bibArquivo" accept="video/*,image/*,audio/*" hidden>Enviar vídeo, imagem ou música…</label>
             <button id="btnBibLink" class="btn small" type="button">Salvar link</button>
             <span id="bibStatus" class="muted small"></span>
           </div>

@@ -29,6 +29,8 @@ ESTILOS_LEGENDA = {
     "classico": ("Anton", 168, 11, 6, False),
     "caixa": ("Anton", 156, 10, 0, True),
     "moderna": ("Montserrat Black", 132, 9, 5, False),
+    # estilo referência (TikTok de notícia de games): UMA palavra por vez, menor, inclinada
+    "palavra": ("Anton", 118, 8, 5, False),
 }
 CORES = {  # ASS usa BGR
     "amarelo": "00D4FF", "verde": "5AF03A", "vermelho": "3B3BFF", "ciano": "FFE522", "rosa": "D84FFF",
@@ -159,8 +161,19 @@ def _nitidez(src):
     return ",unsharp=5:5:0.9:3:3:0.4" if _alt_fonte[src] < 700 else ""
 
 
+MOLDURA = {"ativa": False, "alt": 1500}  # vertical: cena numa janela ~4:5 sobre a própria cena desfocada
+
+
+def _fundo_moldura(rotulo_in, rotulo_out):
+    """Fundo desfocado (barato: desfoca em baixa resolução e amplia)."""
+    return (f"{rotulo_in}crop='min(iw,ih*{W}/{H})':'min(ih,iw*{H}/{W})',scale=216:384,boxblur=10:2,"
+            f"scale={W}:{H},eq=brightness=-0.10:saturation=1.15{rotulo_out}")
+
+
 def seg_video(src, t0, dur, out, zoom_in, trans):
     t0 = _inicio_seguro(src, t0, dur)
+    if MOLDURA["ativa"]:
+        return _seg_video_moldura(src, t0, dur, out, zoom_in, trans)
     n, pad = _quadros_exatos(dur)
     zv = L["zoom_v"]
     z = f"1+{zv}*t/{dur:.3f}" if zoom_in else f"{1 + zv}-{zv}*t/{dur:.3f}"
@@ -173,6 +186,28 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
           f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
           _fx_transicao(trans) + pad)
     r = ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+    _ultimo["seg"] = {"t0": round(t0, 2), "crop": c, "fonte_s": _dur_fonte.get(src), "stderr": (r.stderr or "")[-300:],
+                      "bytes": os.path.getsize(out) if os.path.exists(out) else -1}
+
+
+def _seg_video_moldura(src, t0, dur, out, zoom_in, trans):
+    """Estilo referência: mostra ~40% da largura do trailer (em vez de ~32% no corte 9:16), numa janela
+    de 1080x1500 centrada; em cima e embaixo, a própria cena desfocada."""
+    n, pad = _quadros_exatos(dur)
+    hf = MOLDURA["alt"]
+    zv = L["zoom_v"]
+    z = f"1+{zv}*t/{dur:.3f}" if zoom_in else f"{1 + zv}-{zv}*t/{dur:.3f}"
+    if trans in PUNCH:
+        z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
+    c = area_util(src, t0)
+    pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    grafo = (f"[0:v]{pre}fps={FPS},split[a][b];" + _fundo_moldura("[a]", "[bg]") + ";"
+             f"[b]crop='min(iw,ih*{W}/{hf})':'min(ih,iw*{hf}/{W})',scale={W}:{hf},"
+             f"scale=w='trunc({W}*({z})/2)*2':h='trunc({hf}*({z})/2)*2':eval=frame,crop={W}:{hf},"
+             f"eq=contrast=1.06:saturation=1.15:gamma=1.08{_nitidez(src)}[fg];"
+             f"[bg][fg]overlay=0:{(H - hf) // 2},setsar=1" + _fx_transicao(trans) + pad)
+    r = ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-filter_complex", grafo, "-an", "-frames:v", n,
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
     _ultimo["seg"] = {"t0": round(t0, 2), "crop": c, "fonte_s": _dur_fonte.get(src), "stderr": (r.stderr or "")[-300:],
                       "bytes": os.path.getsize(out) if os.path.exists(out) else -1}
@@ -202,6 +237,17 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
         return
     pans = ["x='iw/2-(iw/zoom/2)'", f"x='(iw-iw/zoom)*on/{n}'", f"x='(iw-iw/zoom)*(1-on/{n})'"]
     punch = f"+{PUNCH[trans]}*max(0\\,1-on/{int(TRANS * FPS)})" if trans in PUNCH else ""
+    if MOLDURA["ativa"]:
+        hf = MOLDURA["alt"]
+        cw, ch = int(W * 1.25) // 2 * 2, int(hf * 1.25) // 2 * 2
+        grafo = (f"[0:v]{pre}split[a][b];" + _fundo_moldura("[a]", "[bg]") + ";"
+                 f"[b]scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch},"
+                 f"zoompan=z='1.05+0.10*on/{n}{punch}':{pans[k % 3]}:y='ih/2-(ih/zoom/2)':d={n}:s={W}x{hf}:fps={FPS},"
+                 f"eq=contrast=1.05:saturation=1.12[fg];[bg]fps={FPS}[bgf];"
+                 f"[bgf][fg]overlay=0:{(H - hf) // 2}:shortest=1,setsar=1" + _fx_transicao(trans))
+        ffmpeg("-loop", 1, "-i", src, "-filter_complex", grafo, "-frames:v", n,
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+        return
     # cobre 1350x2400 (paisagem ou retrato, ex.: screenshot de celular) e faz o Ken Burns
     cw, ch = int(W * L["cobre"]) // 2 * 2, int(H * L["cobre"]) // 2 * 2
     vf = (f"{pre}scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch},"
@@ -298,6 +344,14 @@ def transicoes(projeto, faixas):
         esc = str(projeto["cenas"][c].get("transicao") or "auto")
         if esc in TRANSICOES:
             res[c] = esc
+        elif projeto.get("transicoes_modo") == "por_jogo" and L["H"] > L["W"]:
+            # estilo referência: whip pan (com woosh) quando muda o JOGO; mesmo jogo = corte seco
+            ant = faixas[fi - 1][0]
+            if projeto["cenas"][c].get("jogo") != projeto["cenas"][ant].get("jogo"):
+                res[c] = "pan_dir" if auto_k % 2 == 0 else "pan_esq"
+                auto_k += 1
+            else:
+                res[c] = "seco"
         elif L["W"] > L["H"]:
             # YouTube: efeito só na virada de capítulo (pan + woosh); dentro do capítulo, corte seco ou zoom leve
             if projeto["cenas"][c].get("capitulo"):
@@ -342,6 +396,7 @@ def marcar_destaques(projeto):
 
 
 def blocos_legenda(projeto):
+    por_palavra = projeto.get("legenda_estilo") == "palavra"
     pal = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and str(w.get("legenda", "")).strip()
            and w.get("cena") is not None]
     blocos, cur = [], []
@@ -352,6 +407,11 @@ def blocos_legenda(projeto):
         cur.append(w)
         fim = bool(re.search(r"[.,:;?!…]$", w["legenda"]))
         txt = " ".join(x["legenda"] for x in cur)
+        # palavra por palavra: só junta palavrinha curta ("A", "DE") com a seguinte
+        if por_palavra and not (len(cur) == 1 and len(w["legenda"]) <= 2 and not fim):
+            blocos.append(cur)
+            cur = []
+            continue
         if len(cur) == 3 or fim or (len(cur) == 2 and len(txt) > 11):
             blocos.append(cur)
             cur = []
@@ -439,6 +499,8 @@ def legenda_ass(projeto, destino, corte_gancho):
         b["palavras_destaque"] = [norm(w["legenda"]) for w in b["pal"] if id(w) in marcadas]
         b["destaque"] = bool(b["palavras_destaque"])
         pop = rf"{{\an5\pos({L['cx']},{y})\fscx70\fscy70\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)}}"
+        if nome_estilo == "palavra":  # inclinada, entra rápida (sem crescer demais)
+            pop = rf"{{\an5\pos({L['cx']},{y})\fax-0.14\fscx86\fscy86\t(0,70,\fscx104\fscy104)\t(70,120,\fscx100\fscy100)}}"
         ini = b["ini"]
         if esconde_ate:
             if b["fim"] <= esconde_ate + 0.15:
@@ -702,6 +764,7 @@ def conferir_video(arquivo, total):
 
 def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fontes, progresso=None):
     definir_formato(projeto)
+    MOLDURA["ativa"] = L["H"] > L["W"] and projeto.get("enquadramento", "cheio") == "moldura"
     pasta_trab = os.path.abspath(pasta_trab)
     seg_dir = os.path.join(pasta_trab, "seg")
     shutil.rmtree(seg_dir, ignore_errors=True)
@@ -880,6 +943,19 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         idx = nova_entrada(sfx)
         a = (f"[1:a]apad[vz0];[{idx}:a]apad[fx0];[vz0][fx0]amix=inputs=2:duration=first:normalize=0,"
              f"alimiter=limit=0.95:level=disabled[a]")
+    # trilha de fundo (da biblioteca, jogo "Trilha"): baixa sozinha quando a voz fala (sidechain), sobe nas pausas
+    trilha = projeto.get("trilha") or {}
+    arq_tri = os.path.join(pasta_raw, trilha["arquivo"]) if trilha.get("arquivo") else ""
+    if arq_tri and os.path.exists(arq_tri) and projeto.get("musica", True):
+        entradas.extend(["-stream_loop", "-1", "-i", arq_tri])
+        it = entradas.count("-i") - 1
+        vol = 10 ** (float(projeto.get("musica_db", -20)) / 20)
+        base = a.rsplit("[a]", 1)[0]  # mesma mistura de antes, sem o rótulo final
+        a = (f"{base}[mix0];[mix0]asplit[mixa][mixsc];"
+             f"[{it}:a]aresample=48000,volume={vol:.3f},afade=t=in:d=0.6,"
+             f"afade=t=out:st={max(total - 1.6, 0):.2f}:d=1.5,atrim=0:{total:.2f}[mus];"
+             f"[mus][mixsc]sidechaincompress=threshold=0.02:ratio=8:attack=15:release=350:makeup=1[musd];"
+             f"[mixa][musd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
     grafo.append(a)
 
     # 1) vídeo "limpo": cenas, transições, efeitos e áudio — sem legenda/chamada/emojis.
