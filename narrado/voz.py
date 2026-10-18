@@ -135,11 +135,27 @@ def definir_cortes(blocos, todas, db, passo):
             if cs < ant["e"] + 0.02:
                 ini = max(ant["s"] + 0.6 * (ant["e"] - ant["s"]), ant["e"] - 0.25)
                 cs = max(cs, _vale(db, passo, ini, b["s"] + 0.03, primeiro=False))
+            if not ant["manter"]:  # idem no começo: o fim da tomada descartada não entra
+                k = int((b["s"] + 0.03) / passo)
+                ki = max(int(cs / passo), 2)
+                while k > ki and not (db[k - 1] < limiar and db[k - 2] < limiar and db[k - 3] < limiar):
+                    k -= 1
+                if k > ki:
+                    cs = max(cs, k * passo - 0.03)
         if b["ultimo"] + 1 < len(todas):
             prox = todas[b["ultimo"] + 1]
             if ce > prox["s"] - 0.02:
                 fim = min(prox["s"] + 0.4 * (prox["e"] - prox["s"]), prox["s"] + 0.25)
                 ce = min(ce, _vale(db, passo, b["e"] - 0.03, fim, primeiro=True) + 0.01)
+            if not prox["manter"]:
+                # a tomada descartada continua logo depois ("vaga, | a proposta…"): corta no 1º silêncio de
+                # verdade depois da palavra, senão o começo da frase descartada vaza ("a" dobrado)
+                k = int((b["e"] - 0.03) / passo)
+                kf = min(int(ce / passo), len(db) - 3)
+                while k < kf and not (db[k] < limiar and db[k + 1] < limiar and db[k + 2] < limiar):
+                    k += 1
+                if k < kf:
+                    ce = min(ce, k * passo + 0.03)
         b["cs"], b["ce"] = cs, max(ce, cs + 0.05)
 
 

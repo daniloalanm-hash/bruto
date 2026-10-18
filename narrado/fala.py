@@ -363,6 +363,57 @@ def juntar_hifens(palavras):
     return saida
 
 
+def _hesitante(w):
+    """Palavra dita arrastada ou esticada sobre uma pausa: bem mais longa do que o tamanho dela pede."""
+    letras = len(re.sub(r"[^\wÀ-ÿ]", "", w["w"]))
+    esperado = 0.075 * letras + 0.12
+    dur = w["e"] - w["s"]
+    return dur > 0.75 and dur > 1.7 * esperado
+
+
+def trocar_hesitacoes(palavras, S, validos):
+    pontuado = lambda x: bool(re.search(r"[.,:;!?…]$", S[x][2]))
+    mant = [w for w in palavras if w["manter"] and w["idx"] is not None]
+    for w in mant:
+        if not _hesitante(w) or not w["manter"]:
+            continue
+        x = w["idx"]
+        a = x
+        while a > 0 and not pontuado(a - 1):
+            a -= 1
+        b = x
+        while b < len(S) - 1 and not pontuado(b):
+            b += 1
+        alvo = set(range(a, b + 1))
+        # tomadas anteriores que disseram a frase inteira, na ordem, sem hesitar
+        melhor = None
+        por_c = {}
+        for o in palavras:
+            if o["c"] != w["c"] and o["c"] in validos and o["idx"] in alvo and o["s"] < w["s"]:
+                por_c.setdefault(o["c"], []).append(o)
+        for c, ws in por_c.items():
+            idxs = [o["idx"] for o in ws]
+            if set(idxs) != alvo or idxs != sorted(idxs) or any(_hesitante(o) for o in ws):
+                continue
+            if melhor is None or ws[0]["s"] > melhor[0]["s"]:
+                melhor = ws
+        if not melhor:
+            continue
+        atuais = [o for o in palavras if o["manter"] and o["c"] == w["c"] and o["idx"] in alvo]
+        if len(atuais) != len(alvo):
+            continue  # a frase da tomada mantida não está inteira nela: não mexe
+        ini, fim = melhor[0]["s"], melhor[-1]["e"]
+        a0, a1 = atuais[0]["s"], atuais[-1]["e"]
+        for o in palavras:  # sai a frase hesitante inteira (inclusive palavrinhas sem correspondência)
+            if o["c"] == w["c"] and a0 <= o["s"] and o["e"] <= a1:
+                o["manter"] = False
+        for o in palavras:  # a frase da outra tomada inteira (inclusive palavrinhas sem correspondência no meio)
+            if o["c"] == melhor[0]["c"] and ini <= o["s"] and o["e"] <= fim:
+                o["manter"] = True
+        print(f"fala: hesitação em \"{w['w']}\" — frase \"{' '.join(S[i][2] for i in sorted(alvo))}\" "
+              f"veio de uma tomada anterior", flush=True)
+
+
 def editar(palavras, cenas, nomes=()):
     """Decide o que fica (última tomada de cada parte), a cena de cada palavra e o texto da legenda."""
     palavras = tirar_alucinacao(juntar_hifens(palavras))
@@ -592,6 +643,10 @@ def editar(palavras, cenas, nomes=()):
                 o["manter"] = True
                 if o["idx"] is not None:
                     ditos_ate_aqui.add(o["idx"])
+
+    # 3e) hesitação na tomada mantida ("só… cooolocar": palavra arrastada/esticada por cima de uma pausa):
+    #     se uma tomada anterior disse a MESMA frase inteira sem hesitar, usa a frase daquela tomada.
+    trocar_hesitacoes(palavras, S, validos)
 
     # 4) cena de cada palavra + texto da legenda com a grafia do roteiro
     ultima_cena = 0
