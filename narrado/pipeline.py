@@ -661,19 +661,19 @@ def teste_fontes(pasta, st):
     """Diagnóstico: busca do jogo na Steam."""
     import urllib.parse
     rel = {}
-    for nome in ("Car Parking Multiplayer 2",):
+    for nome in ("Car Parking Multiplayer 2", "Car Parking Multiplayer", "Car Parking"):
         q = urllib.parse.quote(nome)
         for cc in ("br", "us"):
             try:
-                rel[f"storesearch_{cc}"] = json.loads(assets._get(
+                rel[f"storesearch_{cc}_{nome}"] = json.loads(assets._get(
                     f"https://store.steampowered.com/api/storesearch/?term={q}&cc={cc}&l=portuguese"))
             except Exception as e:
-                rel[f"storesearch_{cc}"] = str(e)
+                rel[f"storesearch_{cc}_{nome}"] = str(e)
         try:
             html = assets._get(f"https://store.steampowered.com/search/suggest?term={q}&f=games&cc=BR&l=portuguese").decode("utf8", "ignore")
-            rel["suggest"] = html[:3000]
+            rel["suggest_" + nome] = html[:3000]
         except Exception as e:
-            rel["suggest"] = str(e)
+            rel["suggest_" + nome] = str(e)
         try:
             rel["achar_jogo"] = assets.achar_jogo(nome)
         except Exception as e:
