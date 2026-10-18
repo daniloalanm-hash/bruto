@@ -65,14 +65,24 @@ class Status:
         self.fase = fase
         self.publicar = publicar
         self.etapas = []
+        self.t0 = time.time()
+        self.tempos = []  # [etapa, segundos desde o início] — diagnóstico de onde o tempo vai
+        self._ultimo_grupo = None
 
     def etapa(self, nome, progresso):
         self.etapas.append(nome)
-        print(f"== [{progresso:3d}%] {nome}", flush=True)
-        self._grava({"estado": "processando", "fase": self.fase, "etapa": nome, "progresso": progresso})
+        grupo = re.sub(r"\s*\(\d+/\d+\)$", "", nome)
+        if grupo != self._ultimo_grupo:
+            self.tempos.append([grupo, round(time.time() - self.t0)])
+            self._ultimo_grupo = grupo
+        print(f"== [{progresso:3d}%] {nome} ({time.time() - self.t0:.0f}s)", flush=True)
+        self._grava({"estado": "processando", "fase": self.fase, "etapa": nome, "progresso": progresso,
+                     "tempos": self.tempos})
 
     def pronto(self, extra=None):
-        self._grava({"estado": "pronto", "fase": self.fase, "etapa": "Pronto", "progresso": 100, **(extra or {})})
+        self.tempos.append(["Pronto", round(time.time() - self.t0)])
+        self._grava({"estado": "pronto", "fase": self.fase, "etapa": "Pronto", "progresso": 100, "tempos": self.tempos,
+                     **(extra or {})})
 
     def erro(self, msg):
         self._grava({"estado": "erro", "fase": self.fase, "etapa": self.etapas[-1] if self.etapas else "", "erro": msg})

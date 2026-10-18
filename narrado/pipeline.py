@@ -384,7 +384,8 @@ def jogos_necessarios(job, cenas):
     for n in nomes:
         q = assuntos.count(n)
         if longo:
-            trailers[n] = 6 if n == principal else (4 if q >= 6 else 3 if q >= 3 else 2)
+            # cada trailer custa ~1 min de análise: top lista com 5 jogos não pode buscar 25 trailers
+            trailers[n] = 5 if n == principal else (3 if q >= 3 else 2)
         else:
             # vídeo de 1 min+ tem ~40 cortes: o jogo principal precisa de material variado (sem repetir trecho)
             trailers[n] = 5 if n == principal else (2 if q >= 2 else 1)
@@ -417,8 +418,8 @@ def preparar(pasta, st):
         st.etapa("Baixando os vídeos dos links", 12)
         jogos = juntar_links(jogos, links, nomes)
 
-    if job.get("formato") == "horizontal" and nomes:
-        # YouTube: gameplay longa dos jogos com mais tempo de tela (janelas espalhadas = cenas variadas)
+    if False and job.get("formato") == "horizontal" and nomes:
+        # (desligado: a gameplay longa agora entra só quando faltar trecho — ver o complemento depois do banco)
         st.etapa("Buscando gameplay para o vídeo longo", 14)
         assuntos = [c.get("assunto") for c in cenas if c.get("assunto")]
         top = sorted(dict.fromkeys(nomes), key=lambda n: -assuntos.count(n))[:2]

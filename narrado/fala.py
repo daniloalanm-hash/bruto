@@ -5,6 +5,7 @@ parte do roteiro aparece mais de uma vez (você errou e repetiu), fica só a ÚL
 foi dito antes e regravado depois é descartado. A legenda usa a grafia do roteiro (nomes próprios,
 números, pontuação) sempre que a palavra falada corresponde a ela.
 """
+import os
 import re
 import subprocess
 from difflib import SequenceMatcher
@@ -129,7 +130,7 @@ def transcrever(src, modelo="medium", dicas="", modo="isolado", model=None):
         trechos.append((max(ultimo_fim - 0.08, 0), dur))
     if not trechos:
         trechos = [(0, dur)]
-    model = model or WhisperModel(modelo, device="cpu", compute_type="int8")
+    model = model or WhisperModel(modelo, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
     palavras = []
     if modo in ("isolado", "curto"):
         # cada trecho sozinho (mais fiel; "curto" usa janela do tamanho do trecho em vez de 30 s)
