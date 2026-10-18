@@ -277,6 +277,13 @@ def tirar_alucinacao(palavras):
     for k, w in enumerate(palavras):
         por_c.setdefault(w["c"], []).append(k)
     for ks in por_c.values():
+        # trecho "falado rápido demais para ser real": o Whisper repetiu as dicas (nome do jogo) num ruído ou
+        # respiro — ex.: "Car Parking Multiplayer 2" inteiro em 0,08 s. Gente fala no máximo ~7 palavras/s.
+        ws = [palavras[k] for k in ks]
+        dur = ws[-1]["e"] - ws[0]["s"]
+        if len(ws) >= 2 and dur < 0.12 * len(ws) and sum(1 for w in ws if w["e"] - w["s"] < 0.03) >= len(ws) / 2:
+            fora.update(ks)
+            continue
         texto, pos = "", []
         for k in ks:
             ini = len(texto) + (1 if texto else 0)
