@@ -602,24 +602,18 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: gameplay longa do Dailymotion em janelas (vídeo do YouTube)."""
-    import io
-    import contextlib
-    buf, rel, saidas = io.StringIO(), {}, []
-    with contextlib.redirect_stdout(buf):
-        for k, nome in enumerate(["The Witcher 3: Wild Hunt", "Grand Theft Auto V"]):
-            g = assets.gameplay_longo(nome, f"teste{k}", RAW)
-            rel[nome] = g
-            if g:
-                grade = os.path.join(pasta, f"teste_gameplay_{k}.jpg")
-                ffmpeg("-i", g["arquivo"], "-vf", "fps=1/10,scale=320:-2,tile=4x3", "-frames:v", 1, grade)
-                saidas.append(grade)
-                rel[nome]["dur"] = duracao(g["arquivo"])
-    destino = os.path.join(pasta, "teste_fontes.json")
-    gravar(destino, {"rel": rel, "log": buf.getvalue()})
+    """Diagnóstico: baixa um vídeo de referência (TikTok) para análise da edição."""
+    import subprocess
+    url = os.environ.get("NARRADO_REF", "https://vt.tiktok.com/ZSgMxk6Jp/")
+    destino = os.path.join(pasta, "teste_ref.mp4")
+    r = subprocess.run(["yt-dlp", url, "--no-playlist", "--no-warnings", "-f", "b[height<=1920]/bv*+ba/b",
+                        "--merge-output-format", "mp4", "-o", destino, "--print", "after_move:%(title)s|%(uploader)s|%(duration)s"],
+                       capture_output=True, text=True, timeout=300)
+    info = os.path.join(pasta, "teste_fontes.json")
+    gravar(info, {"ok": r.returncode == 0, "out": r.stdout[-2000:], "err": r.stderr[-2000:]})
     pub = publicador()
     if pub:
-        pub(destino, *saidas)
+        pub(info, *([destino] if os.path.exists(destino) else []))
 
 
 def main():
