@@ -606,11 +606,19 @@ def teste_fontes(pasta, st):
     import subprocess
     url = os.environ.get("NARRADO_REF", "https://vt.tiktok.com/ZSgMxk6Jp/")
     destino = os.path.join(pasta, "teste_ref.mp4")
-    r = subprocess.run(["yt-dlp", url, "--no-playlist", "--no-warnings", "-f", "b[height<=1920]/bv*+ba/b",
-                        "--merge-output-format", "mp4", "-o", destino, "--print", "after_move:%(title)s|%(uploader)s|%(duration)s"],
-                       capture_output=True, text=True, timeout=300)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "yt-dlp", "curl_cffi"], capture_output=True, timeout=300)
+    tent = []
+    r = None
+    for extra in (["--impersonate", "chrome"], ["--impersonate", "safari"], []):
+        r = subprocess.run([sys.executable, "-m", "yt_dlp", url, "--no-playlist", "--no-warnings", *extra,
+                            "-f", "b[height<=1920]/bv*+ba/b", "--merge-output-format", "mp4", "-o", destino,
+                            "--print", "after_move:%(title)s|%(uploader)s|%(duration)s"],
+                           capture_output=True, text=True, timeout=300)
+        tent.append({"extra": extra, "ok": r.returncode == 0, "err": r.stderr[-600:], "out": r.stdout[-600:]})
+        if r.returncode == 0 and os.path.exists(destino):
+            break
     info = os.path.join(pasta, "teste_fontes.json")
-    gravar(info, {"ok": r.returncode == 0, "out": r.stdout[-2000:], "err": r.stderr[-2000:]})
+    gravar(info, {"tentativas": tent})
     pub = publicador()
     if pub:
         pub(info, *([destino] if os.path.exists(destino) else []))
