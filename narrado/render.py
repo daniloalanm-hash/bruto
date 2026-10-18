@@ -418,6 +418,8 @@ def legenda_ass(projeto, destino, corte_gancho):
               f"Style: TitG,Anton,{TIT_TAM},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,1,0,1,13,8,5,30,30,0,1",
               f"Style: TitBox,Anton,{TIT_TAM},&H00000000,&H00000000,&H00{cor},&H00{cor},0,0,0,0,100,100,1,0,3,20,0,5,30,30,0,1",
               "Style: Fundo,Anton,10,&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
+              f"Style: Capit,Montserrat Black,46,&H00000000,&H00000000,&H00{cor},&H00{cor},0,0,0,0,100,100,1,0,3,14,0,7,0,0,0,1",
+              "Style: CapitN,Montserrat Black,30,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,2,0,1,3,2,7,0,0,0,1",
               "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     marcadas = {id(projeto["palavras"][i]) for i in marcar_destaques(projeto)}
     esconde_ate = fim_titulo(projeto, corte_gancho) if projeto.get("titulo_estilo", "manchete") != "simples" else None
@@ -436,6 +438,22 @@ def legenda_ass(projeto, destino, corte_gancho):
                 continue  # a chamada ocupa a tela: a legenda falada desse trecho não aparece
             ini = max(ini, esconde_ate)
         linhas.append(f"Dialogue: 0,{_ts(ini)},{_ts(b['fim'])},Cap,,0,0,0,,{pop}{' '.join(partes)}")
+    # YouTube: título do capítulo no canto quando ele começa (o mesmo dos capítulos da descrição)
+    if L["W"] > L["H"]:
+        vistos, n_cap = set(), 0
+        for b in blocos:
+            cap = str(projeto["cenas"][b["cena"]].get("capitulo") or "").strip()
+            if not cap or b["cena"] in vistos:
+                continue
+            vistos.add(b["cena"])
+            n_cap += 1
+            if b["cena"] == 0 or b["ini"] < 3:
+                continue  # a abertura já tem a chamada do gancho
+            a0, a1 = b["ini"] + 0.1, b["ini"] + 3.6
+            ent = r"{\move(-700,96,90,96,0,260)\t(3200,3500,\alpha&HFF&)}"
+            linhas.append(f"Dialogue: 4,{_ts(a0)},{_ts(a1)},CapitN,,0,0,0,,{{\\move(-700,52,96,52,0,260)\\t(3200,3500,\\alpha&HFF&)}}"
+                          f"CAPÍTULO {n_cap - 1}")
+            linhas.append(f"Dialogue: 4,{_ts(a0)},{_ts(a1)},Capit,,0,0,0,,{ent}{cap.upper()}")
     # chamada dos primeiros ~2 s
     fim_tit = fim_titulo(projeto, corte_gancho)
     if fim_tit:

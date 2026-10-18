@@ -192,3 +192,8 @@ audio { width: 100%; }
 .ganchos li .g-txt { display: grid; gap: 4px; min-width: 0; flex: 1; }
 .ganchos li .g-tit { font-weight: 800; letter-spacing: .02em; }
 .ganchos li.atual { border-color: var(--in); }
+
+/* vídeo horizontal (YouTube): moldura 16:9 ocupando a largura, ajustes embaixo */
+.video-grid.horizontal { grid-template-columns: minmax(0, 1fr); }
+.video-grid.horizontal .tela-video { position: static; }
+.video-grid.horizontal .moldura { aspect-ratio: 16 / 9; }

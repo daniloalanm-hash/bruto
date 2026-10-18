@@ -82,12 +82,17 @@ async function api(path, opts = {}) {
 
 /* ---------------- Gemini (mesma chave do editor do Bruto) ---------------- */
 const MODELOS = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-flash-lite-latest'];
-async function gemini(prompt, onStatus = () => {}) {
+async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
   const key = limpaToken(ls.get(K.gemini));
   if (!key) { abrirConfig('Cadastre a chave gratuita do Gemini para escrever o roteiro.'); throw new Error('Falta a chave do Gemini.'); }
   const preferido = limpaToken(ls.get(K.modelo));
   const modelos = [...new Set([preferido, ...MODELOS].filter(Boolean))];
-  const payload = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.8 } });
+  // com busca: a IA pesquisa no Google (o modo JSON não combina com a busca; o JSON é extraído do texto)
+  const corpo = (buscar) => JSON.stringify(buscar
+    ? { contents: [{ role: 'user', parts: [{ text: prompt }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0.7 } }
+    : { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.8 } });
+  let buscar = !!opcoes.buscar;
+  let payload = corpo(buscar);
   let ultimo = '';
   for (const m of modelos) {
     for (let tentativa = 0; tentativa < 3; tentativa++) {
@@ -105,6 +110,11 @@ async function gemini(prompt, onStatus = () => {}) {
       }
       ultimo = body?.error?.message || `erro ${res.status}`;
       if (res.status === 400 && /api key/i.test(ultimo)) throw new Error('A chave do Gemini é inválida. Gere outra em aistudio.google.com/apikey.');
+      if (buscar && (res.status === 400 || res.status === 429 || res.status === 403)) {
+        // modelo/cota sem busca no Google: segue sem pesquisar
+        onStatus('Pesquisa na internet indisponível agora; seguindo só com as fontes…');
+        buscar = false; payload = corpo(false); tentativa = -1; continue;
+      }
       if (res.status === 404 || res.status === 429) break; // modelo inexistente ou sem cota: próximo
       if (res.status < 500) throw new Error(`Gemini: ${ultimo}`);
     }
@@ -342,6 +352,130 @@ Reescreva e AUMENTE este roteiro até o tamanho pedido: mantenha o gancho e o fi
   return r;
 }
 
+/* ---------------- YouTube · Jogando Sem Plano (vídeo longo, horizontal) ---------------- */
+const formatoAtual = () => $('#formato').value === 'horizontal' ? 'horizontal' : 'vertical';
+const DURACOES = {
+  vertical: [['70', '1 min+ (monetiza no TikTok)'], ['90', '~1 min 30'], ['50', '~50 s'], ['35', '~35 s']],
+  horizontal: [['330', '~5 min'], ['450', '~7 min'], ['630', '~10 min']],
+};
+function atualizaFormato() {
+  const f = formatoAtual();
+  const atual = $('#duracao').value;
+  $('#duracao').replaceChildren(...DURACOES[f].map(([v, t]) => h('option', { value: v }, t)));
+  if (DURACOES[f].some(([v]) => v === atual)) $('#duracao').value = atual;
+  $('#boxYoutube').hidden = f !== 'horizontal';
+  try { localStorage.setItem('bruto:narrado:formato', f); } catch { /* sem armazenamento */ }
+}
+$('#formato').addEventListener('change', atualizaFormato);
+
+const CANAL = 'Jogando Sem Plano';
+const TIPOS_YT = {
+  curiosidades: 'curiosidades/história: cada capítulo é um bloco de curiosidades ou uma fase da história, do mais conhecido ao mais surpreendente',
+  top: 'top lista em contagem regressiva (do último colocado ao 1º): cada capítulo é um item, com o porquê da posição',
+  dicas: 'dicas/guia: cada capítulo é uma dica prática, do básico ao avançado, com exemplo concreto',
+  lancamentos: 'lançamentos: cada capítulo é um jogo, com data, plataformas, preço e por que vale a atenção',
+};
+
+function promptEstrutura(materia, segundos, tipo, extras) {
+  const palavras = Math.round(segundos * ritmo());
+  return `Você é roteirista-chefe do canal de YouTube "${CANAL}" (games, em português do Brasil). Os vídeos são narrados (sem rosto), com cenas dos jogos, e o canal se destaca por vídeos RECHEADOS de informação — curiosidades, histórias de bastidor, top listas, dicas e lançamentos.
+
+TAREFA: planejar um vídeo de ~${Math.round(segundos / 60)} minutos (~${palavras} palavras narradas) sobre o tema/matéria abaixo. ${tipo === 'auto' ? 'Escolha o formato que rende mais (curiosidades, top, dicas ou lançamentos).' : `Formato: ${TIPOS_YT[tipo]}.`}
+PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, números, nomes de pessoas e estúdios, bastidores). Nada inventado: se não tiver certeza, não use.
+
+Monte 4 a 8 capítulos (top lista: um por item). Para cada capítulo: "titulo" (curto, para os capítulos do YouTube), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
+
+Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários) e "tags" (10 a 15 tags).
+
+Responda SOMENTE com JSON, sem texto fora dele:
+{"titulo": "...", "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "fatos": ["..."], "jogos": ["..."], "palavras": 150}], "descricao": "...", "tags": ["..."]}
+
+TEMA / MATÉRIA
+${materia.titulo || ''}
+${(materia.texto || '').slice(0, 12000)}
+${extras ? `\nOUTRAS FONTES\n${extras.slice(0, 14000)}` : ''}`;
+}
+
+const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Para cada cena:
+- "texto": o que será falado — português do Brasil falado, natural e animado, como quem conta para um amigo gamer; frases curtas; números em algarismos; sem emojis, sem aspas, sem "neste vídeo";
+- "destaques": 1 a 3 expressões copiadas do texto que merecem destaque na legenda;
+- "assunto": o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null;
+- "imagem": quando o trecho fala de algo que não é jogo e existe em foto (console, pessoa, empresa, evento), o nome exato em inglês para buscar foto real (ex.: "Hideo Kojima", "CD Projekt Red"); senão null;
+- "numero": se houver UM número de impacto (dinheiro, %, quantidade grande, placar), {"valor": "como está no texto", "rotulo": "2 a 5 palavras"}; senão null.`;
+
+function promptAbertura(plano, palavras) {
+  return `Você escreve para o canal de YouTube "${CANAL}". Escreva a ABERTURA do vídeo "${plano.titulo}" com ~${palavras} palavras, dividida em 3 a 5 cenas:
+1. gancho nos primeiros 10 segundos (a promessa mais forte: ${plano.gancho || ''}) — a primeira frase tem no máximo 14 palavras;
+2. o que a pessoa vai descobrir no vídeo (cite 2 ou 3 coisas dos capítulos, sem entregar o melhor) e por que ficar até o fim;
+3. UMA frase de apresentação do canal, natural: "Aqui no ${CANAL}..." + um pedido rápido de inscrição.
+
+Capítulos do vídeo: ${plano.capitulos.map((c) => c.titulo).join(' | ')}
+
+${REGRAS_CENA}
+
+Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": null, "imagem": null, "numero": null}]}`;
+}
+
+function promptCapitulo(plano, i, anterior) {
+  const c = plano.capitulos[i];
+  const ultimo = i === plano.capitulos.length - 1;
+  const meio = i === Math.floor(plano.capitulos.length / 2);
+  return `Você escreve para o canal de YouTube "${CANAL}". Vídeo: "${plano.titulo}".
+Escreva o CAPÍTULO ${i + 1} de ${plano.capitulos.length}: "${c.titulo}", com ~${c.palavras || 150} palavras, dividido em cenas.
+Use estes fatos (todos, com os números e nomes): ${(c.fatos || []).join(' • ')}
+Jogos deste capítulo: ${(c.jogos || plano.jogos || []).join(', ')}
+
+Regras do capítulo:
+- comece emendando com o fim do trecho anterior ("${(anterior || '').slice(-200)}") — sem repetir, sem "no capítulo anterior";
+- ritmo de YouTube: contexto + detalhe curioso + por que isso importa; nada de enrolação;
+${ultimo ? `- este é o ÚLTIMO capítulo: entregue a revelação mais forte prometida no começo e feche o vídeo: uma pergunta específica para os comentários + pedido de inscrição e like + "e assiste esse outro vídeo aqui" (tela final);` : '- termine com um mini-gancho para o próximo capítulo ("e o próximo é ainda mais bizarro");'}
+${meio ? '- no meio deste capítulo, uma frase curta e natural pedindo para se inscrever no canal (sem interromper a história);' : ''}
+
+${REGRAS_CENA}
+
+Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "imagem": null, "numero": null}]}`;
+}
+
+async function roteiroLongo(materia, segundos, onStatus = () => {}) {
+  const tipo = $('#tipoYt').value || 'auto';
+  // fontes extras: cada link vira texto (o navegador lê pelo /api/artigo)
+  const links = [...new Set($('#fontesExtras').value.split(/\s+/).filter((x) => /^https?:\/\//.test(x)))].slice(0, 6);
+  let extras = '';
+  for (const [i, u] of links.entries()) {
+    onStatus(`Lendo a fonte ${i + 1} de ${links.length}…`);
+    const m = await buscarMateria(u).catch(() => null);
+    if (m) extras += `\n\n### ${m.titulo}\n${(m.texto || '').slice(0, 5000)}`;
+  }
+  onStatus('A IA está pesquisando e montando os capítulos…');
+  const plano = await gemini(promptEstrutura(materia, segundos, tipo, extras), onStatus, { buscar: true });
+  plano.capitulos = (plano.capitulos || []).filter((c) => c && c.titulo).slice(0, 10);
+  if (!plano.capitulos.length) throw new Error('A IA não conseguiu montar os capítulos. Tente de novo ou dê mais detalhes do tema.');
+  const total = Math.round(segundos * ritmo());
+  const cenas = [];
+  onStatus('Escrevendo a abertura…');
+  const ab = await gemini(promptAbertura(plano, Math.round(total * 0.1)), onStatus);
+  const norm = (x) => roteiroDaIA({ cenas: x.cenas || [] }, materia).cenas;
+  const abertura = norm(ab);
+  if (abertura[0]) abertura[0].capitulo = 'Introdução';
+  cenas.push(...abertura);
+  for (let i = 0; i < plano.capitulos.length; i++) {
+    onStatus(`Escrevendo o capítulo ${i + 1} de ${plano.capitulos.length}: ${plano.capitulos[i].titulo}`);
+    const anterior = cenas.slice(-2).map((c) => c.texto).join(' ');
+    const r = await gemini(promptCapitulo(plano, i, anterior), onStatus);
+    const cs = norm(r);
+    if (cs[0]) cs[0].capitulo = plano.capitulos[i].titulo;
+    cenas.push(...cs);
+  }
+  return {
+    titulo: plano.titulo || materia.titulo || '',
+    titulo_tela: String(plano.titulo_tela || '').trim(),
+    jogos: (plano.jogos || []).filter(Boolean),
+    cenas,
+    formato: 'horizontal',
+    post: { legenda: plano.descricao || '', hashtags: (plano.tags || []).map(String), titulo_yt: plano.titulo || '' },
+  };
+}
+
 async function escreverRoteiro() {
   const texto = $('#textoMateria').value.trim();
   const materia = { ...(state.materia || {}), texto: texto || state.materia?.texto || '' };
@@ -350,7 +484,9 @@ async function escreverRoteiro() {
   st.textContent = 'A IA está escrevendo o roteiro…';
   $('#btnRoteiro').classList.add('busy');
   try {
-    state.roteiro = await roteiroComTamanho(materia, +$('#duracao').value, (m) => { st.textContent = m; });
+    state.roteiro = formatoAtual() === 'horizontal'
+      ? await roteiroLongo(materia, +$('#duracao').value, (m) => { st.textContent = m; })
+      : await roteiroComTamanho(materia, +$('#duracao').value, (m) => { st.textContent = m; });
     if (!state.roteiro.cenas.length) throw new Error('A IA devolveu um roteiro vazio. Tente de novo.');
     state.materia = materia;
     st.textContent = '';
@@ -488,7 +624,9 @@ async function gerarLote(pautas, st, btn) {
       }
       if ((!m || (m.texto || '').length < 200) && pautas[i].reserva) m = pautas[i].reserva;
       st.textContent = `(${i + 1}/${links.length}) Escrevendo o roteiro: ${m.titulo}`;
-      const r = await roteiroComTamanho(m, +$('#duracao').value, (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; });
+      const r = formatoAtual() === 'horizontal'
+        ? await roteiroLongo(m, +$('#duracao').value, (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; })
+        : await roteiroComTamanho(m, +$('#duracao').value, (x) => { st.textContent = `(${i + 1}/${links.length}) ${x}`; });
       if (!r.cenas.length) throw new Error('roteiro vazio');
       salvarLote([{ id: Math.random().toString(36).slice(2, 10), criado: Date.now(), materia: m, roteiro: r }, ...lote()]);
       ok++;
@@ -889,6 +1027,7 @@ function montarJob() {
   return {
     ...estiloSalvo(),
     titulo: r.titulo, titulo_tela: r.titulo_tela || '', fonte: state.materia?.url || '',
+    formato: r.formato === 'horizontal' ? 'horizontal' : 'vertical',
     jogos: r.jogos,
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
@@ -1168,7 +1307,9 @@ async function carregarProjeto() {
   }
   $('#ruido').value = p.voz?.reducao_ruido || 'auto';
   $('#ajustes').hidden = false;
-  $('#btnPrevia').hidden = !state.temPrevia;
+  const horiz = p.formato === 'horizontal';
+  document.querySelector('.video-grid')?.classList.toggle('horizontal', horiz);
+  $('#btnPrevia').hidden = !state.temPrevia || horiz; // a prévia instantânea desenha em 9:16
   state.baseEstrutura = assinaturaEstrutural(p);
   state.sujo = false;
   atualizarBotaoAplicar();
@@ -1192,7 +1333,17 @@ function renderPost() {
   const usadas = new Set((p?.cenas || []).flatMap((c) => c.midias || []));
   const creditos = [...new Set(Object.entries(p?.banco || {})
     .filter(([id, m]) => m.jogo === 'commons' && m.credito && usadas.has(id)).map(([, m]) => m.credito))];
-  const texto = textoDoPost(post);
+  let texto = textoDoPost(post);
+  if (p?.formato === 'horizontal') {
+    // YouTube: título + descrição + capítulos com o tempo real de cada um no vídeo pronto + tags
+    const inicio = Object.fromEntries((p.timeline || []).map((t) => [t.cena, t.inicio]));
+    const caps = (p.cenas || []).map((c, i) => ({ t: inicio[i], tit: c.capitulo })).filter((x) => x.tit && x.t != null);
+    if (caps.length) caps[0].t = 0;
+    const ts = (t) => { const m = Math.floor(t / 60), sx = Math.floor(t % 60); return `${String(m).padStart(2, '0')}:${String(sx).padStart(2, '0')}`; };
+    const capitulos = caps.length >= 3 ? `CAPÍTULOS\n${caps.map((x) => `${ts(x.t)} ${x.tit}`).join('\n')}` : '';
+    const tags = (post?.hashtags || []).map((x) => x.replace(/^#/, '')).join(', ');
+    texto = [post?.titulo_yt || p.titulo || '', post?.legenda || '', capitulos, tags ? `Tags: ${tags}` : ''].filter(Boolean).join('\n\n');
+  }
   $('#textoPost').value = creditos.length && !texto.includes('Wikimedia') ? `${texto}\n\nFotos: ${creditos.join('; ')}` : texto;
   $('#boxPost').hidden = false;
 }
@@ -1958,7 +2109,10 @@ window.addEventListener('beforeunload', (e) => {
     state.roteiro = r.roteiro || state.roteiro;
     if (r.materia) { $('#urlMateria').value = r.materia.url || ''; $('#textoMateria').value = r.materia.texto || ''; }
   }
+  try { if (localStorage.getItem('bruto:narrado:formato') === 'horizontal') $('#formato').value = 'horizontal'; } catch { /* sem armazenamento */ }
+  atualizaFormato();
   if (ls.get(K.duracao)) $('#duracao').value = ls.get(K.duracao);
+  if (!$('#duracao').value) $('#duracao').selectedIndex = 0;
   $('#duracao').addEventListener('change', () => ls.set(K.duracao, $('#duracao').value));
   atualizaBotaoRoteiro();
   renderLote();

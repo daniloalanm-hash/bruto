@@ -341,7 +341,8 @@ def preparar(pasta, st):
               # "numero" presente (mesmo null) = a IA já decidiu; ausente (roteiro antigo) = detecta no texto
               **({"numero": c["numero"] if isinstance(c.get("numero"), dict) and c["numero"].get("valor") else None}
                  if "numero" in c else {}),
-              **({"imagem": str(c["imagem"]).strip()} if c.get("imagem") else {})}
+              **({"imagem": str(c["imagem"]).strip()} if c.get("imagem") else {}),
+              **({"capitulo": str(c["capitulo"]).strip()[:80]} if c.get("capitulo") else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes, n_trailers = jogos_necessarios(job, cenas)
 
@@ -408,6 +409,7 @@ def preparar(pasta, st):
     projeto = {
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
         "materia": job.get("materia") or {},
+        "formato": "horizontal" if job.get("formato") == "horizontal" else "vertical",
         "voz": {"modo": modo, "arquivo": os.path.basename(audio), "reducao_ruido": "auto"},
         "jogos": [{"chave": j["chave"], "nome": j["nome"], "appid": j["appid"]} for j in jogos],
         "nomes_busca": nomes, "trailers_busca": n_trailers, "links_video": links, "sem_video": sem_video, "cenas": cenas, "palavras": palavras, "faltando": faltando,
