@@ -669,9 +669,9 @@ def teste_transcricao(pasta, st):
     dicas = ", ".join(job.get("jogos") or [])
     model = WhisperModel(MODELO_WHISPER, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
     pub = publicador()
-    for modo in ("lote", "isolado"):
+    for modo in ("paralelo", "isolado"):
         t0 = _t.time()
-        pal = fala.transcrever(audio, MODELO_WHISPER, dicas, modo=modo, model=model)
+        pal = fala.transcrever(audio, MODELO_WHISPER, dicas, modo=modo, model=None if modo == "paralelo" else model)
         destino = os.path.join(pasta, f"teste_{modo}.json")
         gravar(destino, {"segundos": round(_t.time() - t0, 1), "palavras": pal})
         print(f"teste {modo}: {_t.time() - t0:.0f}s", flush=True)

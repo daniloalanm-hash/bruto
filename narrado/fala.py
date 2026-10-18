@@ -130,7 +130,8 @@ def transcrever(src, modelo="medium", dicas="", modo="isolado", model=None):
         trechos.append((max(ultimo_fim - 0.08, 0), dur))
     if not trechos:
         trechos = [(0, dur)]
-    model = model or WhisperModel(modelo, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+    if modo != "paralelo":
+        model = model or WhisperModel(modelo, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
     palavras = []
     if modo == "lote":
         # cada trecho continua sozinho (mesmo resultado do "isolado": tomadas não se misturam), mas o Whisper
@@ -165,6 +166,26 @@ def transcrever(src, modelo="medium", dicas="", modo="isolado", model=None):
                         palavras.append({"w": t, "s": round(a + w.start, 3), "e": round(a + w.end, 3), "c": ci})
         palavras.sort(key=lambda w: (w["c"], w["s"]))
         print(f"transcrição (lote): {len(trechos)} trechos, {len(palavras)} palavras", flush=True)
+        return palavras
+    if modo == "paralelo":
+        # igual ao "isolado" (cada trecho sozinho, mesmo resultado), mas 2 trechos por vez em paralelo:
+        # o Whisper não usa bem os 4 núcleos numa janela só
+        from concurrent.futures import ThreadPoolExecutor
+        nucleos = os.cpu_count() or 4
+        par = WhisperModel(modelo, device="cpu", compute_type="int8", cpu_threads=max(1, nucleos // 2),
+                           num_workers=2) if model is None or getattr(model, "_bruto_par", False) is False else model
+
+        def um(ci):
+            a, b = trechos[ci]
+            seg = audio[int(a * 16000):int(b * 16000)]
+            res, _ = par.transcribe(seg, language="pt", word_timestamps=True, vad_filter=False,
+                                    condition_on_previous_text=False, beam_size=5, initial_prompt=dicas or None)
+            return [{"w": w.word.strip(), "s": round(a + w.start, 3), "e": round(a + w.end, 3), "c": ci}
+                    for sg in res for w in sg.words if w.word.strip()]
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            for lst in ex.map(um, range(len(trechos))):
+                palavras += lst
+        print(f"transcrição (paralelo): {len(trechos)} trechos, {len(palavras)} palavras", flush=True)
         return palavras
     if modo in ("isolado", "curto"):
         # cada trecho sozinho (mais fiel; "curto" usa janela do tamanho do trecho em vez de 30 s)
