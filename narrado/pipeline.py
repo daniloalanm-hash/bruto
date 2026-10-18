@@ -607,15 +607,20 @@ def teste_fontes(pasta, st):
     url = os.environ.get("NARRADO_REF", "https://vt.tiktok.com/ZSgMxk6Jp/")
     ref = os.path.join(pasta, "ref.mp4")
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "yt-dlp", "curl_cffi"], capture_output=True, timeout=300)
-    subprocess.run([sys.executable, "-m", "yt_dlp", url, "--impersonate", "chrome", "-f", "b", "-o", ref], capture_output=True, timeout=300)
-    from faster_whisper import WhisperModel
-    wav = os.path.join(pasta, "ref.wav")
-    ffmpeg("-i", ref, "-ac", 1, "-ar", 16000, wav)
-    m = WhisperModel(MODELO_WHISPER, device="cpu", compute_type="int8")
-    segs, _ = m.transcribe(wav, language="pt", word_timestamps=True, vad_filter=False)
-    pal = [{"w": w.word.strip(), "s": round(w.start, 2), "e": round(w.end, 2)} for sg in segs for w in (sg.words or [])]
     destino = os.path.join(pasta, "teste_fontes.json")
-    gravar(destino, {"palavras": pal})
+    try:
+        r = subprocess.run([sys.executable, "-m", "yt_dlp", url, "--no-playlist", "--impersonate", "chrome",
+                            "-f", "b[height<=1920]/bv*+ba/b", "--merge-output-format", "mp4", "-o", ref],
+                           capture_output=True, text=True, timeout=300)
+        from faster_whisper import WhisperModel
+        wav = os.path.join(pasta, "ref.wav")
+        ffmpeg("-i", ref, "-ac", 1, "-ar", 16000, wav)
+        m = WhisperModel(MODELO_WHISPER, device="cpu", compute_type="int8")
+        segs, _ = m.transcribe(wav, language="pt", word_timestamps=True, vad_filter=False)
+        pal = [{"w": w.word.strip(), "s": round(w.start, 2), "e": round(w.end, 2)} for sg in segs for w in (sg.words or [])]
+        gravar(destino, {"palavras": pal})
+    except Exception:
+        gravar(destino, {"erro": traceback.format_exc()[-2500:], "yt": (r.stderr[-800:] if "r" in dir() else "")})
     pub = publicador()
     if pub:
         pub(destino)
