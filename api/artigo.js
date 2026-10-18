@@ -80,5 +80,6 @@ module.exports = (req, res) => responder(res, async () => {
     return tag;
   });
   if (texto.length < 200) throw httpError(422, 'Não consegui ler o texto dessa página. Cole o texto da matéria no campo abaixo.');
-  return { titulo, resumo, texto, imagem, imagens: imagens.slice(0, 8), url };
+  const steam = [...new Set([...html.matchAll(/store\.steampowered\.com\/app\/(\d+)/g)].map((m) => m[1]))].slice(0, 4);
+  return { titulo, resumo, texto, imagem, imagens: imagens.slice(0, 8), url, steam };
 });

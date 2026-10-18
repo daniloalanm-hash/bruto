@@ -202,14 +202,16 @@ def planejar(cenas, banco, jogos):
     return cenas
 
 
-def garantir_assets(nomes, permitir_vazio=False, trailers=None):
+def garantir_assets(nomes, permitir_vazio=False, trailers=None, steam_ids=()):
     """Baixa o material de cada jogo em paralelo (rede, não CPU). trailers: {nome: máximo de trailers}."""
     from concurrent.futures import ThreadPoolExecutor
     trailers = trailers or {}
 
     def um(nome):
         try:
-            return assets.baixar_jogo(nome, RAW, trailers.get(nome, assets.MAX_TRAILERS))
+            # links da Steam da matéria: valem para o jogo principal (o 1º) ou quando há um só
+            dicas = list(steam_ids) if (steam_ids and (nome == nomes[0] or len(steam_ids) == 1)) else []
+            return assets.baixar_jogo(nome, RAW, trailers.get(nome, assets.MAX_TRAILERS), dicas)
         except Exception as e:
             print(f"aviso: falhou ao buscar '{nome}': {e}", flush=True)
             return None
@@ -406,7 +408,9 @@ def preparar(pasta, st):
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
     bib = da_biblioteca(list(dict.fromkeys(nomes + [c["assunto"] for c in cenas if c.get("assunto")])))
     links += [b for b in bib if not any(b.get("url") and b["url"] == x["url"] for x in links)]
-    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links or (job.get("materia") or {}).get("titulo")), trailers=n_trailers)
+    steam_ids = [int(x) for x in ((job.get("materia") or {}).get("steam") or []) if str(x).isdigit()][:4]
+    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links or (job.get("materia") or {}).get("titulo")),
+                            trailers=n_trailers, steam_ids=steam_ids)
     if links:
         st.etapa("Baixando os vídeos dos links", 12)
         jogos = juntar_links(jogos, links, nomes)

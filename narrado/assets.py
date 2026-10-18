@@ -49,11 +49,46 @@ def mesmo_jogo(pedido, achado, minimo=0.5):
     return len(k1 & k2) >= max(1, round(len(k1) * 0.75))
 
 
-def achar_jogo(nome):
-    """Procura o jogo na loja da Steam e devolve (appid, nome oficial) do resultado mais parecido."""
+def sigla(nome):
+    """"Car Parking Multiplayer 2" -> "cpm 2" (jogo que na Steam usa só a sigla: "CPM 2")."""
+    ws = re.findall(r"[a-z0-9]+", str(nome).lower())
+    letras = [w for w in ws if not w.isdigit() and w not in ROMANOS]
+    nums = [ROMANOS.get(w, w) for w in ws if w.isdigit() or w in ROMANOS]
+    if len(letras) < 2:
+        return ""
+    return ("".join(w[0] for w in letras) + (" " + " ".join(nums) if nums else "")).strip()
+
+
+def e_sigla(pedido, achado):
+    s = sigla(pedido)
+    ach = "".join(ROMANOS.get(w, w) for w in re.findall(r"[a-z0-9]+", str(achado).lower()))
+    return bool(s) and ach == s.replace(" ", "")
+
+
+def achar_jogo(nome, dicas=()):
+    """Procura o jogo na loja da Steam e devolve (appid, nome oficial) do resultado mais parecido.
+    dicas: appids de links da Steam que estavam na matéria (o jogo pode ter outro nome na loja)."""
+    for appid in dicas or ():
+        try:
+            d = json.loads(_get(f"https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic"))[str(appid)]
+            if d.get("success"):
+                oficial = d["data"].get("name", "")
+                if mesmo_jogo(nome, oficial) or e_sigla(nome, oficial) or len(dicas) == 1:
+                    print(f"Steam pelo link da matéria: {nome} = {oficial} ({appid})", flush=True)
+                    return int(appid), oficial
+        except Exception as e:
+            print(f"aviso: appid {appid} da matéria: {e}", flush=True)
     q = urllib.parse.quote(nome)
     dados = json.loads(_get(f"https://store.steampowered.com/api/storesearch/?term={q}&cc=br&l=portuguese"))
     itens = [i for i in dados.get("items", []) if i.get("type") == "app"]
+    if not itens and sigla(nome):
+        # nome popular x nome na loja: "Car Parking Multiplayer 2" está na Steam como "CPM 2"
+        q2 = urllib.parse.quote(sigla(nome))
+        d2 = json.loads(_get(f"https://store.steampowered.com/api/storesearch/?term={q2}&cc=br&l=portuguese"))
+        ach = [i for i in d2.get("items", []) if i.get("type") == "app" and e_sigla(nome, i["name"])]
+        if ach:
+            print(f"Steam pela sigla: {nome} = {ach[0]['name']} ({ach[0]['id']})", flush=True)
+            return ach[0]["id"], ach[0]["name"]
     if not itens:
         return None
     alvo = norm(nome)
@@ -112,11 +147,13 @@ def _baixar_trailer(src, p):
     return os.path.exists(p)
 
 
-def _steam(nome, pasta, max_trailers=MAX_TRAILERS):
-    achado = achar_jogo(nome)
+def _steam(nome, pasta, max_trailers=MAX_TRAILERS, dicas=()):
+    achado = achar_jogo(nome, dicas)
     if not achado:
         return None
     appid, oficial = achado
+    if not mesmo_jogo(nome, oficial):
+        oficial = nome  # achado pela sigla/link: segue com o nome do roteiro (é o que os tópicos usam)
     d = json.loads(_get(f"https://store.steampowered.com/api/appdetails?appids={appid}&l=portuguese"))[str(appid)]
     if not d.get("success"):
         return None
@@ -563,7 +600,7 @@ def baixar_imagens_materia(urls, pasta):
     return banco
 
 
-def baixar_jogo(nome, pasta, max_trailers=MAX_TRAILERS):
+def baixar_jogo(nome, pasta, max_trailers=MAX_TRAILERS, dicas=()):
     """Material oficial do jogo: Steam; se não tiver (ou não tiver trailer), App Store e YouTube.
 
     max_trailers: jogo principal leva 3; jogo citado de passagem leva menos (cada trailer custa ~1 min de análise).
@@ -571,7 +608,7 @@ def baixar_jogo(nome, pasta, max_trailers=MAX_TRAILERS):
     os.makedirs(pasta, exist_ok=True)
     info = None
     try:
-        info = _steam(nome, pasta, max_trailers)
+        info = _steam(nome, pasta, max_trailers, dicas)
     except Exception as e:
         print(f"aviso: Steam falhou para '{nome}': {e}")
     if not info:

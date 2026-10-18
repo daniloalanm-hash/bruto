@@ -278,6 +278,8 @@ function limparImagens(urls, base) {
   return saida.slice(0, 8);
 }
 
+// links da loja da Steam na matéria (o jogo pode ter outro nome na loja: "CPM 2" = Car Parking Multiplayer 2)
+const steamIds = (html) => [...new Set([...String(html || '').matchAll(/store\.steampowered\.com\/app\/(\d+)/g)].map((m) => m[1]))].slice(0, 4);
 async function materiaWordPress(url) {
   const u = new URL(url);
   const partes = u.pathname.split('/').filter(Boolean);
@@ -303,6 +305,7 @@ async function materiaWordPress(url) {
         texto: textoDeHtml(post.content?.rendered).slice(0, 14000),
         imagem: post.jetpack_featured_media_url || '',
         url: post.link || url,
+        steam: steamIds(post.content?.rendered),
       };
     } catch { /* não é WordPress, ou bloqueado: tenta o próximo caminho */ }
   }
@@ -1052,7 +1055,8 @@ function montarJob() {
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
     imagens_materia: state.materia?.imagens || [],
-    materia: state.materia ? { titulo: state.materia.titulo || '', url: state.materia.url || '', site: state.materia.site || '' } : null,
+    materia: state.materia ? { titulo: state.materia.titulo || '', url: state.materia.url || '', site: state.materia.site || '',
+      steam: state.materia.steam || steamIds(state.materia.texto) } : null,
     links_video: r.links || [],
     voz: modo === 'ia' ? { modo, voz_ia: $('#vozIa').value } : { modo, arquivo: state.voz.nome },
   };
