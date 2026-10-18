@@ -308,13 +308,19 @@ def logo_do_time(nome, wikis, raw):
             for im in pags[0].get("images", []):
                 arq = im["title"].split(":", 1)[-1]
                 base = re.sub(r"[^a-z0-9]", "", _norm(re.sub(r"(\d{4})?\s*(allmode|darkmode|lightmode).*$", "", arq, flags=re.I)))
-                if base not in (alvo, titulo) or not re.search(r"allmode|darkmode", arq, re.I):
+                if not re.search(r"allmode|darkmode", arq, re.I) or len(base) < 2:
+                    continue
+                exato = base in (alvo, titulo)
+                # "FURIA" ↔ "FURIA Esports": prefixo vale, mas o nome exato ganha
+                if not exato and not any(len(x) >= 3 and (base.startswith(x) or x.startswith(base)) for x in (alvo, titulo)):
                     continue
                 ano = max([int(x) for x in re.findall(r"(?:19|20)\d\d", arq)] or [0])
-                cand.append((ano, "darkmode" in arq.lower(), im["title"]))
+                cand.append((exato, ano, "darkmode" in arq.lower(), im["title"]))
             if not cand:
+                print(f"aviso: {nome} ({wiki}) sem logo reconhecível entre "
+                      f"{[i['title'] for i in pags[0].get('images', []) if 'mode' in i['title']][:12]}", flush=True)
                 continue
-            escolhido = max(cand)[2]
+            escolhido = max(cand)[3]
             info = _liqui(wiki, {"action": "query", "titles": escolhido, "prop": "imageinfo", "iiprop": "url"})
             url = list(info["query"]["pages"].values())[0]["imageinfo"][0]["url"]
             req = urllib.request.Request(url, headers={"User-Agent": LIQUI_UA})

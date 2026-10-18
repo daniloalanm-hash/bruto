@@ -562,8 +562,8 @@ def teste_fontes(pasta, st):
     import io
     import contextlib
     saidas, buf = [], io.StringIO()
-    casos = [(["LOUD", "Team Vitality"], ["valorant"]), (["FURIA", "MVK"], ["leagueoflegends"]),
-             (["T1", "Gen.G"], ["leagueoflegends"]), (["FURIA", "Team Spirit"], ["counterstrike"])]
+    casos = [(["FURIA", "MVK"], ["leagueoflegends"]), (["FURIA", "Team Spirit"], ["counterstrike"]),
+             (["paiN Gaming", "Fluxo"], ["leagueoflegends", "freefire"]), (["Sentinels", "Fnatic"], ["valorant"])]
     with contextlib.redirect_stdout(buf):
         for k, (times, wk) in enumerate(casos):
             logos = [cartoes.logo_do_time(t, wk, RAW) for t in times]
