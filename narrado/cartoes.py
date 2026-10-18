@@ -462,24 +462,82 @@ def _quadro_da_cena(projeto, cena, raw, pasta_tmp):
     return None
 
 
-def _baixar_capa(appid, destino):
-    """Pôster vertical 600x900 da biblioteca da Steam (o mesmo que aparece na Steam/PlayStation Store)."""
+def _baixar(url, destino):
     import urllib.request
-    for url in (f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900_2x.jpg",
-                f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900.jpg",
-                f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900_2x.jpg",
-                f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg"):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                dados = r.read()
-            if len(dados) > 20000:
-                with open(destino, "wb") as f:
-                    f.write(dados)
-                return destino
-        except Exception:
-            continue
-    raise RuntimeError("sem pôster na Steam")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        dados = r.read()
+    if len(dados) < 15000:
+        raise RuntimeError("imagem pequena demais")
+    with open(destino, "wb") as f:
+        f.write(dados)
+    return destino
+
+
+def capa_do_jogo(appid, raw, destino):
+    """Capa do jogo para o momento em que o nome é falado: o pôster vertical da Steam (quando existe) ou a
+    arte principal da loja (header) grande, sobre o wallpaper do jogo desfocado. Sempre 1080x1920."""
+    import json
+    import urllib.request
+    from PIL import Image, ImageDraw, ImageFilter
+    poster = os.path.join(raw, f"steam_{appid}_poster.jpg")
+    arte = os.path.join(raw, f"steam_{appid}_header.jpg")
+    fundo = os.path.join(raw, f"steam_{appid}_fundo.jpg")
+    if not os.path.exists(poster):
+        for url in (f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900_2x.jpg",
+                    f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900_2x.jpg",
+                    f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900.jpg"):
+            try:
+                _baixar(url, poster)
+                break
+            except Exception:
+                continue
+    if not (os.path.exists(arte) and os.path.exists(fundo)):
+        # jogo novo: a Steam guarda as artes num caminho com hash — só a API da loja sabe o endereço
+        req = urllib.request.Request(f"https://store.steampowered.com/api/appdetails?appids={appid}",
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = (json.loads(r.read()).get(str(appid)) or {}).get("data") or {}
+        for url, alvo in ((d.get("header_image"), arte), (d.get("background_raw") or d.get("background"), fundo)):
+            if url and not os.path.exists(alvo):
+                try:
+                    _baixar(url.replace("header.jpg", "header_2x.jpg") if alvo == arte else url, alvo)
+                except Exception:
+                    try:
+                        _baixar(url, alvo)
+                    except Exception:
+                        pass
+    if not os.path.exists(poster) and not os.path.exists(arte):
+        raise RuntimeError("sem arte na Steam")
+    bg = _fundo(fundo if os.path.exists(fundo) else (arte if os.path.exists(arte) else poster)).convert("RGBA")
+    with Image.open(poster if os.path.exists(poster) else arte) as im:
+        im = im.convert("RGB")
+        if os.path.exists(poster):
+            esc = min(820 / im.width, 1230 / im.height)
+        else:
+            esc = min(980 / im.width, 700 / im.height)
+        im = im.resize((int(im.width * esc), int(im.height * esc)))
+    x, y = (W - im.width) // 2, int(H * 0.42 - im.height / 2)
+    sombra = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(sombra).rounded_rectangle((x, y + 18, x + im.width, y + im.height + 18), 30, fill=(0, 0, 0, 170))
+    bg = Image.alpha_composite(bg, sombra.filter(ImageFilter.GaussianBlur(26)))
+    bg.alpha_composite(_arredondar(im, 26), (x, y))
+    bg.convert("RGB").save(destino, quality=92)
+    return destino
+
+
+def momento_do_nome(projeto, nome, cena_min=0):
+    """(cena, instante) da 1ª vez que o nome do jogo é falado (1ª palavra significativa do nome)."""
+    toks = [t for t in re.findall(r"[a-z0-9]+", _norm(nome)) if len(t) >= 3 and t not in ("the", "and")]
+    if not toks:
+        return None
+    alvo = toks[0]
+    ws = sorted((w for w in projeto["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None),
+                key=lambda w: w["ns"])
+    for w in ws:
+        if w["cena"] >= cena_min and re.sub(r"[^a-z0-9]", "", _norm(w.get("legenda") or w["w"])).startswith(alvo):
+            return w["cena"], w["ns"]
+    return None
 
 
 def aplicar(projeto, raw, fontes, pasta_trab):
@@ -516,29 +574,22 @@ def aplicar(projeto, raw, fontes, pasta_trab):
         except Exception as e:
             print(f"aviso: cartão de manchete não gerado: {e}", flush=True)
 
-    # 2) capa do jogo (pôster vertical da Steam) quando ele aparece pela 1ª vez — como nos vídeos de referência
+    # 2) capa do jogo (pôster ou arte da Steam sobre o wallpaper) NO MOMENTO em que o nome é falado
     if projeto.get("capas", True) and H > W:
-        vistos = set()
-        for k, c in enumerate(cenas):
-            ch = c.get("jogo")
-            if k == 0 or not ch or ch in vistos:
+        for j in projeto.get("jogos", []):
+            appid = str(j.get("appid") or "")
+            if not appid.isdigit():
                 continue
-            vistos.add(ch)
-            j = next((x for x in projeto.get("jogos", []) if x.get("chave") == ch), None)
-            if not j or not j.get("appid"):
-                continue
-            mid = f"capa_{ch}"
-            arq = f"capa_{j['appid']}.jpg"
+            mid = f"capa_{j['chave']}"
+            arq = f"cartao_{tag}_capa_{appid}.jpg"
             try:
-                if not os.path.exists(os.path.join(raw, arq)):
-                    _baixar_capa(j["appid"], os.path.join(raw, arq))
+                capa_do_jogo(appid, raw, os.path.join(raw, arq))
                 if mid not in banco:
                     novo = True
-                banco[mid] = {"tipo": "i", "jogo": ch, "arquivo": arq, "encaixar": True, "capa": True}
-                if primeira and mid not in c.get("midias", []):
-                    c.setdefault("midias", []).insert(0, mid)
+                banco[mid] = {"tipo": "i", "jogo": "cartao", "arquivo": arq, "cartao": "capa", "capa": True,
+                              "nome": j["nome"], "chave_jogo": j["chave"]}
             except Exception as e:
-                print(f"aviso: capa de {j.get('nome')} não baixou: {e}", flush=True)
+                print(f"aviso: capa de {j.get('nome')} não gerada: {e}", flush=True)
 
     # 3) números
     feitos = 0

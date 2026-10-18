@@ -803,6 +803,12 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         # cartela de número: entra no corte em que o número é falado
         fixo = {}
         for cid, cm in banco.items():
+            if cm.get("cartao") == "capa":
+                # capa do jogo entra no corte em que o NOME dele é falado pela 1ª vez (fora da chamada do gancho)
+                quando = cartoes.momento_do_nome(projeto, cm.get("nome", ""))
+                if quando and quando[0] == c and quando[1] > (fim_titulo(projeto, faixas[1][1] if len(faixas) > 1 else total) or 0) + 0.1:
+                    fixo[min(max(int((quando[1] - a) / (dur / n)), 0), n - 1)] = cid
+                continue
             if cm.get("cartao") == "numero" and cm.get("cena") == c and n >= 2:
                 t_num = cartoes.momento_do_numero(projeto, c, cm.get("valor"))
                 jn = 1 if t_num is None else min(max(int((t_num - a) / (dur / n)), 0), n - 1)
