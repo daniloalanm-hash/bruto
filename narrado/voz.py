@@ -161,6 +161,7 @@ def partir_pausas(blocos, db, passo):
     k = 9
     quieto = np.convolve(quieto.astype(float), np.ones(k) / k, mode="same") >= 0.5
     novos = []
+    anterior_pont = True
     for b in blocos:
         k0, k1 = int(b["cs"] / passo), int(b["ce"] / passo)
         cortes = []
@@ -171,23 +172,34 @@ def partir_pausas(blocos, db, passo):
                 while j < k1 and quieto[j]:
                     j += 1
                 a_, b_ = i * passo, j * passo
+                # pausa no meio da FRASE (sem vírgula/ponto antes) é hesitação: quase some (~0,1 s);
+                # depois de pontuação fica um respiro curto (~0,2 s)
+                antes = [w for w in b["pal"] if w["s"] < a_]
+                pont = bool(antes) and bool(re.search(r"[.,!?;:…]$", str(antes[-1].get("legenda") or antes[-1]["w"])))
+                limite, resto = (PAUSA_MAX, PAUSA_RESTO) if pont else (0.22, 0.05)
                 # só pausa no MEIO (as pontas do bloco já são tratadas pelo definir_cortes)
-                if b_ - a_ > PAUSA_MAX and a_ > b["cs"] + 0.15 and b_ < b["ce"] - 0.15:
-                    cortes.append((a_ + PAUSA_RESTO, b_ - PAUSA_RESTO))
+                if b_ - a_ > limite and a_ > b["cs"] + 0.15 and b_ < b["ce"] - 0.15:
+                    cortes.append((a_ + resto, b_ - resto))
                 i = j
             else:
                 i += 1
-        # respiro/silêncio colado nas pontas do bloco (entre frases): deixa só ~0,12 s
+        # respiro/silêncio colado nas pontas do bloco: depois de pontuação fica ~0,12 s; no meio da frase
+        # (a frase continua no bloco seguinte, ex.: "só… colocar") quase nada, senão vira gaguejada
+        pont_fim = bool(re.search(r"[.,!?;:…]$", str(b["pal"][-1].get("legenda") or b["pal"][-1]["w"])))
+        pont_ini = anterior_pont
+        anterior_pont = pont_fim
+        m_ini, m_fim = (0.12 if pont_ini else 0.06), (0.18 if pont_fim else 0.08)  # fim de palavra decai devagar
+        b["meio_frase"] = not pont_fim
         k = int(b["cs"] / passo)
         while k < k1 and quieto[k]:
             k += 1
-        if (k - k0) * passo > 0.25:
-            b["cs"] = max(b["cs"], k * passo - 0.12)
+        if (k - k0) * passo > m_ini + 0.05:
+            b["cs"] = max(b["cs"], k * passo - m_ini)
         k = k1
         while k > k0 and quieto[k - 1]:
             k -= 1
-        if (k1 - k) * passo > 0.25:
-            b["ce"] = min(b["ce"], k * passo + 0.12)
+        if (k1 - k) * passo > m_fim + 0.05:
+            b["ce"] = min(b["ce"], k * passo + m_fim)
         if not cortes:
             novos.append(b)
             continue
@@ -317,7 +329,7 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
         if prox is not None and not prox["manter"] and not b.get("interno_fim") and nivel(b["ce"]) > lim_qa:
             avisos.append({"t": round(t + dur, 2), "onde": "fim", "texto": " ".join(w["w"] for w in b["pal"][-3:])})
         t += dur
-        if bi < len(blocos) - 1:
+        if bi < len(blocos) - 1 and not (b.get("meio_frase") or b.get("interno_fim")):
             filt.append(f"[0:a]atrim={t_fundo:.3f}:{t_fundo + GAP_NEW:.3f},asetpts=PTS-STARTPTS,afade=t=in:d=0.008,afade=t=out:st={GAP_NEW - 0.008:.3f}:d=0.008[g{bi}]")
             partes.append(f"[g{bi}]")
             t += GAP_NEW
