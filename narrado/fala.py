@@ -132,6 +132,40 @@ def transcrever(src, modelo="medium", dicas="", modo="isolado", model=None):
         trechos = [(0, dur)]
     model = model or WhisperModel(modelo, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
     palavras = []
+    if modo == "lote":
+        # cada trecho continua sozinho (mesmo resultado do "isolado": tomadas não se misturam), mas o Whisper
+        # processa vários trechos de uma vez (lote) — gravação longa de 15-20 min fica várias vezes mais rápida
+        from faster_whisper import BatchedInferencePipeline
+        lote = BatchedInferencePipeline(model=model)
+        curtos = [(ci, a, b) for ci, (a, b) in enumerate(trechos) if b - a <= 28]
+        longos = [(ci, a, b) for ci, (a, b) in enumerate(trechos) if b - a > 28]
+        if curtos:
+            res, _ = lote.transcribe(audio, language="pt", word_timestamps=True, vad_filter=False,
+                                     clip_timestamps=[{"start": a, "end": b} for _, a, b in curtos],
+                                     beam_size=5, initial_prompt=dicas or None, batch_size=8,
+                                     condition_on_previous_text=False)
+            for sg in res:
+                for w in (sg.words or []):
+                    t = w.word.strip()
+                    if not t:
+                        continue
+                    meio = (w.start + w.end) / 2
+                    ci = next((c for c, a, b in curtos if a - 0.05 <= meio <= b + 0.05), None)
+                    if ci is None:
+                        ci = min(curtos, key=lambda x: min(abs(meio - x[1]), abs(meio - x[2])))[0]
+                    palavras.append({"w": t, "s": round(w.start, 3), "e": round(w.end, 3), "c": ci})
+        for ci, a, b in longos:  # trecho com mais de 28 s: sozinho (o lote só aceita até 30 s)
+            seg = audio[int(a * 16000):int(b * 16000)]
+            res, _ = model.transcribe(seg, language="pt", word_timestamps=True, vad_filter=False,
+                                      condition_on_previous_text=False, beam_size=5, initial_prompt=dicas or None)
+            for sg in res:
+                for w in sg.words:
+                    t = w.word.strip()
+                    if t:
+                        palavras.append({"w": t, "s": round(a + w.start, 3), "e": round(a + w.end, 3), "c": ci})
+        palavras.sort(key=lambda w: (w["c"], w["s"]))
+        print(f"transcrição (lote): {len(trechos)} trechos, {len(palavras)} palavras", flush=True)
+        return palavras
     if modo in ("isolado", "curto"):
         # cada trecho sozinho (mais fiel; "curto" usa janela do tamanho do trecho em vez de 30 s)
         for ci, (a, b) in enumerate(trechos):
