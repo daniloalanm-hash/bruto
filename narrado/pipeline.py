@@ -616,7 +616,7 @@ def teste_fontes(pasta, st):
         wav = os.path.join(pasta, "ref.wav")
         ffmpeg("-i", ref, "-ac", 1, "-ar", 16000, wav)
         m = WhisperModel(MODELO_WHISPER, device="cpu", compute_type="int8")
-        segs, _ = m.transcribe(wav, language="pt", word_timestamps=True, vad_filter=False)
+        segs, _ = m.transcribe(fala._audio16k(wav), language="pt", word_timestamps=True, vad_filter=False)
         pal = [{"w": w.word.strip(), "s": round(w.start, 2), "e": round(w.end, 2)} for sg in segs for w in (sg.words or [])]
         gravar(destino, {"palavras": pal})
     except Exception:
