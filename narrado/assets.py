@@ -992,7 +992,7 @@ def segunda_rodada(jogos_info, banco, pasta, assuntos):
     return banco
 
 
-def montar_banco(jogos_info, pasta_thumbs, progresso=None):
+def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     """Gera o banco de mídias {id: {...}} e as miniaturas verticais de cada uma.
 
     Os trailers são analisados em paralelo (um processo por núcleo; cada um carrega a sua rede EAST).
@@ -1034,7 +1034,7 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None):
             banco[mid] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p)}
         for ti, t in enumerate(j["trailers"]):
             for c in analise.get(t["arquivo"], []):
-                mid = f"{j['chave']}_t{ti}_{int(c['t'] * 10)}"
+                mid = f"{j['chave']}_t{ti + ti0}_{int(c['t'] * 10)}"
                 banco[mid] = {"tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
                               "t": c["t"], "dur": c["dur"], "mov": c.get("mov", 0), "sat": round(c["s"], 1)}
         if len(banco) == antes:  # tudo tinha texto (ex.: screenshots de loja com chamada): melhor isso que nada

@@ -143,6 +143,67 @@ def definir_cortes(blocos, todas, db, passo):
         b["cs"], b["ce"] = cs, max(ce, cs + 0.05)
 
 
+PAUSA_MAX = 0.35   # pausa/respiro maior que isso DENTRO de um bloco é encurtada
+PAUSA_RESTO = 0.10  # quanto de silêncio fica de cada lado do corte
+
+
+def partir_pausas(blocos, db, passo):
+    """Pausa longa no meio da fala (hesitação, respiro, o Whisper esticou a palavra por cima do silêncio):
+    corta o miolo do silêncio e deixa ~0,2 s. Como o corte cai em silêncio de verdade, não vira soluço.
+    Devolve a nova lista de blocos; palavras que atravessavam o silêncio são aparadas para o lado do som."""
+    import numpy as np
+    fala = db[db > np.percentile(db, 10) + 14]
+    if not len(fala):
+        return blocos
+    limiar = float(np.median(fala)) - 12  # respiro fica ~10-11 dB abaixo da fala: conta como pausa
+    quieto = db < limiar
+    # tolera picos curtinhos (estalo, ruído) dentro da pausa: suaviza com janela de 90 ms
+    k = 9
+    quieto = np.convolve(quieto.astype(float), np.ones(k) / k, mode="same") >= 0.5
+    novos = []
+    for b in blocos:
+        k0, k1 = int(b["cs"] / passo), int(b["ce"] / passo)
+        cortes = []
+        i = k0
+        while i < k1:
+            if quieto[i]:
+                j = i
+                while j < k1 and quieto[j]:
+                    j += 1
+                a_, b_ = i * passo, j * passo
+                # só pausa no MEIO (as pontas do bloco já são tratadas pelo definir_cortes)
+                if b_ - a_ > PAUSA_MAX and a_ > b["cs"] + 0.15 and b_ < b["ce"] - 0.15:
+                    cortes.append((a_ + PAUSA_RESTO, b_ - PAUSA_RESTO))
+                i = j
+            else:
+                i += 1
+        if not cortes:
+            novos.append(b)
+            continue
+        inicio = b["cs"]
+        pedacos = []
+        for x0, x1 in cortes:
+            pedacos.append((inicio, x0))
+            inicio = x1
+        pedacos.append((inicio, b["ce"]))
+        for w in b["pal"]:
+            for x0, x1 in cortes:
+                if w["s"] < x1 and w["e"] > x0:  # atravessa o trecho cortado: fica do lado onde tem mais som
+                    if (x0 - w["s"]) >= (w["e"] - x1):
+                        w["e"] = max(w["s"] + 0.05, min(w["e"], x0))
+                    else:
+                        w["s"] = min(w["e"] - 0.05, max(w["s"], x1))
+        for pi, (c0, c1) in enumerate(pedacos):
+            pal = [w for w in b["pal"] if c0 - 0.01 <= (w["s"] + w["e"]) / 2 <= c1 + 0.01]
+            nb = dict(b, cs=c0, ce=c1, pal=pal)
+            nb["interno_ini"] = pi > 0
+            nb["interno_fim"] = pi < len(pedacos) - 1
+            novos.append(nb)
+        print(f"voz: pausa no meio da fala encurtada em {len(cortes)} ponto(s) perto de "
+              f"\"{' '.join(w['w'] for w in b['pal'][:4])}\"", flush=True)
+    return novos
+
+
 def normalizar(src, destino, alvo=-14.0, pico=-1.5):
     """Leva a voz a -14 LUFS com ganho fixo (loudnorm em 2 passadas, modo linear)."""
     import json as _json
@@ -220,6 +281,7 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
         print(f"voz: palavras soltas de tomada abandonada removidas: {soltos}")
     db, passo = envelope(src)
     definir_cortes(blocos, todas, db, passo)
+    blocos = partir_pausas(blocos, db, passo)
 
     filt, partes, t = [], [], 0.0
     t_fundo = trecho_de_fundo(db, passo, GAP_NEW)
@@ -240,9 +302,9 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
             w["ne"] = round(t + w["e"] - b["cs"], 3)
         ant = todas[b["primeiro"] - 1] if b["primeiro"] > 0 else None
         prox = todas[b["ultimo"] + 1] if b["ultimo"] + 1 < len(todas) else None
-        if ant is not None and not ant["manter"] and nivel(b["cs"]) > lim_qa:
+        if ant is not None and not ant["manter"] and not b.get("interno_ini") and nivel(b["cs"]) > lim_qa:
             avisos.append({"t": round(t, 2), "onde": "começo", "texto": " ".join(w["w"] for w in b["pal"][:3])})
-        if prox is not None and not prox["manter"] and nivel(b["ce"]) > lim_qa:
+        if prox is not None and not prox["manter"] and not b.get("interno_fim") and nivel(b["ce"]) > lim_qa:
             avisos.append({"t": round(t + dur, 2), "onde": "fim", "texto": " ".join(w["w"] for w in b["pal"][-3:])})
         t += dur
         if bi < len(blocos) - 1:

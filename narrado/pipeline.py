@@ -124,8 +124,9 @@ def planejar(cenas, banco, jogos):
         vs = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "v"]
         im = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "i"]
         seq = []
+        por_imagem = 4 if len(vs) >= 3 * max(len(im), 1) else 3 if len(vs) >= 2 * max(len(im), 1) else 2
         while vs or im:
-            for _ in range(2):
+            for _ in range(por_imagem):  # vídeo prende mais que imagem parada
                 if vs:
                     seq.append(vs.pop(0))
             if im:
@@ -385,7 +386,8 @@ def jogos_necessarios(job, cenas):
         if longo:
             trailers[n] = 6 if n == principal else (4 if q >= 6 else 3 if q >= 3 else 2)
         else:
-            trailers[n] = assets.MAX_TRAILERS if n == principal else (2 if q >= 2 else 1)
+            # vídeo de 1 min+ tem ~40 cortes: o jogo principal precisa de material variado (sem repetir trecho)
+            trailers[n] = 5 if n == principal else (2 if q >= 2 else 1)
     pulados = [n for n in lista if n not in nomes]
     if pulados:
         print(f"jogos citados sem tópico próprio (não busco material): {pulados}", flush=True)
@@ -433,6 +435,24 @@ def preparar(pasta, st):
         st.etapa(f"Escolhendo os melhores trechos dos trailers ({k}/{n})", 18 + int(10 * k / n))
     banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"), prog)
     banco = assets.segunda_rodada(jogos, banco, RAW, [c["assunto"] for c in cenas if c.get("assunto")] + nomes[:1])
+    # pouco trecho de vídeo para o tamanho do roteiro = o mesmo trecho voltando várias vezes (fica chato).
+    # Completa com gameplay longa (janelas espalhadas) dos jogos com mais tempo de tela.
+    palavras_rot = sum(len(c["texto"].split()) for c in cenas)
+    cortes_previstos = palavras_rot / 3.1 / (3.2 if job.get("formato") == "horizontal" else 1.7)
+    assuntos_l = [c.get("assunto") for c in cenas if c.get("assunto")] or nomes[:1]
+    for j in sorted(jogos, key=lambda x: -sum(1 for a in assuntos_l if assets.mesmo_jogo(a, x["nome"], 0.4) or norm(a) == norm(x["nome"]))):
+        fatia = sum(1 for a in assuntos_l if assets.mesmo_jogo(a, j["nome"], 0.4) or norm(a) == norm(j["nome"])) / max(len(assuntos_l), 1)
+        precisa = cortes_previstos * max(fatia, 0.3) * 0.8
+        tem = sum(1 for m in banco.values() if m["jogo"] == j["chave"] and m["tipo"] == "v")
+        if fatia < 0.2 or tem >= precisa or any("_g_" in t["arquivo"] for t in j["trailers"]):
+            continue
+        st.etapa(f"Buscando mais cenas de {j['nome']} (tinha {tem} trechos)", 26)
+        g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
+        if g:
+            extra = dict(j, trailers=[g], screens=[])
+            banco.update(assets.montar_banco([extra], os.path.join(pasta, "thumbs"), ti0=len(j["trailers"])))
+            j["trailers"].append(g)
+            print(f"{j['nome']}: {tem} → {sum(1 for m in banco.values() if m['jogo'] == j['chave'] and m['tipo'] == 'v')} trechos de vídeo", flush=True)
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
     # fotos reais (Wikimedia Commons, licença livre) do que o tópico mostra quando não é jogo:
     # console, controle, pessoa, empresa, evento
