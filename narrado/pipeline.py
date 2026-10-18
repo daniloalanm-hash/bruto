@@ -682,26 +682,22 @@ TESTE_LINKS = ["https://www.rockstargames.com/videos/rkoCtr1r", "https://www.roc
 
 
 def teste_fontes(pasta, st):
-    """Diagnóstico: busca do jogo na Steam."""
+    """Diagnóstico: o que o Dailymotion tem do jogo (gameplay longa e vídeos curtos)."""
+    import io
+    import contextlib
     import urllib.parse
-    rel = {}
-    for nome in ("Car Parking Multiplayer 2", "Car Parking Multiplayer", "Car Parking"):
-        q = urllib.parse.quote(nome)
-        for cc in ("br", "us"):
-            try:
-                rel[f"storesearch_{cc}_{nome}"] = json.loads(assets._get(
-                    f"https://store.steampowered.com/api/storesearch/?term={q}&cc={cc}&l=portuguese"))
-            except Exception as e:
-                rel[f"storesearch_{cc}_{nome}"] = str(e)
+    rel, buf = {}, io.StringIO()
+    for termo in ("Car Parking Multiplayer 2", "Car Parking Multiplayer 2 gameplay", "CPM 2 gameplay", "Car Parking Multiplayer 2 PC"):
         try:
-            html = assets._get(f"https://store.steampowered.com/search/suggest?term={q}&f=games&cc=BR&l=portuguese").decode("utf8", "ignore")
-            rel["suggest_" + nome] = html[:3000]
+            d = json.loads(assets._get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
+                {"search": termo, "fields": "id,title,duration", "limit": 15})))
+            rel[termo] = [f"{v['title']} ({v['duration']}s)" for v in d.get("list", [])]
         except Exception as e:
-            rel["suggest_" + nome] = str(e)
-        try:
-            rel["achar_jogo"] = assets.achar_jogo(nome)
-        except Exception as e:
-            rel["achar_jogo"] = str(e)
+            rel[termo] = str(e)
+    with contextlib.redirect_stdout(buf):
+        rel["gameplay_longo"] = assets.gameplay_longo("Car Parking Multiplayer 2", "teste_cpm", RAW)
+        rel["curtos"] = assets._dailymotion("Car Parking Multiplayer 2", "teste_cpm", RAW, n=3)
+    rel["log"] = buf.getvalue()[-3000:]
     destino = os.path.join(pasta, "teste_fontes.json")
     gravar(destino, rel)
     pub = publicador()
