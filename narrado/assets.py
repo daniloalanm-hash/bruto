@@ -1035,8 +1035,13 @@ def imagens_commons(termo, pasta, n=3, largura=1600):
     req = urllib.request.Request(f"https://commons.wikimedia.org/w/api.php?{q}", headers={"User-Agent": COMMONS_UA})
     with urllib.request.urlopen(req, timeout=30) as r:
         d = _json.loads(r.read())
-    pags = sorted((d.get("query") or {}).get("pages", {}).values(), key=lambda p: p.get("index", 99))
     palavras = [w for w in re.findall(r"[a-z0-9]+", termo.lower()) if w not in _GENERICAS]
+
+    def extras(p):  # arquivo cujo nome é só o que foi pedido ("Xbox Series X.png") vem primeiro
+        tok = set(re.findall(r"[a-z0-9]+", p.get("title", "").lower().replace("_", " ")))
+        return len(tok - set(palavras) - {"file", "jpg", "jpeg", "png", "webp"})
+    pags = sorted((d.get("query") or {}).get("pages", {}).values(),
+                  key=lambda p: (min(extras(p), 4), p.get("index", 99)))
     out = []
     for p in pags:
         ii = (p.get("imageinfo") or [{}])[0]
