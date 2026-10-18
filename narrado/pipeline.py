@@ -340,7 +340,8 @@ def preparar(pasta, st):
               **({"emoji": c["emoji"]} if c.get("emoji") else {}),
               # "numero" presente (mesmo null) = a IA já decidiu; ausente (roteiro antigo) = detecta no texto
               **({"numero": c["numero"] if isinstance(c.get("numero"), dict) and c["numero"].get("valor") else None}
-                 if "numero" in c else {})}
+                 if "numero" in c else {}),
+              **({"imagem": str(c["imagem"]).strip()} if c.get("imagem") else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes, n_trailers = jogos_necessarios(job, cenas)
 
@@ -360,6 +361,20 @@ def preparar(pasta, st):
     banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"), prog)
     banco = assets.segunda_rodada(jogos, banco, RAW, [c["assunto"] for c in cenas if c.get("assunto")] + nomes[:1])
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
+    # fotos reais (Wikimedia Commons, licença livre) do que o tópico mostra quando não é jogo:
+    # console, controle, pessoa, empresa, evento
+    fotos_termo = {}
+    for termo in dict.fromkeys(c["imagem"] for c in cenas if c.get("imagem")):
+        try:
+            achadas = assets.imagens_commons(termo, RAW, n=3)
+        except Exception as e:
+            print(f"aviso: Commons '{termo}': {e}", flush=True)
+            achadas = []
+        fotos_termo[termo] = []
+        for ent in achadas:
+            mid = os.path.splitext(ent["arquivo"])[0]
+            banco[mid] = ent
+            fotos_termo[termo].append(mid)
     sprite = assets.sprite(banco, RAW, os.path.join(pasta, "cenas.jpg"))
     assuntos = {c["assunto"] for c in cenas if c.get("assunto")} | set(nomes[:1])
     sem_video = sorted(a for a in assuntos if not any(
@@ -386,6 +401,10 @@ def preparar(pasta, st):
         completar_cenas(palavras)
 
     cenas = planejar(cenas, banco, jogos)
+    for c in cenas:
+        fotos = fotos_termo.get(c.get("imagem")) or []
+        if fotos:  # a foto do que está sendo falado vem antes do material do jogo
+            c["midias"] = fotos + [m for m in c.get("midias", []) if m not in fotos]
     projeto = {
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
         "materia": job.get("materia") or {},
@@ -446,6 +465,12 @@ def rerender(pasta, st):
             assets.baixar_link_video(ln["url"], ln["chave"], RAW, i)  # já baixado: não faz nada
     if any(m["arquivo"].startswith("lib_") for m in falta):
         da_biblioteca(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
+    for m in falta:
+        if m.get("jogo") == "commons":
+            try:
+                assets.baixar_commons(m, RAW)
+            except Exception as e:
+                print(f"aviso: foto do Commons não baixou de novo: {e}", flush=True)
     urls = [m["url"] for m in falta if m.get("jogo") == "materia" and m.get("url")]
     if urls:
         assets.baixar_imagens_materia(urls, RAW)
@@ -562,8 +587,8 @@ def teste_fontes(pasta, st):
     import io
     import contextlib
     buf, saidas = io.StringIO(), []
-    termos = ["Xbox Series X", "PlayStation 5 console", "Nintendo Switch 2", "Xbox controller", "Phil Spencer",
-              "Gabe Newell", "Ubisoft headquarters", "Steam Deck"]
+    termos = ["Xbox Series X", "PlayStation 5", "DualSense", "Xbox Wireless Controller", "Steam Deck",
+              "Nintendo Switch 2", "Gamescom", "Hideo Kojima"]
     rel = {}
     with contextlib.redirect_stdout(buf):
         for k, t in enumerate(termos):

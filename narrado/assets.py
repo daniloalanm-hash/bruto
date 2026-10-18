@@ -988,7 +988,37 @@ def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):
 
 COMMONS_UA = "BrutoNarrado/1.0 (https://bruto-nu.vercel.app; github.com/daniloalanm-hash)"
 _RUIM_COMMONS = re.compile(r"logo|icon|map|flag|diagram|chart|screenshot|svg|signature|coat.of.arms|seal|"
-                           r"wordmark|banner|button|symbol|\.pdf|\.tif", re.I)
+                           r"wordmark|banner|button|symbol|motherboard|teardown|disassembl|pcb|inside|"
+                           r"\.pdf|\.tif", re.I)
+_GENERICAS = {"console", "the", "de", "do", "da", "of", "photo", "foto", "headquarters", "sede", "office", "logo",
+              "and", "e", "game", "games", "event", "evento"}
+
+
+def _fundo_liso(arq):
+    """Foto de produto (fundo branco/liso): mostra inteira sobre fundo desfocado em vez de recortar."""
+    try:
+        import numpy as np
+        from PIL import Image
+        with Image.open(arq) as im:
+            a = np.asarray(im.convert("L").resize((200, 120)), dtype=float)
+        borda = np.concatenate([a[:6].ravel(), a[-6:].ravel(), a[:, :6].ravel(), a[:, -6:].ravel()])
+        return bool(borda.std() < 12 and (borda.mean() > 225 or borda.mean() < 25))
+    except Exception:
+        return False
+
+
+def baixar_commons(entrada, pasta):
+    """Re-render sem cache: baixa de novo a foto do Commons pela URL guardada no banco."""
+    import urllib.request
+    destino = os.path.join(pasta, entrada["arquivo"])
+    if os.path.exists(destino) or not entrada.get("url"):
+        return
+    bruto = destino + ".orig"
+    req = urllib.request.Request(entrada["url"], headers={"User-Agent": COMMONS_UA})
+    with urllib.request.urlopen(req, timeout=40) as r, open(bruto, "wb") as f:
+        f.write(r.read())
+    ffmpeg("-i", bruto, "-frames:v", 1, "-q:v", 2, destino)
+    os.remove(bruto)
 
 
 def imagens_commons(termo, pasta, n=3, largura=1600):
@@ -1006,7 +1036,7 @@ def imagens_commons(termo, pasta, n=3, largura=1600):
     with urllib.request.urlopen(req, timeout=30) as r:
         d = _json.loads(r.read())
     pags = sorted((d.get("query") or {}).get("pages", {}).values(), key=lambda p: p.get("index", 99))
-    palavras = [w for w in re.findall(r"[a-z0-9]+", termo.lower()) if len(w) > 1]
+    palavras = [w for w in re.findall(r"[a-z0-9]+", termo.lower()) if w not in _GENERICAS]
     out = []
     for p in pags:
         ii = (p.get("imageinfo") or [{}])[0]
@@ -1015,9 +1045,10 @@ def imagens_commons(termo, pasta, n=3, largura=1600):
             continue
         if ii.get("width", 0) < 900 or ii.get("height", 0) < 600:
             continue
-        tnorm = titulo.lower()
-        if sum(w in tnorm for w in palavras) < max(1, len(palavras) - 1):
-            continue  # o nome do arquivo tem que falar do que foi pedido
+        tok = set(re.findall(r"[a-z0-9]+", titulo.lower().replace("_", " ")))
+        # TODAS as palavras específicas no nome do arquivo ("Xbox Series X" não aceita foto do Xbox antigo)
+        if not palavras or not all(w in tok or (len(w) > 3 and w in titulo.lower()) for w in palavras):
+            continue
         meta = ii.get("extmetadata") or {}
         lic = (meta.get("LicenseShortName") or {}).get("value", "")
         if not re.search(r"CC|Public domain|PD", lic, re.I):
@@ -1038,6 +1069,7 @@ def imagens_commons(termo, pasta, n=3, largura=1600):
             continue
         autor = re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()[:80]
         out.append({"tipo": "i", "jogo": "commons", "arquivo": os.path.basename(destino), "url": url,
+                    "encaixar": _fundo_liso(destino),
                     "credito": f"{autor} / {lic} / Wikimedia Commons".strip(" /"), "titulo": titulo, "termo": termo})
         if len(out) >= n:
             break

@@ -171,6 +171,7 @@ Para cada tópico informe:
 - "texto": o que será falado.
 - "destaques": 2 a 4 palavras ou expressões curtas do próprio texto (copiadas exatamente) que merecem destaque colorido na legenda.
 - "assunto": nome do jogo de que esse trecho está falando (para mostrar imagens desse jogo). Se o trecho fala de uma empresa, campeonato, time ou console, use o jogo da matéria mais ligado a ele (ex.: greve na Activision → "Call of Duty: Modern Warfare 4"; final do VALORANT Champions → "VALORANT"). Use null se for um comentário geral ou se nenhum jogo da matéria tiver relação — aí aparece o jogo principal ou a manchete da notícia. NUNCA ponha um jogo que não tem a ver com aquele trecho.
+- "imagem": quando o tópico fala de algo que NÃO é um jogo e que existe em foto — console, controle, aparelho, pessoa (CEO, jogador, criador), empresa/sede, evento — o nome exato disso em inglês para buscar uma foto real (ex.: "Xbox Series X", "DualSense", "Nintendo Switch 2", "Phil Spencer", "Ubisoft Montreal", "Gamescom"). Use o nome do produto/pessoa, sem descrição. Nos outros tópicos, null.
 - "numero": se o tópico tiver UM número de impacto (preço, valor em dinheiro, porcentagem, quantidade grande, placar), {"valor": "o número como está no texto, ex.: R$ 379, 4 mil, 35%, 2-1", "rotulo": "o que ele significa em 2 a 5 palavras, ex.: preço no Brasil"} — vira uma cartela grande na tela no momento em que ele é falado. Se for PLACAR de esports, acrescente "times": ["time do 1º número", "time do 2º número"] com os nomes oficiais (ex.: {"valor": "2-1", "rotulo": "final do upper bracket", "times": ["LOUD", "Team Vitality"]}) — vira um placar com os logos. Datas e anos não contam. No máximo 4 tópicos com número; nos outros, null.
 - "emoji": UM emoji que combine com a emoção do tópico (ex.: 💀 fim/morte, 💰 dinheiro, 😱 surpresa, 🔥 hype, 🏆 recorde, ⏳ tempo). Use em no máximo metade dos tópicos; nos outros, null.
 
@@ -179,7 +180,7 @@ Também:
 - "post": legenda para publicar o vídeo no TikTok/Reels: {"legenda": "1 a 2 frases que instigam + pergunta + o mesmo pedido de salvar/compartilhar do fim do vídeo", "hashtags": ["#5 a 8 hashtags relevantes, em português quando fizer sentido"]}.
 
 Responda SOMENTE com JSON:
-{"titulo": "...", "titulo_tela": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "emoji": null, "numero": null}], "post": {"legenda": "...", "hashtags": ["#..."]}}
+{"titulo": "...", "titulo_tela": "...", "jogos": ["nome do jogo principal", "outros jogos citados"], "cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "emoji": null, "imagem": null, "numero": null}], "post": {"legenda": "...", "hashtags": ["#..."]}}
 
 MATÉRIA
 Título: ${materia.titulo || ''}
@@ -315,6 +316,7 @@ function roteiroDaIA(r, materia) {
     jogos: (r.jogos || []).filter(Boolean),
     cenas: (r.cenas || []).filter((c) => c.texto).map((c) => ({
       texto: c.texto, destaques: c.destaques || [], assunto: c.assunto || null, emoji: c.emoji || null,
+      imagem: typeof c.imagem === 'string' && c.imagem.trim() ? c.imagem.trim().slice(0, 60) : null,
       numero: c.numero && c.numero.valor && String(c.texto).includes(String(c.numero.valor).split(' ')[0])
         ? { valor: String(c.numero.valor), rotulo: String(c.numero.rotulo || ''),
           ...(Array.isArray(c.numero.times) && c.numero.times.length === 2 ? { times: c.numero.times.map(String) } : {}) } : null,
@@ -1113,7 +1115,12 @@ function renderPost() {
   const p = state.projeto;
   let post = p?.post && (p.post.legenda || p.post.hashtags?.length) ? p.post : null;
   if (!post) { try { post = JSON.parse(ls.get(K.post + state.tag) || 'null'); } catch { post = null; } }
-  $('#textoPost').value = textoDoPost(post);
+  // fotos do Wikimedia Commons: a licença pede o crédito do autor — vai junto na legenda do post
+  const usadas = new Set((p?.cenas || []).flatMap((c) => c.midias || []));
+  const creditos = [...new Set(Object.entries(p?.banco || {})
+    .filter(([id, m]) => m.jogo === 'commons' && m.credito && usadas.has(id)).map(([, m]) => m.credito))];
+  const texto = textoDoPost(post);
+  $('#textoPost').value = creditos.length && !texto.includes('Wikimedia') ? `${texto}\n\nFotos: ${creditos.join('; ')}` : texto;
   $('#boxPost').hidden = false;
 }
 $('#btnCopiarPost').addEventListener('click', async () => {
@@ -1292,7 +1299,7 @@ function trazerTomada(g) {
 }
 
 /* ---------------- 4c. ajustes: cenas ---------------- */
-const nomeJogo = (chave) => ({ proprio: 'Suas mídias', materia: 'Imagens da matéria', cartao: 'Manchete e números' }[chave] || state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
+const nomeJogo = (chave) => ({ proprio: 'Suas mídias', materia: 'Imagens da matéria', cartao: 'Manchete e números', commons: 'Fotos (Commons)' }[chave] || state.projeto?.jogos?.find((j) => j.chave === chave)?.nome || chave);
 function mini(mid, extra = {}) {
   const p = state.projeto, m = p.banco[mid], sp = p.sprite;
   const k = m?.sprite ?? 0;
@@ -1469,6 +1476,7 @@ function renderGrade() {
   if (Object.values(p.banco).some((m) => m.jogo === 'materia')) grupos.push({ chave: 'materia', nome: 'Imagens da matéria' });
   if (Object.values(p.banco).some((m) => m.jogo === 'proprio')) grupos.push({ chave: 'proprio', nome: 'Suas mídias' });
   if (Object.values(p.banco).some((m) => m.jogo === 'cartao')) grupos.push({ chave: 'cartao', nome: 'Manchete e números' });
+  if (Object.values(p.banco).some((m) => m.jogo === 'commons')) grupos.push({ chave: 'commons', nome: 'Fotos (Commons)' });
   $('#filtroJogos').replaceChildren(...grupos.map((j) => h('button', {
     class: `btn small${j.chave === filtroJogo ? ' accent' : ''}`, onclick: () => { filtroJogo = j.chave; renderGrade(); },
   }, j.nome)));
@@ -1481,7 +1489,7 @@ function renderGrade() {
         const c = p.cenas[troca.cena];
         c.midias = c.midias || [];
         if (troca.pos < c.midias.length) c.midias[troca.pos] = id; else c.midias.push(id);
-        if (p.banco[id].jogo !== c.jogo && !['proprio', 'materia', 'cartao'].includes(p.banco[id].jogo)) c.jogo = p.banco[id].jogo;
+        if (p.banco[id].jogo !== c.jogo && !['proprio', 'materia', 'cartao', 'commons'].includes(p.banco[id].jogo)) c.jogo = p.banco[id].jogo;
         $('#dlgTroca').close(); marcarSujo(); renderCenas();
       },
     },
