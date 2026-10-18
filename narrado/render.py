@@ -785,10 +785,17 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     trans_cena = transicoes(projeto, faixas)
     lista, k = [], 0
     usados_cena = []
+    # pouco material (jogo novo com 1 trailer só): cortes um pouco mais longos em vez de repetir trecho.
+    # Com material de sobra continua o ritmo normal (CUT).
+    uso = {}
+    distintos = max(len(banco), 1)
+    corte = min(max(CUT, total / distintos * 0.85), CUT * 1.7)
+    if corte > CUT + 0.05:
+        print(f"pouco material ({distintos} mídias para {total:.0f}s): cortes de {corte:.1f}s", flush=True)
     diag = []
     for fi, (c, a, b) in enumerate(faixas):
         dur = b - a
-        n = max(1, round(dur / CUT))
+        n = max(1, round(dur / corte))
         midias = [m for m in projeto["cenas"][c].get("midias", []) if m in banco] or list(banco)[:1]
         tr = trans_cena.get(c)
         usados_cena.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": [],
@@ -801,14 +808,22 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 jn = 1 if t_num is None else min(max(int((t_num - a) / (dur / n)), 0), n - 1)
                 fixo[jn] = cid
         for j in range(n):
-            if j < len(midias):
-                mid = midias[j]
-            else:  # na 2ª volta do rodízio, cartão não repete (a manchete já apareceu neste tópico)
-                giro = [x for x in midias if not banco[x].get("cartao")] or midias
-                mid = giro[(j - len(midias)) % len(giro)]
+            if j == 0:
+                mid = midias[0]
+            else:
+                # o trecho MENOS usado no vídeo até aqui (não repete enquanto houver inédito); cartão não volta
+                giro = [x for x in midias if not (banco[x].get("cartao") and uso.get(x))] or midias
+                # todo material do mesmo jogo vale (não só os 6 sugeridos para o tópico) — regra do jogo certo mantida
+                jogo_c = projeto["cenas"][c].get("jogo")
+                extras = [x for x, mm in banco.items() if jogo_c and mm.get("jogo") == jogo_c and x not in giro
+                          and not mm.get("cartao") and not mm.get("capa")]
+                ultimo_mid = usados_cena[-1]["cortes"][-1] if usados_cena[-1]["cortes"] else None
+                ordem = {x: i for i, x in enumerate(giro + extras)}
+                mid = min(giro + extras, key=lambda x: (uso.get(x, 0), x == ultimo_mid, ordem[x]))
             mid = fixo.get(j) or mid
+            uso[mid] = uso.get(mid, 0) + 1
             m = banco[mid]
-            rep = j // len(midias)
+            rep = uso[mid] - 1  # reaproveitado: mostra outra parte do trecho
             d = dur / n
             out = os.path.join(seg_dir, f"{k:04d}.mp4")
             fx = None
