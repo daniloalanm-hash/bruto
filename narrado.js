@@ -364,6 +364,7 @@ function atualizaFormato() {
   $('#duracao').replaceChildren(...DURACOES[f].map(([v, t]) => h('option', { value: v }, t)));
   if (DURACOES[f].some(([v]) => v === atual)) $('#duracao').value = atual;
   $('#boxYoutube').hidden = f !== 'horizontal';
+  if (f === 'horizontal') $('#boxTexto').open = true; // no YouTube, o tema escrito já basta
   try { localStorage.setItem('bruto:narrado:formato', f); } catch { /* sem armazenamento */ }
 }
 $('#formato').addEventListener('change', atualizaFormato);
