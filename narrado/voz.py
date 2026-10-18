@@ -177,6 +177,17 @@ def partir_pausas(blocos, db, passo):
                 i = j
             else:
                 i += 1
+        # respiro/silêncio colado nas pontas do bloco (entre frases): deixa só ~0,12 s
+        k = int(b["cs"] / passo)
+        while k < k1 and quieto[k]:
+            k += 1
+        if (k - k0) * passo > 0.25:
+            b["cs"] = max(b["cs"], k * passo - 0.12)
+        k = k1
+        while k > k0 and quieto[k - 1]:
+            k -= 1
+        if (k1 - k) * passo > 0.25:
+            b["ce"] = min(b["ce"], k * passo + 0.12)
         if not cortes:
             novos.append(b)
             continue
@@ -186,15 +197,14 @@ def partir_pausas(blocos, db, passo):
             pedacos.append((inicio, x0))
             inicio = x1
         pedacos.append((inicio, b["ce"]))
-        for w in b["pal"]:
-            for x0, x1 in cortes:
-                if w["s"] < x1 and w["e"] > x0:  # atravessa o trecho cortado: fica do lado onde tem mais som
-                    if (x0 - w["s"]) >= (w["e"] - x1):
-                        w["e"] = max(w["s"] + 0.05, min(w["e"], x0))
-                    else:
-                        w["s"] = min(w["e"] - 0.05, max(w["s"], x1))
+        def lado(w):  # palavra que atravessa o corte fica do lado onde tem mais som (sem mexer no tempo dela)
+            for pi, (c0, c1) in enumerate(pedacos):
+                if min(w["e"], c1) - max(w["s"], c0) > 0:
+                    melhor = max(range(len(pedacos)), key=lambda q: min(w["e"], pedacos[q][1]) - max(w["s"], pedacos[q][0]))
+                    return melhor
+            return 0
         for pi, (c0, c1) in enumerate(pedacos):
-            pal = [w for w in b["pal"] if c0 - 0.01 <= (w["s"] + w["e"]) / 2 <= c1 + 0.01]
+            pal = [w for w in b["pal"] if lado(w) == pi]
             nb = dict(b, cs=c0, ce=c1, pal=pal)
             nb["interno_ini"] = pi > 0
             nb["interno_fim"] = pi < len(pedacos) - 1
@@ -297,9 +307,9 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
         filt.append(f"[0:a]atrim={b['cs']:.3f}:{b['ce']:.3f},asetpts=PTS-STARTPTS,"
                     f"afade=t=in:d=0.012,afade=t=out:st={max(dur - 0.06, 0):.3f}:d=0.06[a{bi}]")
         partes.append(f"[a{bi}]")
-        for w in b["pal"]:
-            w["ns"] = round(t + w["s"] - b["cs"], 3)
-            w["ne"] = round(t + w["e"] - b["cs"], 3)
+        for w in b["pal"]:  # palavra esticada pelo Whisper sobre o silêncio cortado: presa ao pedaço dela
+            w["ns"] = round(t + min(max(w["s"], b["cs"]), b["ce"]) - b["cs"], 3)
+            w["ne"] = round(t + max(min(w["e"], b["ce"]), max(w["s"], b["cs"])) - b["cs"], 3)
         ant = todas[b["primeiro"] - 1] if b["primeiro"] > 0 else None
         prox = todas[b["ultimo"] + 1] if b["ultimo"] + 1 < len(todas) else None
         if ant is not None and not ant["manter"] and not b.get("interno_ini") and nivel(b["cs"]) > lim_qa:
@@ -308,7 +318,7 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
             avisos.append({"t": round(t + dur, 2), "onde": "fim", "texto": " ".join(w["w"] for w in b["pal"][-3:])})
         t += dur
         if bi < len(blocos) - 1:
-            filt.append(f"[0:a]atrim={t_fundo:.3f}:{t_fundo + GAP_NEW:.3f},asetpts=PTS-STARTPTS[g{bi}]")
+            filt.append(f"[0:a]atrim={t_fundo:.3f}:{t_fundo + GAP_NEW:.3f},asetpts=PTS-STARTPTS,afade=t=in:d=0.008,afade=t=out:st={GAP_NEW - 0.008:.3f}:d=0.008[g{bi}]")
             partes.append(f"[g{bi}]")
             t += GAP_NEW
     ruido = ruido_de_fundo(src, todas) if modo == "gravada" else -90.0
