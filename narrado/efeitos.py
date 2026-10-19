@@ -106,8 +106,28 @@ def som_zoom(dur=0.45):
     return _normaliza(x + 0.5 * sub)
 
 
+def som_clique(dur=0.06):
+    """Clique de mouse: estalo curto e seco."""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    rng = np.random.default_rng(21)
+    x = rng.standard_normal(n) * np.exp(-t * 900) + np.sin(2 * np.pi * 2400 * t) * np.exp(-t * 600) * 0.6
+    return _normaliza(x, 0.7)
+
+
+def som_sino(dur=1.2):
+    """Sininho de notificação: dois tons metálicos com decaimento."""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    x = (np.sin(2 * np.pi * 1318 * t) + 0.6 * np.sin(2 * np.pi * 1976 * t) + 0.3 * np.sin(2 * np.pi * 2637 * t))
+    env = np.minimum(t / 0.004, 1) * np.exp(-t * 4.5)
+    return _normaliza(x * env, 0.6)
+
+
 SONS = {
-    "woosh": (som_woosh, 0.55 * 0.55),   # (gerador, segundos até o pico — alinhado ao momento do evento)
+    "woosh": (som_woosh, 0.55 * 0.55),
+    "clique": (som_clique, 0.0),
+    "sino": (som_sino, 0.0),   # (gerador, segundos até o pico — alinhado ao momento do evento)
     "pop": (som_pop, 0.0),
     "impacto": (som_impacto, 0.0),
     "glitch": (som_glitch, 0.02),

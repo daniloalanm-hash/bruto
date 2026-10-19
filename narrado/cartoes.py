@@ -264,6 +264,38 @@ def numero(valor, rotulo, img, fontes, destino):
     return destino
 
 
+def capitulo(numero, titulo, img, fontes, destino):
+    """Cartela de capítulo do YouTube: "CAPÍTULO 2" pequeno em amarelo e o título grande, sobre a cena."""
+    from PIL import ImageDraw
+    bg = _fundo(img)
+    d = ImageDraw.Draw(bg)
+    f_num = _fonte(fontes, "Montserrat-Black.ttf", 44 if W > H else 52)
+    rot = f"CAPÍTULO {numero}"
+    # título: tira "Nome do jogo:" do começo se o resto já é o título (fica "O Terror Slasher dos Anos 80")
+    tit = str(titulo).strip()
+    linhas, tam = [], 150
+    while tam > 70:
+        f_tit = _fonte(fontes, "Anton-Regular.ttf", tam)
+        linhas = _quebrar(d, tit.upper().split(), f_tit, W * 0.84)
+        if len(linhas) <= 2:
+            break
+        tam -= 8
+    linhas = linhas[:3]
+    alt_l = int(tam * 1.12)
+    total = 70 + alt_l * len(linhas)
+    y = int(H * 0.46 - total / 2)
+    wr = d.textlength(rot, font=f_num)
+    d.rectangle((W // 2 - wr / 2 - 26, y - 6, W // 2 + wr / 2 + 26, y + 58), fill=AMARELO)
+    d.text((W // 2, y + 26), rot, font=f_num, fill=(0, 0, 0), anchor="mm")
+    y += 90
+    for ln in linhas:
+        d.text((W // 2, y + alt_l // 2), " ".join(ln), font=f_tit, fill=(255, 255, 255), anchor="mm",
+               stroke_width=6, stroke_fill=(0, 0, 0))
+        y += alt_l
+    bg.save(destino, quality=92)
+    return destino
+
+
 # ---------------------------------------------------------------- números do roteiro
 
 _ESCALA = r"(?:milh(?:ão|ões|oes|ao)|bilh(?:ão|ões|oes|ao)|trilh(?:ão|ões|oes|ao)|mil)\b"
@@ -528,7 +560,7 @@ def capa_do_jogo(appid, raw, destino):
     return destino
 
 
-def momento_do_nome(projeto, nome, cena_min=0):
+def momento_do_nome(projeto, nome, cena_min=0, cena=None):
     """(cena, instante) da 1ª vez que o nome do jogo é falado (1ª palavra significativa do nome)."""
     toks = [t for t in re.findall(r"[a-z0-9]+", _norm(nome)) if len(t) >= 3 and t not in ("the", "and")]
     if not toks:
@@ -538,7 +570,7 @@ def momento_do_nome(projeto, nome, cena_min=0):
     lim = lambda w: re.sub(r"[^a-z0-9]", "", _norm(w.get("legenda") or w["w"]))
     alvo = toks[:2]  # palavra exata (não "carros" para "Car") e, se houver, a seguinte também
     for i, w in enumerate(ws):
-        if w["cena"] < cena_min or lim(w) != alvo[0]:
+        if w["cena"] < cena_min or (cena is not None and w["cena"] != cena) or lim(w) != alvo[0]:
             continue
         if len(alvo) > 1 and (i + 1 >= len(ws) or lim(ws[i + 1]) != alvo[1]):
             continue
@@ -596,6 +628,27 @@ def aplicar(projeto, raw, fontes, pasta_trab):
                               "nome": j["nome"], "chave_jogo": j["chave"]}
             except Exception as e:
                 print(f"aviso: capa de {j.get('nome')} não gerada: {e}", flush=True)
+
+    # 2b) YouTube: cartela de capítulo (número + título sobre a cena do jogo desfocada) na virada de capítulo
+    if W > H:
+        n_cap = 0
+        for k, c in enumerate(cenas):
+            cap = str(c.get("capitulo") or "").strip()
+            if not cap:
+                continue
+            n_cap += 1
+            if k == 0:
+                continue  # a abertura já tem a chamada do gancho
+            mid = f"cartao_cap_{k}"
+            arq = f"cartao_{tag}_cap{k}.jpg"
+            try:
+                capitulo(n_cap - 1 if str(cenas[0].get("capitulo") or "") else n_cap, cap,
+                         _quadro_da_cena(projeto, k, raw, pasta_trab), fontes, os.path.join(raw, arq))
+                if mid not in banco:
+                    novo = True
+                banco[mid] = {"tipo": "i", "jogo": "cartao", "arquivo": arq, "cartao": "capitulo", "cena": k}
+            except Exception as e:
+                print(f"aviso: cartela do capítulo {cap} não gerada: {e}", flush=True)
 
     # 3) números
     feitos = 0

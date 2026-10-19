@@ -108,12 +108,21 @@ def norm_txt(s):
     return "".join(c for c in unicodedata.normalize("NFD", str(s or "").lower()) if unicodedata.category(c) != "Mn").replace("'", "")
 
 
-def planejar(cenas, banco, jogos):
+def planejar(cenas, banco, jogos, longo=False):
     """Cada cena usa material do jogo de que ela fala; cenas gerais usam o jogo principal.
 
     Regra do Danilo: imagem de outro jogo só aparece quando aquele jogo está sendo falado.
     """
     chaves = [chave_do_jogo(c.get("assunto"), jogos) for c in cenas]
+    if longo:
+        # vídeo longo (top lista, capítulos): tópico sem jogo marcado continua no jogo do tópico anterior
+        # (antes caía no "principal" e aparecia jogo de outro capítulo)
+        ultimo = None
+        for k, ch in enumerate(chaves):
+            if ch:
+                ultimo = ch
+            elif ultimo:
+                chaves[k] = ultimo
     contagem = {}
     for ch in chaves:
         if ch:
@@ -154,6 +163,8 @@ def planejar(cenas, banco, jogos):
                         mix.append(b.pop(0))
             fila[j["chave"]]["seq"] = mix
     materia = [m for m, d in banco.items() if d.get("jogo") == "materia"]
+    if longo:
+        materia = []
     for k, c in enumerate(cenas):
         ch = chaves[k] or principal
         c["jogo"] = ch
@@ -460,7 +471,8 @@ def preparar(pasta, st):
     fotos_termo = {}
     for termo in dict.fromkeys(c["imagem"] for c in cenas if c.get("imagem")):
         try:
-            achadas = assets.imagens_commons(termo, RAW, n=3)
+            texto_t = " ".join(c["texto"] for c in cenas if c.get("imagem") == termo)
+            achadas = assets.imagens_commons(termo, RAW, n=2, texto=texto_t)
         except Exception as e:
             print(f"aviso: Commons '{termo}': {e}", flush=True)
             achadas = []
@@ -494,11 +506,12 @@ def preparar(pasta, st):
             w["manter"] = True
         completar_cenas(palavras)
 
-    cenas = planejar(cenas, banco, jogos)
+    cenas = planejar(cenas, banco, jogos, longo=job.get("formato") == "horizontal")
     for c in cenas:
         fotos = fotos_termo.get(c.get("imagem")) or []
-        if fotos:  # a foto do que está sendo falado vem antes do material do jogo
-            c["midias"] = fotos + [m for m in c.get("midias", []) if m not in fotos]
+        if fotos:
+            # UMA foto, só no instante em que o termo é falado (o render ancora); o resto do tópico é do jogo
+            c["fotos"] = fotos[:1]
     projeto = {
         "versao": 1, "id": job.get("id"), "titulo": job.get("titulo", ""), "fonte": job.get("fonte", ""),
         "materia": job.get("materia") or {},

@@ -6,6 +6,7 @@ Ordem da montagem:
   3. legenda + título do gancho (ASS) e emojis (PNG) queimados por último, sempre nítidos;
   4. voz + trilha de efeitos (woosh, pop, impacto, glitch) mixados.
 """
+import math
 import os
 import re
 import shutil
@@ -296,7 +297,8 @@ def tipo_entrada(projeto, cena, ordem):
 def linha_tempo(projeto):
     """Início/fim de cada cena na timeline final, a partir das palavras mantidas, com J-cut/L-cut nas trocas."""
     mant = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None]
-    total = projeto["duracao_voz"] + 0.6
+    cauda = float(projeto.get("cauda", 10 if projeto.get("formato") == "horizontal" else 0) or 0)
+    total = projeto["duracao_voz"] + 0.6 + cauda
     inicios = {}
     for w in mant:
         inicios.setdefault(w["cena"], w["ns"])
@@ -519,8 +521,8 @@ def legenda_ass(projeto, destino, corte_gancho):
                 continue
             vistos.add(b["cena"])
             n_cap += 1
-            if b["cena"] == 0 or b["ini"] < 3:
-                continue  # a abertura já tem a chamada do gancho
+            if b["cena"] == 0 or b["ini"] < 3 or f"cartao_cap_{b['cena']}" in projeto.get("banco", {}):
+                continue  # a abertura já tem a chamada; capítulo com cartela grande não repete no canto
             a0, a1 = b["ini"] + 0.1, b["ini"] + 3.6
             ent = r"{\move(-700,96,90,96,0,260)\t(3200,3500,\alpha&HFF&)}"
             linhas.append(f"Dialogue: 4,{_ts(a0)},{_ts(a1)},CapitN,,0,0,0,,{{\\move(-700,52,96,52,0,260)\\t(3200,3500,\\alpha&HFF&)}}"
@@ -742,6 +744,20 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
         grafo.append(f"{v}[{idx}:v]overlay=x=(W-w)/2:y='{y_emo}-36*max(0\\,1-(t-{a0:.3f})/0.16)':"
                      f"enable='between(t\\,{a0:.3f}\\,{a1:.3f})'[ve{i}]")
         v = f"[ve{i}]"
+    # animação de like / inscrever-se / sininho quando a narração pede (YouTube)
+    if projeto.get("cta_anim", L["W"] > L["H"]):
+        import cta
+        tempos_cta = cta.momentos(projeto)
+        if tempos_cta:
+            padrao, dur_cta, _ = cta.gerar(os.path.join(pasta_trab, "cta"), largura=W if W > H else 1700)
+            for i, t0 in enumerate(tempos_cta):
+                entradas += ["-framerate", str(FPS), "-i", padrao]
+                idx = entradas.count("-i") - 1
+                y_cta = int(H * (0.60 if W > H else 0.70))
+                grafo.append(f"[{idx}:v]format=rgba,setpts=PTS+{t0:.3f}/TB[cta{i}]")
+                grafo.append(f"{v}[cta{i}]overlay=x=(W-w)/2:y={y_cta}:eof_action=pass:"
+                             f"enable='between(t\\,{t0:.3f}\\,{t0 + dur_cta:.3f})'[vc{i}]")
+                v = f"[vc{i}]"
     grafo.append(f"{v}fade=t=in:st=0:d=0.15[v]")
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo), "-map", "[v]", "-map", "0:a", "-t", f"{total:.2f}",
            "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-c:a", "copy", "-movflags", "+faststart", destino)
@@ -797,12 +813,22 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     for fi, (c, a, b) in enumerate(faixas):
         dur = b - a
         n = max(1, round(dur / corte))
+        if f"cartao_cap_{c}" in banco:
+            n = max(n, math.ceil(dur / 2.6))  # a cartela de capítulo fica ~2,5 s; depois volta o jogo
         midias = [m for m in projeto["cenas"][c].get("midias", []) if m in banco] or list(banco)[:1]
         tr = trans_cena.get(c)
         usados_cena.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": [],
                             "entrada": tipos.get(c, "inicio"), "transicao": tr or "inicio"})
         # cartela de número: entra no corte em que o número é falado
         fixo = {}
+        if f"cartao_cap_{c}" in banco:
+            fixo[0] = f"cartao_cap_{c}"
+        # foto real (Commons) do tópico: um corte só, quando o termo é falado (senão no 2º corte)
+        for fid in (projeto["cenas"][c].get("fotos") or [])[:1]:
+            if fid in banco and n >= 2:
+                quando = cartoes.momento_do_nome(projeto, projeto["cenas"][c].get("imagem") or "", cena=c)
+                jf = 1 if not quando else min(max(int((quando[1] - a) / (dur / n)), 0), n - 1)
+                fixo.setdefault(jf, fid)
         for cid, cm in banco.items():
             if cm.get("cartao") == "capa":
                 # capa do jogo entra no corte em que o NOME dele é falado pela 1ª vez (fora da chamada do gancho)
@@ -983,6 +1009,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 eventos.append((cortes[c], nome, ganho))
         for t in tempos_destaque:
             eventos.append((t, "pop", 0.28))
+        for c, t in cortes.items():
+            if f"cartao_cap_{c}" in banco:
+                eventos.append((t + 0.05, "impacto", 0.4))
+        if projeto.get("cta_anim", L["W"] > L["H"]):
+            import cta
+            for t0 in cta.momentos(projeto):
+                for dt, nome in [(0.55, "clique"), (1.35, "clique"), (2.15, "clique"), (2.2, "sino")]:
+                    eventos.append((t0 + dt, nome, 0.55 if nome == "clique" else 0.35))
         if fim_tit and projeto.get("titulo_estilo", "manchete") != "simples":
             n_linhas = len(_quebra_titulo(str(projeto["titulo_tela"]).upper(), 12))
             for i in range(1, n_linhas):  # cada linha da chamada "bate" com um som

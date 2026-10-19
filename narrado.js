@@ -197,7 +197,7 @@ Para cada tópico informe:
 - "texto": o que será falado.
 - "destaques": 2 a 4 palavras ou expressões curtas do próprio texto (copiadas exatamente) que merecem destaque colorido na legenda.
 - "assunto": nome do jogo de que esse trecho está falando (para mostrar imagens desse jogo). Se o trecho fala de uma empresa, campeonato, time ou console, use o jogo da matéria mais ligado a ele (ex.: greve na Activision → "Call of Duty: Modern Warfare 4"; final do VALORANT Champions → "VALORANT"). Use null se for um comentário geral ou se nenhum jogo da matéria tiver relação — aí aparece o jogo principal ou a manchete da notícia. NUNCA ponha um jogo que não tem a ver com aquele trecho.
-- "imagem": quando o tópico fala de algo que NÃO é um jogo e que existe em foto — console, controle, aparelho, pessoa (CEO, jogador, criador), empresa/sede, evento — o nome exato disso em inglês para buscar uma foto real (ex.: "Xbox Series X", "DualSense", "Nintendo Switch 2", "Phil Spencer", "Ubisoft Montreal", "Gamescom"). Use o nome do produto/pessoa, sem descrição. Nos outros tópicos, null.
+- "imagem": SÓ quando o tópico cita pelo nome um console/controle/aparelho ou uma pessoa real (CEO, jogador, criador) — o nome exato para buscar uma foto real (ex.: "PlayStation 1", "Xbox Series X", "DualSense", "Nintendo Switch 2", "Phil Spencer"). Empresa, estúdio, publisher, filme ou objeto genérico: null. Nos outros tópicos, null.
 - "numero": se o tópico tiver UM número de impacto (preço, valor em dinheiro, porcentagem, quantidade grande, placar), {"valor": "o número como está no texto, ex.: R$ 379, 4 mil, 35%, 2-1", "rotulo": "o que ele significa em 2 a 5 palavras, ex.: preço no Brasil"} — vira uma cartela grande na tela no momento em que ele é falado. Se for PLACAR de esports, acrescente "times": ["time do 1º número", "time do 2º número"] com os nomes oficiais (ex.: {"valor": "2-1", "rotulo": "final do upper bracket", "times": ["LOUD", "Team Vitality"]}) — vira um placar com os logos. Datas e anos não contam. No máximo 4 tópicos com número; nos outros, null.
 - "emoji": UM emoji que combine com a emoção do tópico (ex.: 💀 fim/morte, 💰 dinheiro, 😱 surpresa, 🔥 hype, 🏆 recorde, ⏳ tempo). Use em no máximo metade dos tópicos; nos outros, null.
 
@@ -420,7 +420,7 @@ const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Para cada
 - "texto": o que será falado — português do Brasil falado, natural e animado, como quem conta para um amigo gamer; frases curtas; números em algarismos; sem emojis, sem aspas, sem "neste vídeo";
 - "destaques": 1 a 3 expressões copiadas do texto que merecem destaque na legenda;
 - "assunto": o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null;
-- "imagem": quando o trecho fala de algo que não é jogo e existe em foto (console, pessoa, empresa, evento), o nome exato em inglês para buscar foto real (ex.: "Hideo Kojima", "CD Projekt Red"); senão null;
+- "imagem": SÓ quando o trecho cita pelo nome um console/aparelho ou uma pessoa real (ex.: "PlayStation 1", "Steam Deck", "Hideo Kojima", "Ridley Scott") — o nome exato para buscar foto real. Empresa, estúdio, publisher, filme ou objeto genérico: null (vira foto aleatória). Na dúvida, null;
 - "numero": se houver UM número de impacto (dinheiro, %, quantidade grande, placar), {"valor": "como está no texto", "rotulo": "2 a 5 palavras"}; senão null.`;
 
 function promptAbertura(plano, palavras) {
@@ -484,6 +484,9 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     const r = await gemini(promptCapitulo(plano, i, anterior), onStatus);
     const cs = norm(r);
     if (cs[0]) cs[0].capitulo = plano.capitulos[i].titulo;
+    // tópico sem jogo marcado fica no jogo do capítulo (senão aparece o jogo principal no meio de outro item)
+    const jogoCap = (plano.capitulos[i].jogos || [])[0] || null;
+    for (const c of cs) if (!c.assunto && jogoCap) c.assunto = jogoCap;
     cenas.push(...cs);
   }
   return {

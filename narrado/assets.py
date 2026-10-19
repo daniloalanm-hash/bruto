@@ -924,7 +924,8 @@ def trechos_bons(video):
 def _trechos_bons(video, quadros):
     dur = duracao(video)
     marcas = [0.0] + quadros.cortes + [dur]
-    ini, fim = dur * 0.07, dur * 0.86  # abertura (classificação etária/logos) e encerramento (logo/data)
+    # abertura (classificação etária, logos de estúdio — "20th Century Fox" leva ~8 s) e encerramento (logo/data)
+    ini, fim = (dur * 0.07 if dur < 60 else max(dur * 0.07, 9.0)), dur * 0.86
     conta = {"escuro": 0, "cartela": 0, "texto": 0}
     mascara = mascara_persistente(video, ini, fim, quadros=quadros) if fim - ini > 6 else None
     candidatos = []
@@ -1073,7 +1074,8 @@ def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):
 
 COMMONS_UA = "BrutoNarrado/1.0 (https://bruto-nu.vercel.app; github.com/daniloalanm-hash)"
 _RUIM_COMMONS = re.compile(r"logo|icon|map|flag|diagram|chart|screenshot|svg|signature|coat.of.arms|seal|"
-                           r"wordmark|banner|button|symbol|motherboard|teardown|disassembl|pcb|inside|"
+                           r"wordmark|banner|button|symbol|motherboard|teardown|disassembl|pcb|inside|walk.of.fame|star.on|"
+                           r"hollywood.star|grave|tomb|plaque|statue|autograph|wax|museum|sign\b|poster|"
                            r"\.pdf|\.tif", re.I)
 _GENERICAS = {"console", "the", "de", "do", "da", "of", "photo", "foto", "headquarters", "sede", "office", "logo",
               "and", "e", "game", "games", "event", "evento"}
@@ -1106,7 +1108,59 @@ def baixar_commons(entrada, pasta):
     os.remove(bruto)
 
 
-def imagens_commons(termo, pasta, n=3, largura=1600):
+# console falado de um jeito ("PS1", "Mega Drive") e buscado de outro: foto clássica de cada um (títulos do
+# Commons conferidos em tempo de execução; se não existir mais, cai na busca normal)
+CONSOLES = [
+    (r"\b(ps ?1|ps ?one|psx|playstation ?1|playstation one|primeiro playstation)\b|^playstation$",
+     ["File:PSX-Console-wController.jpg", "File:PlayStation-SCPH-1000-with-Controller.jpg"], "PlayStation 1"),
+    (r"\b(ps ?2|playstation ?2)\b", ["File:PS2-Fat-Console-Set.jpg", "File:PS2-Versions.jpg"], "PlayStation 2"),
+    (r"\b(ps ?3|playstation ?3)\b", ["File:Sony-PlayStation-3-2001A-wController-L.jpg"], "PlayStation 3"),
+    (r"\b(ps ?4|playstation ?4)\b", ["File:PS4-Console-wDS4.jpg"], "PlayStation 4"),
+    (r"\b(ps ?5|playstation ?5)\b", ["File:PlayStation 5 and DualSense with transparent background.png"], "PlayStation 5"),
+    (r"\b(psp)\b", ["File:Psp-1000.jpg"], "PSP"),
+    (r"\b(ps vita|playstation vita)\b", ["File:PlayStation-Vita-1101-FL.jpg"], "PS Vita"),
+    (r"\b(mega ?drive|genesis)\b", ["File:Sega-Genesis-Mod1-Set.jpg", "File:Sega-Mega-Drive-JP-Mk1-Console-Set.jpg"], "Mega Drive"),
+    (r"\b(dreamcast)\b", ["File:Dreamcast-Console-Set.jpg"], "Dreamcast"),
+    (r"\b(saturn)\b", ["File:Sega-Saturn-Console-Set-Mk1.jpg"], "Sega Saturn"),
+    (r"\b(super nintendo|snes)\b", ["File:SNES-Mod1-Console-Set.jpg"], "Super Nintendo"),
+    (r"\b(nintendo 64|n64)\b", ["File:N64-Console-Set.jpg"], "Nintendo 64"),
+    (r"\b(gamecube)\b", ["File:GameCube-Set.jpg"], "GameCube"),
+    (r"\b(nes|nintendinho)\b", ["File:NES-Console-Set.jpg"], "NES"),
+    (r"\bwii u\b", ["File:Wii U Console and Gamepad.png"], "Wii U"),
+    (r"\bwii\b", ["File:Wii-console.jpg"], "Wii"),
+    (r"\b(game boy)\b", ["File:Game-Boy-FL.jpg"], "Game Boy"),
+    (r"\b(xbox 360)\b", ["File:Xbox-360-Pro-wController.jpg"], "Xbox 360"),
+    (r"\b(xbox one)\b", ["File:Microsoft-Xbox-One-Console-wController-FL.jpg"], "Xbox One"),
+    (r"^(xbox|xbox original|primeiro xbox)$", ["File:Xbox-console.jpg"], "Xbox"),
+]
+
+
+def console_do_termo(termo, texto=""):
+    """(títulos, nome) da foto clássica do console citado no termo — ou no texto falado do tópico."""
+    alvos = [str(termo or "").lower().strip()]
+    if re.fullmatch(r"(sony )?playstation|xbox|microsoft xbox|nintendo|sega|console", alvos[0]):
+        alvos.append(str(texto or "").lower())  # marca genérica: o texto falado diz qual console
+    for alvo in alvos:
+        for rx, titulos, nome in CONSOLES:
+            if alvo and re.search(rx, alvo):
+                return titulos, nome
+    return None
+
+
+def _commons_por_titulo(titulos, pasta, largura=1600):
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    q = urllib.parse.urlencode({"action": "query", "format": "json", "titles": "|".join(titulos),
+                                "prop": "imageinfo", "iiprop": "url|size|extmetadata|mime", "iiurlwidth": largura})
+    req = urllib.request.Request(f"https://commons.wikimedia.org/w/api.php?{q}", headers={"User-Agent": COMMONS_UA})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = _json.loads(r.read())
+    pags = {p.get("title"): p for p in (d.get("query") or {}).get("pages", {}).values() if p.get("imageinfo")}
+    return [pags[t] for t in titulos if t in pags]
+
+
+def imagens_commons(termo, pasta, n=3, largura=1600, texto=""):
     """Fotos com licença livre do Wikimedia Commons (console, pessoa, empresa, evento).
     Devolve entradas de banco com autor/licença para crédito."""
     import hashlib
@@ -1120,6 +1174,17 @@ def imagens_commons(termo, pasta, n=3, largura=1600):
     req = urllib.request.Request(f"https://commons.wikimedia.org/w/api.php?{q}", headers={"User-Agent": COMMONS_UA})
     with urllib.request.urlopen(req, timeout=30) as r:
         d = _json.loads(r.read())
+    console = console_do_termo(termo, texto)
+    if console:
+        try:
+            fixas = _commons_por_titulo(console[0], pasta, largura)
+        except Exception:
+            fixas = []
+        if fixas:  # foto clássica do console certo: dispensa a busca (que trazia PSP/câmera para "PS1")
+            d = {"query": {"pages": {str(i): dict(p, index=i) for i, p in enumerate(fixas)}}}
+            termo = " ".join(re.findall(r"[a-z0-9]+", fixas[0]["title"].lower().replace("file:", ""))[:3])
+        else:
+            termo = console[1]  # sem a foto clássica: busca pelo nome completo (nada de console errado)
     palavras = [w for w in re.findall(r"[a-z0-9]+", termo.lower()) if w not in _GENERICAS]
 
     def extras(p):  # arquivo cujo nome é só o que foi pedido ("Xbox Series X.png") vem primeiro
@@ -1159,7 +1224,7 @@ def imagens_commons(termo, pasta, n=3, largura=1600):
             continue
         autor = re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()[:80]
         out.append({"tipo": "i", "jogo": "commons", "arquivo": os.path.basename(destino), "url": url,
-                    "encaixar": _fundo_liso(destino),
+                    "encaixar": True,
                     "credito": f"{autor} / {lic} / Wikimedia Commons".strip(" /"), "titulo": titulo, "termo": termo})
         if len(out) >= n:
             break
