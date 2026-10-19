@@ -31,6 +31,7 @@ body.nr { display: block; height: auto; min-height: 100%; }
 .cena .campos { display: flex; flex-direction: column; gap: 8px; }
 .cena textarea { min-height: 54px; font-size: 14px; }
 .cena .linha2 { display: grid; grid-template-columns: 1fr 190px 170px 64px auto; gap: 8px; align-items: end; }
+.cena .linha2.ficha-ed { grid-template-columns: auto 1.2fr 0.6fr 1.4fr 0.6fr 0.6fr auto; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line, #333); }
 .emoji-in { text-align: center; font-size: 18px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cena .acoes { display: flex; gap: 4px; }
@@ -107,7 +108,7 @@ audio { width: 100%; }
 @media (max-width: 900px) {
   .video-grid { grid-template-columns: 1fr; }
   .tela-video { position: static; max-width: 380px; margin: 0 auto; width: 100%; }
-  .cena .linha2 { grid-template-columns: 1fr; }
+  .cena .linha2, .cena .linha2.ficha-ed { grid-template-columns: 1fr; }
   .row2 { grid-template-columns: 1fr; }
   .mode-name { display: none; }
 }

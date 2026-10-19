@@ -795,11 +795,25 @@ function renderRoteiro() {
           h('div', { class: 'acoes' },
             h('button', { class: 'btn small icon', title: 'Subir', onclick: () => mover(-1) }, '↑'),
             h('button', { class: 'btn small icon', title: 'Descer', onclick: () => mover(1) }, '↓'),
-            h('button', { class: 'btn small icon danger', title: 'Remover', onclick: () => { r.cenas.splice(i, 1); renderRoteiro(); } }, '✕'))))));
+            h('button', { class: 'btn small icon danger', title: 'Remover', onclick: () => { r.cenas.splice(i, 1); renderRoteiro(); } }, '✕'))),
+        c.ficha ? fichaEditor(c) : null)));
   });
   estimativa();
   salvarRascunho();
   renderGanchos();
+}
+// ficha do jogo (YouTube): aparece no canto quando o capítulo dele começa — dá para corrigir aqui
+function fichaEditor(c) {
+  const campo = (k, rot, ph) => {
+    const inp = h('input', { type: 'text', value: c.ficha[k] || '', placeholder: ph });
+    inp.addEventListener('input', () => { c.ficha[k] = inp.value.trim(); salvarRascunho(); });
+    return h('label', { class: 'field' }, h('span', {}, rot), inp);
+  };
+  return h('div', { class: 'linha2 ficha-ed' },
+    h('span', { class: 'muted small', style: { alignSelf: 'center' } }, `🏷️ Ficha · ${c.capitulo || ''}`),
+    campo('jogo', 'Jogo', 'nome'), campo('lancamento', 'Lançamento', '2026'), campo('plataformas', 'Plataforma', 'PS5, PC…'),
+    campo('dublagem', 'Dublagem PT-BR', 'Sim'), campo('legendas', 'Legendas PT-BR', 'Sim'),
+    h('button', { class: 'btn small icon danger', title: 'Tirar a ficha', onclick: () => { delete c.ficha; renderRoteiro(); } }, '✕'));
 }
 /* ---------------- ganchos alternativos ---------------- */
 function renderGanchos() {
