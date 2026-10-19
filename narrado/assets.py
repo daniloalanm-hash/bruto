@@ -675,6 +675,19 @@ EAST_URL = "https://raw.githubusercontent.com/oyyd/frozen_east_text_detection.pb
 _east = []
 
 
+def _baixar_east():
+    """Baixa o modelo EAST uma vez (arquivo temporário por processo: vários processos ao mesmo tempo não
+    se atropelam — foi o que deixou trailers sem o filtro de texto)."""
+    caminho = os.path.expanduser("~/.cache/narrado/east.pb")
+    if not os.path.exists(caminho) or os.path.getsize(caminho) < 1_000_000:
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        tmp = f"{caminho}.{os.getpid()}.tmp"
+        with open(tmp, "wb") as f:
+            f.write(_get(EAST_URL, timeout=180))
+        os.replace(tmp, caminho)
+    return caminho
+
+
 def _rede_east():
     """Detector de texto EAST (OpenCV). Acha cartelas estilizadas que o Tesseract não consegue ler."""
     if _east:
@@ -682,13 +695,7 @@ def _rede_east():
     rede = None
     try:
         import cv2
-        caminho = os.path.expanduser("~/.cache/narrado/east.pb")
-        if not os.path.exists(caminho) or os.path.getsize(caminho) < 1_000_000:
-            os.makedirs(os.path.dirname(caminho), exist_ok=True)
-            with open(caminho + ".tmp", "wb") as f:
-                f.write(_get(EAST_URL, timeout=180))
-            os.replace(caminho + ".tmp", caminho)
-        rede = cv2.dnn.readNet(caminho)
+        rede = cv2.dnn.readNet(_baixar_east())
     except Exception as e:  # sem OpenCV/modelo: fica só o Tesseract
         print(f"aviso: detector EAST indisponível ({e})")
     _east.append(rede)
@@ -1085,8 +1092,13 @@ def trechos_corridos(video):
                 if acum >= tot * 0.95:
                     p95 = v
                     break
-            if p95 < 28:
+            if p95 < 16:
                 return "preto"
+            if _rede_east() is None:  # sem o EAST: leitura do Tesseract (mais lenta, mas não deixa cartela passar)
+                r = subprocess.run(["tesseract", q, "-", "--psm", "11", "-l", "eng", "tsv"], capture_output=True,
+                                   text=True, env={**os.environ, "OMP_THREAD_LIMIT": "1"})
+                fortes, grandes = _palavras_fortes(r.stdout)
+                return "texto" if fortes >= 2 or grandes >= 1 else None
             if _fracao_texto_east(q) >= 0.0022:
                 return "texto"
             return None
@@ -1136,6 +1148,10 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     arquivos = [t["arquivo"] for j in jogos_info for t in j["trailers"]]
     analise = {}
     if arquivos:
+        try:
+            _baixar_east()  # antes dos processos: todos usam o mesmo arquivo pronto
+        except Exception as e:
+            print(f"aviso: modelo EAST não baixou: {e}", flush=True)
         nucleos = os.cpu_count() or 2
         import multiprocessing
         # "spawn": processo novo e limpo (fork depois do OpenCV/ONNX carregado no pai pode travar para sempre)
