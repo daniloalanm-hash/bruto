@@ -1205,6 +1205,10 @@ def imagens_commons(termo, pasta, n=3, largura=1600, texto=""):
         if not palavras or not all(w in tok or (len(w) > 3 and w in titulo.lower()) for w in palavras):
             continue
         meta = ii.get("extmetadata") or {}
+        # o nome do arquivo engana ("Ridley Scott.jpg" é a estrela da Calçada da Fama): olha descrição e categorias
+        sobre = " ".join(str((meta.get(k) or {}).get("value", "")) for k in ("ImageDescription", "Categories", "ObjectName"))
+        if _RUIM_COMMONS.search(re.sub(r"<[^>]+>", " ", sobre)):
+            continue
         lic = (meta.get("LicenseShortName") or {}).get("value", "")
         if not re.search(r"CC|Public domain|PD", lic, re.I):
             continue
