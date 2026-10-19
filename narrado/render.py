@@ -408,6 +408,7 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
         vids[j] = [f for f in faixas_j if f[2] - f[1] >= 1.0]
     cursor = {}  # jogo -> [índice do trecho, posição]
     visitas = {}
+    esgotado, alterna, n_foto = {}, {}, {}
 
     def tomar(j, d):
         """Pedaços (mid, t0, dur) que cobrem d segundos do material do jogo j, continuando de onde parou."""
@@ -416,14 +417,30 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
             return []
         i, pos = cursor.get(j, [0, None])
         out, falta, voltas = [], d, 0
+        fotos = imgs.get(j) or []
         while falta > 0.02 and voltas < 3 * len(lst) + 3:
+            if esgotado.get(j) and fotos and alterna.get(j) == "foto" and falta > 2.0:
+                # o vídeo do jogo já passou inteiro: intercala as imagens oficiais antes de repetir trecho
+                k_img = n_foto.get(j, 0)
+                n_foto[j] = k_img + 1
+                d_img = falta if falta - 3.5 < 1.5 else 3.5
+                out.append((fotos[k_img % len(fotos)], 0.0, d_img))
+                falta -= d_img
+                alterna[j] = "video"
+                continue
             arq, a, b, mid = lst[i]
             p = a if pos is None else max(pos, a)
             disp = b - p
             if disp < 0.9:
+                if i + 1 >= len(lst):
+                    esgotado[j] = True
+                    if not out or banco[out[-1][0]]["tipo"] == "v":
+                        alterna[j] = "foto"
                 i, pos, voltas = (i + 1) % len(lst), None, voltas + 1
                 continue
-            take = min(falta, disp)
+            take = min(falta, disp, 6.0 if esgotado.get(j) else 1e9)
+            if esgotado.get(j):
+                alterna[j] = "foto"
             if 0 < falta - take < 0.8:  # não deixa um pedacinho solto no fim
                 take = max(take - (0.8 - (falta - take)), 0.5)
             out.append((mid, p, take))

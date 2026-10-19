@@ -1091,7 +1091,8 @@ def trechos_corridos(video):
                 return "texto"
             return None
 
-        ini = dur * 0.06 if dur < 60 else max(dur * 0.06, 8.0)
+        # logos de estúdio/distribuidora (20th Century Fox, SEGA…) costumam vir nos 10 primeiros segundos
+        ini = dur * 0.06 if dur < 60 else max(dur * 0.12, 14.0)
         fim = dur * 0.92
         marcas = [0.0] + cortes + [dur]
         bons, conta, n_planos = [], {}, 0
