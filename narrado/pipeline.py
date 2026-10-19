@@ -469,7 +469,15 @@ def preparar(pasta, st):
     # fotos reais (Wikimedia Commons, licença livre) do que o tópico mostra quando não é jogo:
     # console, controle, pessoa, empresa, evento
     fotos_termo = {}
+    empresa = re.compile(r"(games|studios?|entertainment|interactive|software|publishing|corporation|inc\.?|ltd|"
+                         r"project|company)$|^(sega|sony|microsoft|nintendo|capcom|konami|ubisoft|electronic arts|ea|"
+                         r"bandai namco|square enix|bethesda|activision|blizzard|rockstar|valve|epic games|"
+                         r"20th century (fox|studios)|warner bros\.?|disney|netflix)$", re.I)
     for termo in dict.fromkeys(c["imagem"] for c in cenas if c.get("imagem")):
+        texto_t = " ".join(c["texto"] for c in cenas if c.get("imagem") == termo)
+        if empresa.search(str(termo).strip()) and not assets.console_do_termo(termo, texto_t):
+            print(f"foto de empresa '{termo}' ignorada (vira foto aleatória)", flush=True)
+            continue
         try:
             texto_t = " ".join(c["texto"] for c in cenas if c.get("imagem") == termo)
             achadas = assets.imagens_commons(termo, RAW, n=2, texto=texto_t)
