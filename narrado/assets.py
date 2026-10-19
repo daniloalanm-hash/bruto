@@ -1108,23 +1108,34 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     """Banco do vídeo longo "trailer corrido": os planos aproveitáveis de cada trailer, na ordem (o render toca
     em sequência, com o som). Screenshots passam pelo filtro de sempre."""
     from concurrent.futures import ProcessPoolExecutor, as_completed
-    so_telas = [dict(j, trailers=[]) for j in jogos_info]
-    banco = montar_banco(so_telas, pasta_thumbs)
+    # a análise em processos vem ANTES de qualquer uso do OpenCV aqui no processo principal: processo filho
+    # criado depois que a rede EAST já rodou no pai trava (foi o que segurou o teste por 5 h)
     arquivos = [t["arquivo"] for j in jogos_info for t in j["trailers"]]
     analise = {}
     if arquivos:
         nucleos = os.cpu_count() or 2
+        import multiprocessing
+        # "spawn": processo novo e limpo (fork depois do OpenCV/ONNX carregado no pai pode travar para sempre)
         with ProcessPoolExecutor(max_workers=max(1, min(len(arquivos), nucleos)), initializer=_iniciar_processo,
-                                 initargs=(1,)) as ex:
+                                 initargs=(1,), mp_context=multiprocessing.get_context("spawn")) as ex:
             futuros = [ex.submit(_analisar_corrido, a) for a in arquivos]
-            for k, f in enumerate(as_completed(futuros), 1):
-                try:
-                    a, trechos = f.result()
-                    analise[a] = trechos
-                except Exception as e:
-                    print(f"aviso: análise de trailer falhou: {e}", flush=True)
-                if progresso:
-                    progresso(k, len(arquivos))
+            try:
+                for k, f in enumerate(as_completed(futuros, timeout=240 + 90 * len(arquivos)), 1):
+                    try:
+                        a, trechos = f.result()
+                        analise[a] = trechos
+                    except Exception as e:
+                        print(f"aviso: análise de trailer falhou: {e}", flush=True)
+                    if progresso:
+                        progresso(k, len(arquivos))
+            except Exception as e:  # nunca mais segurar o servidor: segue com o que já foi analisado
+                print(f"aviso: análise dos trailers passou do tempo ({e}); seguindo com {len(analise)}", flush=True)
+                for f in futuros:
+                    f.cancel()
+                for p in list(getattr(ex, "_processes", {}).values()):
+                    p.kill()
+    so_telas = [dict(j, trailers=[]) for j in jogos_info]
+    banco = montar_banco(so_telas, pasta_thumbs)
     for j in jogos_info:
         for ti, t in enumerate(j["trailers"]):
             for c in analise.get(t["arquivo"], []):
