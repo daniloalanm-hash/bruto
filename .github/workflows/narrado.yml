@@ -23,7 +23,7 @@ concurrency:
 jobs:
   video:
     runs-on: ubuntu-latest
-    timeout-minutes: 150  # vídeo longo do YouTube (8-10 min) leva bem mais que o curto
+    timeout-minutes: 300  # vídeo longo do YouTube (até 25 min) leva bem mais que o curto
     env:
       GH_TOKEN: ${{ github.token }}
       NARRADO_TAG: ${{ inputs.tag }}
@@ -102,7 +102,7 @@ jobs:
         run: python -u narrado/pipeline.py "${{ inputs.fase }}" job
 
       - name: Publicar erro
-        if: failure()
+        if: ${{ failure() && !startsWith(inputs.fase, 'teste') }}
         run: |
           if [ ! -f job/status.json ] || ! grep -q '"erro"' job/status.json; then
             printf '{"estado":"erro","fase":"%s","erro":"O servidor de render falhou. Veja os logs da execução no GitHub Actions.","atualizado":%s}' \

@@ -1044,6 +1044,26 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     return banco
 
 
+def banco_corrido(jogos_info, pasta_thumbs):
+    """Banco do vídeo longo "trailer corrido": cada trailer entra inteiro (o render toca em sequência, com o som),
+    sem a análise de trechos curtos (que era a parte mais lenta). Screenshots passam pelo filtro de sempre."""
+    so_telas = [dict(j, trailers=[]) for j in jogos_info]
+    banco = montar_banco(so_telas, pasta_thumbs)
+    for j in jogos_info:
+        for ti, t in enumerate(j["trailers"]):
+            try:
+                d = duracao(t["arquivo"])
+            except Exception:
+                continue
+            if d < 8:
+                continue
+            ini = min(max(0.06 * d, 4.0), 12.0)  # pula logos de estúdio/classificação do começo
+            banco[f"{j['chave']}_t{ti}_c"] = {"tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
+                                              "t": round(ini, 2), "dur": round(d - ini, 2), "corrido": True,
+                                              "fim": round(d, 2)}
+    return banco
+
+
 def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):
     """Uma imagem única com a miniatura vertical de cada mídia (a tela usa como sprite CSS)."""
     from tempfile import mkdtemp

@@ -284,6 +284,255 @@ def seg_video_proprio(src, t0, dur, out, trans):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
 
 
+# ---------------------------------------------------------------- YouTube "trailer corrido" (fórmula dos tops)
+
+FADE_CAP = 0.35      # mergulho no preto entre um jogo e outro (cada lado)
+CORTE_ABERTURA = 2.4  # montagem da abertura: um plano curto de cada jogo da lista
+
+
+def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False):
+    """Trecho do trailer tocando direto (sem zoom nem efeito), com mergulho no preto na troca de jogo."""
+    t0 = _inicio_seguro(src, t0, dur)
+    n, pad = _quadros_exatos(dur)
+    c = area_util(src, t0)
+    pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    fx = ""
+    if fade_in:
+        fx += f",fade=t=in:st=0:d={FADE_CAP:.2f}"
+    if fade_out and dur > FADE_CAP + 0.2:
+        fx += f",fade=t=out:st={dur - FADE_CAP:.3f}:d={FADE_CAP:.2f}"
+    vf = (f"{pre}crop='min(iw,ih*{W}/{H})':'min(ih,iw*{H}/{W})',scale={W}:{H},setsar=1,fps={FPS},"
+          f"eq=contrast=1.03:saturation=1.06" + _nitidez(src) + pad + fx)
+    ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+
+
+def e_corrido(projeto):
+    return projeto.get("edicao") == "corrido" and L["W"] > L["H"]
+
+
+def cenas_de_capitulo(projeto):
+    """Tópicos que abrem um capítulo (menos a abertura): é onde entra o respiro, o preto e a ficha."""
+    return [k for k, c in enumerate(projeto["cenas"]) if k > 0 and str(c.get("capitulo") or "").strip()]
+
+
+def com_respiro(projeto):
+    """Cópia do projeto com N s de silêncio antes de cada capítulo (o trailer sobe nesse respiro).
+    Devolve (cópia, pontos de corte na voz original). A voz é emendada igual por quem chamar."""
+    import copy
+    pr = copy.deepcopy(projeto)
+    try:
+        g = min(max(float(pr.get("respiro", 4) or 0), 0.0), 10.0)
+    except (TypeError, ValueError):
+        g = 4.0
+    if g <= 0 or not e_corrido(pr):
+        return pr, [], 0.0
+    mant = sorted((w for w in pr["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None),
+                  key=lambda w: w["ns"])
+    caps = set(cenas_de_capitulo(pr))
+    cortes, vistos = [], set()
+    for i, w in enumerate(mant):
+        if i == 0 or w["cena"] in vistos or w["cena"] not in caps:
+            continue
+        vistos.add(w["cena"])
+        ant = mant[i - 1]
+        if ant["cena"] == w["cena"]:
+            continue
+        cortes.append(round((ant.get("ne", ant["ns"]) + w["ns"]) / 2, 3))
+    cortes.sort()
+    for w in pr["palavras"]:
+        if "ns" in w:
+            k = sum(1 for c in cortes if c <= w["ns"])
+            if k:
+                w["ns"] = round(w["ns"] + g * k, 3)
+                if "ne" in w:
+                    w["ne"] = round(w["ne"] + g * k, 3)
+    pr["duracao_voz"] = float(pr["duracao_voz"]) + g * len(cortes)
+    pr["respiro_cortes"] = cortes
+    return pr, cortes, g
+
+
+def voz_com_respiro(voz_wav, cortes, g, destino):
+    """A voz com silêncio de g segundos em cada ponto de corte."""
+    if not cortes:
+        return voz_wav
+    lim = [0.0] + list(cortes) + [None]
+    partes = []
+    for i in range(len(lim) - 1):
+        a, b = lim[i], lim[i + 1]
+        tr = f"atrim=start={a:.3f}" + (f":end={b:.3f}" if b is not None else "")
+        pad = f",apad=pad_dur={g:.3f}" if b is not None else ""
+        partes.append(f"[0:a]{tr},asetpts=PTS-STARTPTS{pad}[p{i}]")
+    n = len(partes)
+    grafo = ";".join(partes) + ";" + "".join(f"[p{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]"
+    ffmpeg("-i", voz_wav, "-filter_complex", grafo, "-map", "[a]", "-c:a", "pcm_s16le", destino)
+    return destino
+
+
+def _faixa_midia(m):
+    """(início, fim) tocável de uma mídia de vídeo do banco."""
+    a = float(m.get("t", 0))
+    if m.get("corrido"):
+        return a, float(m.get("fim", a + m.get("dur", 10))) - 0.4
+    return a, a + float(m.get("dur", 3))
+
+
+def montar_corrido(projeto, banco, faixas, seg_dir):
+    """Decide os trechos do modo corrido: cada jogo toca o trailer dele em sequência (de onde parou),
+    a abertura é uma montagem rápida dos jogos da lista e cada capítulo fecha no fim do trailer (logo)."""
+    cenas = projeto["cenas"]
+    caps = set(cenas_de_capitulo(projeto))
+    primeiro_cap = min(caps) if caps else None
+    g_resp = float(projeto.get("respiro", 4) or 0) if projeto.get("respiro_cortes") else 0.0
+    vids, imgs, ordem = {}, {}, []
+    for c in cenas:
+        j = c.get("jogo")
+        if j and j not in ordem:
+            ordem.append(j)
+    for mid, m in banco.items():
+        if m.get("cartao") or m.get("capa") or m.get("jogo") in (None, "cartao", "materia", "commons"):
+            continue
+        (vids if m["tipo"] == "v" else imgs).setdefault(m["jogo"], []).append(mid)
+    for j in vids:
+        vids[j].sort(key=lambda x: (banco[x]["arquivo"], banco[x].get("t", 0)))
+    cursor = {}  # jogo -> [índice da mídia, posição]
+    visitas = {}
+
+    def tomar(j, d):
+        """Trechos (mid, t0, dur) que cobrem d segundos do material do jogo j, continuando de onde parou."""
+        lst = vids.get(j)
+        if not lst:
+            return []
+        i, pos = cursor.get(j, [0, None])
+        out, falta, voltas = [], d, 0
+        while falta > 0.02 and voltas < 3 * len(lst) + 3:
+            a, b = _faixa_midia(banco[lst[i]])
+            p = a if pos is None else max(pos, a)
+            disp = b - p
+            if disp < 1.0:
+                i, pos, voltas = (i + 1) % len(lst), None, voltas + 1
+                continue
+            take = min(falta, disp)
+            if 0 < falta - take < 0.8:  # não deixa um pedacinho de 0,5 s sozinho
+                take = max(take - (0.8 - (falta - take)), 0.5)
+            out.append((lst[i], p, take))
+            falta -= take
+            pos = p + take
+        cursor[j] = [i, pos]
+        return out
+
+    def final_do_trailer(j, d):
+        """Os últimos d segundos do trailer em uso (logo/título do jogo), se ainda não foram mostrados."""
+        lst = vids.get(j)
+        if not lst:
+            return None
+        i, pos = cursor.get(j, [0, None])
+        a, b = _faixa_midia(banco[lst[i]])
+        ini = b - d
+        if ini < (pos or a) + 1.0:
+            return None
+        cursor[j] = [i, b]
+        return (lst[i], ini, d)
+
+    def plano_abertura(j):
+        lst = vids.get(j)
+        if not lst:
+            return None
+        v = visitas.get(j, 0)
+        visitas[j] = v + 1
+        a, b = _faixa_midia(banco[lst[v % len(lst)]])
+        t = a + (b - a) * (0.45 + 0.13 * (v % 4))
+        return (lst[v % len(lst)], min(t, b - CORTE_ABERTURA - 0.2), CORTE_ABERTURA)
+
+    tarefas, lista, usados, k = [], [], [], 0
+    giro = 0
+    for fi, (c, a, b) in enumerate(faixas):
+        dur = b - a
+        jogo = cenas[c].get("jogo") or (ordem[0] if ordem else None)
+        prox_cap = fi + 1 < len(faixas) and faixas[fi + 1][0] in caps
+        abre_cap = c in caps
+        usados.append({"cena": c, "inicio": round(a, 2), "fim": round(b, 2), "cortes": [],
+                       "entrada": "preto" if abre_cap else "corrido", "transicao": "fade" if abre_cap else "inicio"})
+        pecas = []
+        if primeiro_cap is not None and c < primeiro_cap and len([j for j in ordem if vids.get(j)]) >= 3:
+            # abertura: montagem com um plano de cada jogo da lista (na ordem dos capítulos)
+            com_video = [j for j in ordem if vids.get(j)]
+            t_acum = 0.0
+            while t_acum < dur - 0.05:
+                d = min(CORTE_ABERTURA, dur - t_acum)
+                if dur - t_acum - d < 0.8:
+                    d = dur - t_acum
+                pl = plano_abertura(com_video[giro % len(com_video)])
+                giro += 1
+                pecas.append((pl[0], pl[1], d))
+                t_acum += d
+        else:
+            fim = None
+            if prox_cap and g_resp:
+                fim = final_do_trailer(jogo, min(g_resp + 1.5, dur * 0.5)) if dur > g_resp + 3 else None
+            corpo = dur - (fim[2] if fim else 0)
+            pecas = tomar(jogo, corpo)
+            if not pecas and corpo > 0.05:
+                # jogo sem vídeo: as imagens dele (inteiras), 4 s cada
+                ims = imgs.get(jogo) or [x for j in ordem for x in imgs.get(j, [])][:6]
+                nn = max(1, round(corpo / 4))
+                pecas = [(ims[i % len(ims)], 0.0, corpo / nn) for i in range(nn)] if ims else []
+            if fim:
+                pecas.append(fim)
+        if not pecas:  # nada de material: repete o último trecho em vez de quebrar o vídeo
+            ult = tarefas[-1] if tarefas else None
+            pecas = [(ult[1], ult[2].get("t", 0), dur)] if ult else []
+        for pi, (mid, t0, d) in enumerate(pecas):
+            m = dict(banco[mid], t=t0, corrido=banco[mid]["tipo"] == "v")
+            m["fi"] = abre_cap and pi == 0
+            m["fo"] = prox_cap and pi == len(pecas) - 1
+            out = os.path.join(seg_dir, f"{k:04d}.mp4")
+            tarefas.append((k, mid, m, None, d, out, None, 0, [mid]))
+            usados[-1]["cortes"].append(mid)
+            lista.append(out)
+            k += 1
+    return tarefas, lista, usados
+
+
+def audio_corrido(tarefas, pasta_raw, pasta_trab):
+    """O som dos trailers na mesma sequência dos trechos (silêncio em imagem), para tocar por baixo da voz."""
+    pasta = os.path.join(pasta_trab, "som_jogo")
+    shutil.rmtree(pasta, ignore_errors=True)
+    os.makedirs(pasta)
+    arqs = []
+    for k, mid, m, src, d, out, *_ in tarefas:
+        try:
+            d = duracao(out)  # a duração real do trecho de imagem (mantém o som sincronizado)
+        except Exception:
+            pass
+        wav = os.path.join(pasta, f"{k:04d}.wav")
+        ok = False
+        if m.get("corrido") and m["tipo"] == "v":
+            src = os.path.join(pasta_raw, m["arquivo"])
+            t0 = _inicio_seguro(src, m.get("t", 0), d)
+            fades = []
+            if m.get("fi"):
+                fades.append(f"afade=t=in:st=0:d={FADE_CAP:.2f}")
+            if m.get("fo"):
+                fades.append(f"afade=t=out:st={max(d - FADE_CAP, 0):.3f}:d={FADE_CAP:.2f}")
+            af = ",".join(["aresample=48000", "aformat=sample_fmts=s16:channel_layouts=stereo", "apad",
+                           f"atrim=0:{d:.4f}", "afade=t=in:d=0.04", f"afade=t=out:st={max(d - 0.04, 0):.3f}:d=0.04"] + fades)
+            import subprocess
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{t0:.3f}", "-i", src,
+                                "-t", f"{d + 0.3:.3f}", "-vn", "-map", "0:a:0?", "-af", af, "-ac", "2", "-ar", "48000",
+                                "-c:a", "pcm_s16le", wav], capture_output=True, text=True)
+            ok = r.returncode == 0 and os.path.exists(wav) and os.path.getsize(wav) > 1000
+        if not ok:
+            ffmpeg("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{d:.4f}", "-c:a", "pcm_s16le", wav)
+        arqs.append(wav)
+    lst = os.path.join(pasta, "lista.txt")
+    with open(lst, "w") as f:
+        f.writelines(f"file '{p}'\n" for p in arqs)
+    destino = os.path.join(pasta_trab, "som_jogo.wav")
+    ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-c:a", "pcm_s16le", destino)
+    return destino
+
+
 # ---------------------------------------------------------------- linha do tempo
 
 def tipo_entrada(projeto, cena, ordem):
@@ -303,6 +552,8 @@ def linha_tempo(projeto):
     for w in mant:
         inicios.setdefault(w["cena"], w["ns"])
     cenas = sorted(inicios)
+    corrido = e_corrido(projeto)
+    caps = set(cenas_de_capitulo(projeto)) if corrido else set()
     try:
         desloc = max(0, min(int(projeto.get("jl_quadros", QUADROS_JL)), 30)) / FPS
     except (TypeError, ValueError):
@@ -315,11 +566,15 @@ def linha_tempo(projeto):
         prox = inicios[cenas[k + 1]] if k + 1 < len(cenas) else total
         lim_b = prox - MIN_CENA
         tipo = tipo_entrada(projeto, c, k)
+        if corrido and c in caps:
+            tipo = "preto"  # fórmula dos tops: o próximo jogo entra ~1 s antes da fala, depois do respiro
         t = fala
         if tipo == "J":
             t = fala + desloc
         elif tipo == "L":
             t = fala - desloc
+        elif tipo == "preto":
+            t = fala - 0.9
         t = min(max(t, lim_a), max(lim_b, lim_a))
         if (tipo == "J" and t <= fala + 0.02) or (tipo == "L" and t >= fala - 0.02):
             tipo, t = "seco", fala
@@ -494,6 +749,7 @@ def legenda_ass(projeto, destino, corte_gancho):
               "Style: CapitN,Montserrat Black,30,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,2,0,1,3,2,7,0,0,0,1",
               "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     marcadas = {id(projeto["palavras"][i]) for i in marcar_destaques(projeto)}
+    sem_legenda = projeto.get("legenda_estilo") == "nenhuma"
     esconde_ate = fim_titulo(projeto, corte_gancho) if projeto.get("titulo_estilo", "manchete") != "simples" else None
     blocos = blocos_legenda(projeto)
     for b in blocos:
@@ -511,7 +767,8 @@ def legenda_ass(projeto, destino, corte_gancho):
             if b["fim"] <= esconde_ate + 0.15:
                 continue  # a chamada ocupa a tela: a legenda falada desse trecho não aparece
             ini = max(ini, esconde_ate)
-        linhas.append(f"Dialogue: 0,{_ts(ini)},{_ts(b['fim'])},Cap,,0,0,0,,{pop}{' '.join(partes)}")
+        if not sem_legenda:
+            linhas.append(f"Dialogue: 0,{_ts(ini)},{_ts(b['fim'])},Cap,,0,0,0,,{pop}{' '.join(partes)}")
     # YouTube: título do capítulo no canto quando ele começa (o mesmo dos capítulos da descrição)
     if L["W"] > L["H"]:
         vistos, n_cap = set(), 0
@@ -521,7 +778,8 @@ def legenda_ass(projeto, destino, corte_gancho):
                 continue
             vistos.add(b["cena"])
             n_cap += 1
-            if b["cena"] == 0 or b["ini"] < 3 or f"cartao_cap_{b['cena']}" in projeto.get("banco", {}):
+            if (b["cena"] == 0 or b["ini"] < 3 or f"cartao_cap_{b['cena']}" in projeto.get("banco", {})
+                    or (e_corrido(projeto) and projeto["cenas"][b["cena"]].get("ficha"))):
                 continue  # a abertura já tem a chamada; capítulo com cartela grande não repete no canto
             a0, a1 = b["ini"] + 0.1, b["ini"] + 3.6
             ent = r"{\move(-700,96,90,96,0,260)\t(3200,3500,\alpha&HFF&)}"
@@ -530,7 +788,7 @@ def legenda_ass(projeto, destino, corte_gancho):
             linhas.append(f"Dialogue: 4,{_ts(a0)},{_ts(a1)},Capit,,0,0,0,,{ent}{cap.upper()}")
     # marca d'água do canal (discreta, o vídeo todo)
     marca = str(projeto.get("marca_dagua") or "").strip()
-    if marca:
+    if marca and not logo_do_canal(projeto):
         fim_v = max([b["fim"] for b in blocos] + [1.0]) + 1.0
         if L["W"] > L["H"]:
             pos = rf"\an3\pos({W - 36},{H - 26})"
@@ -718,6 +976,8 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
     É o único passo de um ajuste "só de legenda": não refaz cenas, voz nem efeitos.
     """
     definir_formato(projeto)
+    if e_corrido(projeto) and "respiro_cortes" not in projeto:
+        projeto = dict(com_respiro(projeto)[0], timeline=projeto.get("timeline"))  # só legenda: mesmos tempos do vídeo
     pasta_trab = os.path.abspath(pasta_trab)
     os.makedirs(pasta_trab, exist_ok=True)
     tl = projeto.get("timeline") or []
@@ -758,9 +1018,68 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
                 grafo.append(f"{v}[cta{i}]overlay=x=(W-w)/2:y={y_cta}:eof_action=pass:"
                              f"enable='between(t\\,{t0:.3f}\\,{t0 + dur_cta:.3f})'[vc{i}]")
                 v = f"[vc{i}]"
+    # YouTube (fórmula dos tops): ficha do jogo no canto inferior esquerdo quando o capítulo dele começa
+    if e_corrido(projeto):
+        for i, (t0, png) in enumerate(fichas_png(projeto, tl, pasta_fontes, pasta_trab)):
+            entradas += ["-loop", "1", "-t", f"{FICHA_DUR + 0.5:.2f}", "-i", png]
+            idx = entradas.count("-i") - 1
+            grafo.append(f"[{idx}:v]format=rgba,fade=t=out:st={FICHA_DUR - 0.35:.2f}:d=0.35:alpha=1,"
+                         f"setpts=PTS+{t0:.3f}/TB[fc{i}]")
+            x = f"'if(lt(t-{t0:.3f}\\,0.3)\\,-w+(w+44)*(t-{t0:.3f})/0.3\\,44)'"
+            grafo.append(f"{v}[fc{i}]overlay=x={x}:y=H-h-44:eof_action=pass:"
+                         f"enable='between(t\\,{t0:.3f}\\,{t0 + FICHA_DUR:.3f})'[vf{i}]")
+            v = f"[vf{i}]"
+    # logo do canal (semitransparente, canto inferior direito) no lugar do @ em texto
+    logo = logo_do_canal(projeto)
+    if logo:
+        entradas += ["-loop", "1", "-i", logo]
+        idx = entradas.count("-i") - 1
+        larg = 170 if W > H else 150
+        grafo.append(f"[{idx}:v]format=rgba,scale={larg}:-1,colorchannelmixer=aa=0.62[logo]")
+        y_logo = "H-h-34" if W > H else f"{int(H * 0.845)}-h/2"
+        x_logo = "W-w-40" if W > H else "(W-w)/2"
+        grafo.append(f"{v}[logo]overlay=x={x_logo}:y={y_logo}:shortest=1[vlg]")
+        v = "[vlg]"
     grafo.append(f"{v}fade=t=in:st=0:d=0.15[v]")
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo), "-map", "[v]", "-map", "0:a", "-t", f"{total:.2f}",
            "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-c:a", "copy", "-movflags", "+faststart", destino)
+
+
+FICHA_DUR = 6.0
+LOGOS = {"jogandosemplano": os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "jogandosemplano.png")}
+
+
+def logo_do_canal(projeto):
+    """Logo do canal quando a marca d'água é de um canal com logo cadastrada (só no YouTube)."""
+    chave = re.sub(r"[^a-z0-9]", "", str(projeto.get("marca_dagua") or "").lower())
+    arq = LOGOS.get(chave)
+    return arq if arq and os.path.exists(arq) and L["W"] > L["H"] and projeto.get("marca_logo", True) else None
+
+
+def tempos_ficha(projeto, timeline):
+    """Instante em que cada ficha entra (logo depois do mergulho no preto do capítulo)."""
+    inicio = {t["cena"]: t["inicio"] for t in (timeline or [])}
+    return [inicio[k] + 0.5 for k in cenas_de_capitulo(projeto)
+            if k in inicio and isinstance(projeto["cenas"][k].get("ficha"), dict)]
+
+
+def fichas_png(projeto, timeline, pasta_fontes, pasta_trab):
+    inicio = {t["cena"]: t["inicio"] for t in (timeline or [])}
+    saida = []
+    for k in cenas_de_capitulo(projeto):
+        f = projeto["cenas"][k].get("ficha")
+        if not isinstance(f, dict) or k not in inicio:
+            continue
+        titulo = cartoes.titulo_da_ficha(projeto["cenas"][k], f)
+        if not titulo:
+            continue
+        png = os.path.join(pasta_trab, f"ficha{k}.png")
+        try:
+            cartoes.ficha(titulo, cartoes.linhas_da_ficha(f), pasta_fontes, png, escala=1.45 * W / 1920)
+            saida.append((inicio[k] + 0.5, png))
+        except Exception as e:
+            print(f"aviso: ficha do tópico {k} não gerada: {e}", flush=True)
+    return saida
 
 
 def conferir_video(arquivo, total):
@@ -797,8 +1116,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     seg_dir = os.path.join(pasta_trab, "seg")
     shutil.rmtree(seg_dir, ignore_errors=True)
     os.makedirs(seg_dir)
+    orig = projeto
+    corrido = e_corrido(projeto)
+    if corrido:
+        # fórmula dos tops: respiro antes de cada jogo (a voz ganha silêncio; o trailer sobe ali)
+        projeto, cortes_r, g_r = com_respiro(projeto)
+        voz_wav = voz_com_respiro(voz_wav, cortes_r, g_r, os.path.join(pasta_trab, "voz_respiro.wav"))
     faixas, total, tipos = linha_tempo(projeto)
-    trans_cena = transicoes(projeto, faixas)
+    trans_cena = {} if corrido else transicoes(projeto, faixas)
     lista, k = [], 0
     usados_cena = []
     # pouco material (jogo novo com 1 trailer só): cortes um pouco mais longos em vez de repetir trecho.
@@ -807,10 +1132,13 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     tarefas = []
     distintos = max(len(banco), 1)
     corte = min(max(CUT, total / distintos * 0.85), CUT * 1.7)
-    if corte > CUT + 0.05:
+    if corte > CUT + 0.05 and not corrido:
         print(f"pouco material ({distintos} mídias para {total:.0f}s): cortes de {corte:.1f}s", flush=True)
     diag = []
-    for fi, (c, a, b) in enumerate(faixas):
+    if corrido:
+        tarefas, lista, usados_cena = montar_corrido(projeto, banco, faixas, seg_dir)
+        tarefas = [(t[0], t[1], t[2], os.path.join(pasta_raw, t[2]["arquivo"]), *t[4:]) for t in tarefas]
+    for fi, (c, a, b) in enumerate([] if corrido else faixas):
         dur = b - a
         n = max(1, round(dur / corte))
         if f"cartao_cap_{c}" in banco:
@@ -873,7 +1201,11 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
 
     def codificar(tf):
         k, mid, m, src, d, out, fx, rep, midias = tf
-        if m.get("cartao"):
+        if m.get("corrido"):
+            seg_corrido(src, m.get("t", 0), d, out, m.get("fi"), m.get("fo"))
+        elif corrido and m["tipo"] == "i":
+            seg_imagem(src, d, out, k, None, encaixar=True)
+        elif m.get("cartao"):
             seg_cartao(src, d, out, fx)
         elif m["tipo"] == "v" and m.get("proprio"):
             seg_video_proprio(src, m.get("t", 0) + rep * 2.5, d, out, fx)
@@ -928,6 +1260,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", completo)
         visual = completo
 
+    som_jogo = audio_corrido(tarefas, pasta_raw, pasta_trab) if corrido else None
     corte_gancho = faixas[1][1] if len(faixas) > 1 else total
     blocos = blocos_com_destaque(projeto)
     cortes = {c: a for c, a, b in faixas[1:]}
@@ -1009,6 +1342,9 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 eventos.append((cortes[c], nome, ganho))
         for t in tempos_destaque:
             eventos.append((t, "pop", 0.28))
+        if corrido:
+            for t in tempos_ficha(projeto, usados_cena):
+                eventos.append((t, "woosh", 0.3))
         for c, t in cortes.items():
             if f"cartao_cap_{c}" in banco:
                 eventos.append((t + 0.05, "impacto", 0.4))
@@ -1025,6 +1361,15 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         idx = nova_entrada(sfx)
         a = (f"[1:a]apad[vz0];[{idx}:a]apad[fx0];[vz0][fx0]amix=inputs=2:duration=first:normalize=0,"
              f"alimiter=limit=0.95:level=disabled[a]")
+    # som do trailer por baixo da narração: abaixa sozinho quando a voz fala e sobe no respiro entre os jogos
+    if som_jogo:
+        idx = nova_entrada(som_jogo)
+        vol = 10 ** (float(projeto.get("jogo_db", 0)) / 20)
+        base = a.rsplit("[a]", 1)[0]
+        a = (f"{base}[jm0];[jm0]asplit[jma][jmsc];"
+             f"[{idx}:a]aresample=48000,loudnorm=I=-20:TP=-2:LRA=11,aresample=48000,volume={vol:.3f}[jg];"
+             f"[jg][jmsc]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=700:makeup=1[jgd];"
+             f"[jma][jgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
     # trilha de fundo (da biblioteca, jogo "Trilha"): baixa sozinha quando a voz fala (sidechain), sobe nas pausas
     trilha = projeto.get("trilha") or {}
     arq_tri = os.path.join(pasta_raw, trilha["arquivo"]) if trilha.get("arquivo") else ""
@@ -1052,9 +1397,16 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     except Exception as e:
         print(f"aviso: conferência da imagem falhou: {e}", flush=True)
     # 2) legenda, chamada e emojis por cima
+    projeto["timeline"] = usados_cena
     legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho, total)
     if diag:
         projeto["diagnostico_render"] = diag
     else:
         projeto.pop("diagnostico_render", None)
+    if projeto is not orig:  # modo corrido trabalhou numa cópia (com respiro): devolve os avisos ao projeto
+        for chave in ("avisos_video", "diagnostico_render"):
+            if chave in projeto:
+                orig[chave] = projeto[chave]
+            else:
+                orig.pop(chave, None)
     return usados_cena, total

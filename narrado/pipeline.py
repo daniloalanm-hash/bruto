@@ -9,6 +9,7 @@ Saídas na mesma pasta: final.mp4, projeto.json, cenas.jpg, status.json.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import traceback
@@ -61,6 +62,8 @@ ESTILO_PADRAO = {
     # palavra, whip pan só na troca de jogo, capa do jogo na 1ª aparição, trilha de fundo
     "enquadramento": "moldura", "transicoes_modo": "por_jogo", "musica": True, "capas": True,
     "marca_dagua": "@jogandosemplano",
+    # YouTube: "corrido" = fórmula dos tops (trailer do jogo tocando com som, ficha, respiro entre itens)
+    "edicao": "cortes", "respiro": 4,
 }
 
 
@@ -406,6 +409,31 @@ def jogos_necessarios(job, cenas):
     return nomes, trailers
 
 
+def _banco_cortes(jogos, cenas, nomes, job, pasta, st, prog):
+    """Banco do modo de cortes rápidos: análise dos trailers em trechos curtos sem texto + complementos."""
+    banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"), prog)
+    banco = assets.segunda_rodada(jogos, banco, RAW, [c["assunto"] for c in cenas if c.get("assunto")] + nomes[:1])
+    # pouco trecho de vídeo para o tamanho do roteiro = o mesmo trecho voltando várias vezes (fica chato).
+    # Completa com gameplay longa (janelas espalhadas) dos jogos com mais tempo de tela.
+    palavras_rot = sum(len(c["texto"].split()) for c in cenas)
+    cortes_previstos = palavras_rot / 3.1 / (3.2 if job.get("formato") == "horizontal" else 1.7)
+    assuntos_l = [c.get("assunto") for c in cenas if c.get("assunto")] or nomes[:1]
+    for j in sorted(jogos, key=lambda x: -sum(1 for a in assuntos_l if assets.mesmo_jogo(a, x["nome"], 0.4) or norm(a) == norm(x["nome"]))):
+        fatia = sum(1 for a in assuntos_l if assets.mesmo_jogo(a, j["nome"], 0.4) or norm(a) == norm(j["nome"])) / max(len(assuntos_l), 1)
+        precisa = cortes_previstos * max(fatia, 0.3) * 0.8
+        tem = sum(1 for m in banco.values() if m["jogo"] == j["chave"] and m["tipo"] == "v")
+        if fatia < 0.2 or tem >= precisa or any("_g_" in t["arquivo"] for t in j["trailers"]):
+            continue
+        st.etapa(f"Buscando mais cenas de {j['nome']} (tinha {tem} trechos)", 26)
+        g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
+        if g:
+            extra = dict(j, trailers=[g], screens=[])
+            banco.update(assets.montar_banco([extra], os.path.join(pasta, "thumbs"), ti0=len(j["trailers"])))
+            j["trailers"].append(g)
+            print(f"{j['nome']}: {tem} → {sum(1 for m in banco.values() if m['jogo'] == j['chave'] and m['tipo'] == 'v')} trechos de vídeo", flush=True)
+    return banco
+
+
 def preparar(pasta, st):
     job = ler(os.path.join(pasta, "job.json"))
     cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto"),
@@ -414,9 +442,13 @@ def preparar(pasta, st):
               **({"numero": c["numero"] if isinstance(c.get("numero"), dict) and c["numero"].get("valor") else None}
                  if "numero" in c else {}),
               **({"imagem": str(c["imagem"]).strip()} if c.get("imagem") else {}),
-              **({"capitulo": str(c["capitulo"]).strip()[:80]} if c.get("capitulo") else {})}
+              **({"capitulo": str(c["capitulo"]).strip()[:80]} if c.get("capitulo") else {}),
+              **({"ficha": {k: str(v)[:70] for k, v in c["ficha"].items() if v}} if isinstance(c.get("ficha"), dict) else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes, n_trailers = jogos_necessarios(job, cenas)
+    corrido = job.get("formato") == "horizontal" and job.get("edicao", "corrido") == "corrido"
+    if corrido:  # o trailer toca corrido: 1 basta por jogo (2 no principal), sem análise de trechos
+        n_trailers = {n: (2 if i == 0 else 1) for i, n in enumerate(nomes)}
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
@@ -445,26 +477,18 @@ def preparar(pasta, st):
 
     def prog(k, n):
         st.etapa(f"Escolhendo os melhores trechos dos trailers ({k}/{n})", 18 + int(10 * k / n))
-    banco = assets.montar_banco(jogos, os.path.join(pasta, "thumbs"), prog)
-    banco = assets.segunda_rodada(jogos, banco, RAW, [c["assunto"] for c in cenas if c.get("assunto")] + nomes[:1])
-    # pouco trecho de vídeo para o tamanho do roteiro = o mesmo trecho voltando várias vezes (fica chato).
-    # Completa com gameplay longa (janelas espalhadas) dos jogos com mais tempo de tela.
-    palavras_rot = sum(len(c["texto"].split()) for c in cenas)
-    cortes_previstos = palavras_rot / 3.1 / (3.2 if job.get("formato") == "horizontal" else 1.7)
-    assuntos_l = [c.get("assunto") for c in cenas if c.get("assunto")] or nomes[:1]
-    for j in sorted(jogos, key=lambda x: -sum(1 for a in assuntos_l if assets.mesmo_jogo(a, x["nome"], 0.4) or norm(a) == norm(x["nome"]))):
-        fatia = sum(1 for a in assuntos_l if assets.mesmo_jogo(a, j["nome"], 0.4) or norm(a) == norm(j["nome"])) / max(len(assuntos_l), 1)
-        precisa = cortes_previstos * max(fatia, 0.3) * 0.8
-        tem = sum(1 for m in banco.values() if m["jogo"] == j["chave"] and m["tipo"] == "v")
-        if fatia < 0.2 or tem >= precisa or any("_g_" in t["arquivo"] for t in j["trailers"]):
-            continue
-        st.etapa(f"Buscando mais cenas de {j['nome']} (tinha {tem} trechos)", 26)
-        g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
-        if g:
-            extra = dict(j, trailers=[g], screens=[])
-            banco.update(assets.montar_banco([extra], os.path.join(pasta, "thumbs"), ti0=len(j["trailers"])))
-            j["trailers"].append(g)
-            print(f"{j['nome']}: {tem} → {sum(1 for m in banco.values() if m['jogo'] == j['chave'] and m['tipo'] == 'v')} trechos de vídeo", flush=True)
+    if corrido:
+        banco = assets.banco_corrido(jogos, os.path.join(pasta, "thumbs"))
+        for j in jogos:  # jogo da lista sem trailer nenhum: gameplay longa do Dailymotion
+            if any(m["tipo"] == "v" and m["jogo"] == j["chave"] for m in banco.values()):
+                continue
+            st.etapa(f"Buscando gameplay de {j['nome']}", 26)
+            g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
+            if g:
+                j["trailers"].append(g)
+                banco.update(assets.banco_corrido([dict(j, screens=[], trailers=[g])], os.path.join(pasta, "thumbs")))
+    else:
+        banco = _banco_cortes(jogos, cenas, nomes, job, pasta, st, prog)
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))
     # fotos reais (Wikimedia Commons, licença livre) do que o tópico mostra quando não é jogo:
     # console, controle, pessoa, empresa, evento
@@ -533,6 +557,9 @@ def preparar(pasta, st):
         "post": job.get("post") or {},
         **{k: job[k] for k in ESTILO_PADRAO if k in job},
     }
+    if corrido:
+        projeto.update(edicao="corrido", musica=job.get("musica", False) is True, zoom_enfase=False,
+                       legenda_estilo=job.get("legenda_estilo") or "nenhuma")
     for k, v in ESTILO_PADRAO.items():
         projeto.setdefault(k, v)
     finalizar(pasta, projeto, audio, st, 62)
@@ -802,13 +829,44 @@ def teste_referencia(pasta, st):
         pub(destino, *saidas)
 
 
+def teste_corrido(pasta, st):
+    """Teste da fórmula dos tops (trailer corrido) com o pedido que já está na release, SEM mexer no vídeo
+    publicado: os arquivos saem com o prefixo "corrido_"."""
+    global publicador
+    job = ler(os.path.join(pasta, "job.json"))
+    job["edicao"] = "corrido"
+    job["legenda_estilo"] = "nenhuma"
+    job["musica"] = False
+    for c in job.get("cenas", []):  # pedido antigo sem ficha: ficha só com o nome do jogo do capítulo
+        if c.get("capitulo") and not c.get("ficha") and c.get("assunto"):
+            c["ficha"] = {"jogo": c["assunto"]}
+    gravar(os.path.join(pasta, "job.json"), job)
+    original = publicador
+
+    def pub_teste():
+        p = original()
+        if not p:
+            return None
+
+        def pub(*paths):
+            novos = []
+            for x in paths:
+                y = os.path.join(os.path.dirname(x), "corrido_" + os.path.basename(x))
+                shutil.copy(x, y)
+                novos.append(y)
+            p(*novos)
+        return pub
+    publicador = pub_teste
+    preparar(pasta, st)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])

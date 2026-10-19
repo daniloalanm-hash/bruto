@@ -582,6 +582,8 @@ def aplicar(projeto, raw, fontes, pasta_trab):
     """Gera os cartões do projeto e (na 1ª vez) coloca cada um no tópico certo. Devolve True se o banco mudou."""
     if projeto.get("cartoes") is False or "materia" not in projeto:
         return False  # vídeo feito antes dos cartões: ajuste não muda o que já foi aprovado
+    if projeto.get("edicao") == "corrido" and W > H:
+        return False  # YouTube na fórmula dos tops: o trailer corre sem cartelas (a ficha do jogo é sobreposta no render)
     os.makedirs(raw, exist_ok=True)
     os.makedirs(pasta_trab, exist_ok=True)
     banco, cenas = projeto["banco"], projeto["cenas"]
@@ -681,3 +683,49 @@ def aplicar(projeto, raw, fontes, pasta_trab):
             print(f"aviso: cartela de número do tópico {k} não gerada: {e}", flush=True)
     projeto["cartoes_aplicados"] = True
     return novo
+
+
+# ---------------------------------------------------------------- ficha do jogo (YouTube, fórmula dos tops)
+
+VERMELHO_FICHA = (230, 16, 22)
+
+
+def titulo_da_ficha(cena, ficha):
+    """ "12º — Pragmata": a posição vem do título do capítulo ("12º Pragmata"), o nome da ficha."""
+    cap = str(cena.get("capitulo") or "")
+    m = re.match(r"\s*(?:top\s*)?#?\s*(\d{1,2})\s*[º°o.]?(?=\s|[-—:]|$)", cap, re.I)
+    nome = str(ficha.get("jogo") or "").strip() or re.sub(r"^\s*#?\d{1,2}\s*[º°o.]?\s*[-—:]?\s*", "", cap).strip()
+    return f"{m.group(1)}º — {nome}" if m else nome
+
+
+def ficha(titulo, linhas, fontes, destino, escala=1.0):
+    """Cartão no canto inferior esquerdo: tarja vermelha com "Nº — Jogo" e caixa branca com os dados."""
+    from PIL import Image, ImageDraw
+    f_t = _fonte(fontes, "Poppins-Bold.ttf", int(52 * escala))
+    f_l = _fonte(fontes, "Poppins-Medium.ttf", int(34 * escala))
+    tmp = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    pad = int(22 * escala)
+    wt = int(tmp.textlength(titulo, font=f_t)) + 2 * pad
+    ht = int(86 * escala)
+    lh = int(46 * escala)
+    wl = max([int(tmp.textlength(x, font=f_l)) for x in linhas] + [0]) + 2 * pad
+    hl = lh * len(linhas) + 2 * int(14 * escala) if linhas else 0
+    larg, alt = max(wt, wl) + 8, ht + hl
+    img = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    r = int(16 * escala)
+    if linhas:
+        d.rounded_rectangle((0, ht - r, wl, alt - 1), r, fill=(255, 255, 255, 250))
+    d.rounded_rectangle((0, 0, wt, ht), r, fill=VERMELHO_FICHA + (255,))
+    d.text((pad, ht // 2), titulo, font=f_t, fill=(255, 255, 255), anchor="lm")
+    y = ht + int(10 * escala)
+    for x in linhas:
+        d.text((pad, y + lh // 2), x, font=f_l, fill=(15, 15, 15), anchor="lm")
+        y += lh
+    img.save(destino)
+    return destino
+
+
+def linhas_da_ficha(f):
+    rot = [("lancamento", "Lançamento"), ("plataformas", "Plataforma"), ("dublagem", "Dublagem PT-BR"), ("legendas", "Legendas PT-BR")]
+    return [f"{r}: {str(f[k]).strip()}" for k, r in rot if str(f.get(k) or "").strip()]

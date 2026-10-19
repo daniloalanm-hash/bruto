@@ -375,7 +375,7 @@ Reescreva e AUMENTE este roteiro até o tamanho pedido: mantenha o gancho e o fi
 const formatoAtual = () => $('#formato').value === 'horizontal' ? 'horizontal' : 'vertical';
 const DURACOES = {
   vertical: [['70', '1 min+ (monetiza no TikTok)'], ['90', '~1 min 30'], ['50', '~50 s'], ['35', '~35 s']],
-  horizontal: [['330', '~5 min'], ['450', '~7 min'], ['630', '~10 min']],
+  horizontal: [['330', '~5 min'], ['450', '~7 min'], ['630', '~10 min'], ['900', '~15 min'], ['1200', '~20 min'], ['1500', '~25 min']],
 };
 function atualizaFormato() {
   const f = formatoAtual();
@@ -389,6 +389,14 @@ function atualizaFormato() {
 $('#formato').addEventListener('change', atualizaFormato);
 
 const CANAL = 'Jogando Sem Plano';
+// fórmula dos tops de sucesso do YouTube: ~70 s por jogo com o trailer dele rodando por baixo e ~4 s de respiro
+const nItensTop = (segundos) => Math.min(20, Math.max(5, Math.round((segundos - 45) / 72)));
+const palavrasPorItem = (segundos) => Math.round(((segundos - 45) / nItensTop(segundos) - 4) * ritmo());
+function itensTop(segundos, tipo) {
+  const n = nItensTop(segundos), p = palavrasPorItem(segundos);
+  if (tipo === 'top' || tipo === 'lancamentos') return `${n} capítulos, um por jogo (≈${p} palavras cada; top lista em contagem regressiva, do ${n}º ao 1º)`;
+  return `4 a ${Math.max(8, n)} capítulos (top lista ou lançamentos: um por jogo, ≈${p} palavras cada, ${n} itens)`;
+}
 const TIPOS_YT = {
   curiosidades: 'curiosidades/história: cada capítulo é um bloco de curiosidades ou uma fase da história, do mais conhecido ao mais surpreendente',
   top: 'top lista em contagem regressiva (do último colocado ao 1º): cada capítulo é um item, com o porquê da posição',
@@ -397,18 +405,19 @@ const TIPOS_YT = {
 };
 
 function promptEstrutura(materia, segundos, tipo, extras) {
-  const palavras = Math.round(segundos * ritmo());
+  // o respiro de ~4 s antes de cada capítulo não tem narração
+  const palavras = Math.round((segundos - 4 * nItensTop(segundos)) * ritmo());
   return `Você é roteirista-chefe do canal de YouTube "${CANAL}" (games, em português do Brasil). Os vídeos são narrados (sem rosto), com cenas dos jogos, e o canal se destaca por vídeos RECHEADOS de informação — curiosidades, histórias de bastidor, top listas, dicas e lançamentos.
 
 TAREFA: planejar um vídeo de ~${Math.round(segundos / 60)} minutos (~${palavras} palavras narradas) sobre o tema/matéria abaixo. ${tipo === 'auto' ? 'Escolha o formato que rende mais (curiosidades, top, dicas ou lançamentos).' : `Formato: ${TIPOS_YT[tipo]}.`}
 PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, números, nomes de pessoas e estúdios, bastidores). Nada inventado: se não tiver certeza, não use.
 
-Monte 4 a 8 capítulos (top lista: um por item). Para cada capítulo: "titulo" (curto, para os capítulos do YouTube), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
+Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
 
 Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários) e "tags" (10 a 15 tags).
 
 Responda SOMENTE com JSON, sem texto fora dele:
-{"titulo": "...", "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "fatos": ["..."], "jogos": ["..."], "palavras": 150}], "descricao": "...", "tags": ["..."]}
+{"titulo": "...", "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": {"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "tags": ["..."]}
 
 TEMA / MATÉRIA
 ${materia.titulo || ''}
@@ -448,6 +457,7 @@ Jogos deste capítulo: ${(c.jogos || plano.jogos || []).join(', ')}
 Regras do capítulo:
 - comece emendando com o fim do trecho anterior ("${(anterior || '').slice(-200)}") — sem repetir, sem "no capítulo anterior";
 - ritmo de YouTube: contexto + detalhe curioso + por que isso importa; nada de enrolação;
+${c.ficha ? `- capítulo de UM jogo (o trailer dele roda por baixo): abra com uma frase que vende o jogo, diga o nome dele cedo, depois premissa/história, como é jogar, "um detalhe interessante é que…" (fato pouco conhecido) e feche com um veredito curto de por que ele está nessa posição;` : ''}
 ${ultimo ? `- este é o ÚLTIMO capítulo: entregue a revelação mais forte prometida no começo e feche o vídeo: uma pergunta específica para os comentários + pedido de inscrição e like + "e assiste esse outro vídeo aqui" (tela final);` : '- termine com um mini-gancho para o próximo capítulo ("e o próximo é ainda mais bizarro");'}
 ${meio ? '- no meio deste capítulo, uma frase curta e natural pedindo para se inscrever no canal (sem interromper a história);' : ''}
 
@@ -468,12 +478,13 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
   }
   onStatus('A IA está pesquisando e montando os capítulos…');
   const plano = await gemini(promptEstrutura(materia, segundos, tipo, extras), onStatus, { buscar: true });
-  plano.capitulos = (plano.capitulos || []).filter((c) => c && c.titulo).slice(0, 10);
+  plano.capitulos = (plano.capitulos || []).filter((c) => c && c.titulo).slice(0, 25);
   if (!plano.capitulos.length) throw new Error('A IA não conseguiu montar os capítulos. Tente de novo ou dê mais detalhes do tema.');
   const total = Math.round(segundos * ritmo());
   const cenas = [];
   onStatus('Escrevendo a abertura…');
-  const ab = await gemini(promptAbertura(plano, Math.round(total * 0.1)), onStatus);
+  // abertura curta como nos tops de sucesso (~45 s): gancho + o que vem + pedido de like
+  const ab = await gemini(promptAbertura(plano, Math.round(Math.min(total * 0.1, 45 * ritmo()))), onStatus);
   const norm = (x) => roteiroDaIA({ cenas: x.cenas || [] }, materia).cenas;
   const abertura = norm(ab);
   if (abertura[0]) abertura[0].capitulo = 'Introdução';
@@ -484,6 +495,11 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     const r = await gemini(promptCapitulo(plano, i, anterior), onStatus);
     const cs = norm(r);
     if (cs[0]) cs[0].capitulo = plano.capitulos[i].titulo;
+    const fi = plano.capitulos[i].ficha;
+    if (cs[0] && fi && typeof fi === 'object' && (fi.jogo || (plano.capitulos[i].jogos || [])[0])) {
+      cs[0].ficha = { jogo: String(fi.jogo || plano.capitulos[i].jogos[0]).slice(0, 60), lancamento: String(fi.lancamento || '').slice(0, 40),
+        plataformas: String(fi.plataformas || '').slice(0, 70), dublagem: String(fi.dublagem || '').slice(0, 12), legendas: String(fi.legendas || '').slice(0, 12) };
+    }
     // tópico sem jogo marcado fica no jogo do capítulo (senão aparece o jogo principal no meio de outro item)
     const jogoCap = (plano.capitulos[i].jogos || [])[0] || null;
     for (const c of cs) if (!c.assunto && jogoCap) c.assunto = jogoCap;
@@ -1053,7 +1069,11 @@ function montarJob() {
     titulo: r.titulo, titulo_tela: r.titulo_tela || '', fonte: state.materia?.url || '',
     formato: r.formato === 'horizontal' ? 'horizontal' : 'vertical',
     // YouTube não tem som em alta: lá a trilha de fundo vem do Bruto; no TikTok, do app
-    ...(r.formato === 'horizontal' ? { musica: true } : {}),
+    // YouTube (fórmula dos tops de sucesso): trailer do jogo rodando por baixo com o som dele, ficha do jogo,
+    // respiro entre os itens, sem legenda na tela. TikTok: nunca fica sem legenda.
+    ...(r.formato === 'horizontal'
+      ? { edicao: 'corrido', legenda_estilo: 'nenhuma', musica: false, zoom_enfase: false }
+      : (estiloSalvo().legenda_estilo === 'nenhuma' ? { legenda_estilo: 'palavra' } : {})),
     jogos: r.jogos,
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
@@ -1597,8 +1617,12 @@ function renderAparencia() {
   tit.addEventListener('change', () => { p.titulo_tela = tit.value.trim(); if (p.titulo_tela) p.titulo_gancho = true; marcarSujo(); });
   $('#aparencia').replaceChildren(
     h('div', { class: 'grade-ap' },
-      campoSel('Legenda', p.legenda_estilo || 'classico', [['palavra', 'Palavra por palavra (referência)'], ['classico', 'Clássica (Anton)'], ['caixa', 'Caixa no destaque'], ['moderna', 'Moderna (Montserrat)']], muda('legenda_estilo')),
-      ...(p.formato === 'horizontal' ? [] : [
+      campoSel('Legenda', p.legenda_estilo || 'classico', [['palavra', 'Palavra por palavra (referência)'], ['classico', 'Clássica (Anton)'], ['caixa', 'Caixa no destaque'], ['moderna', 'Moderna (Montserrat)'], ...(p.formato === 'horizontal' ? [['nenhuma', 'Sem legenda (YouTube)']] : [])], (v) => { p.legenda_estilo = v; if (p.formato !== 'horizontal') salvarEstilo(p); marcarSujo(); }),
+      ...(p.formato === 'horizontal' ? [
+        campoSel('Edição', p.edicao || 'cortes', [['corrido', 'Trailer corrido + ficha do jogo (fórmula top)'], ['cortes', 'Cortes rápidos (estilo TikTok)']], (v) => { p.edicao = v; marcarSujo(); }),
+        h('label', { class: 'field' }, h('span', {}, 'Respiro entre jogos (s)'),
+          h('input', { type: 'number', min: 0, max: 10, step: 1, value: p.respiro ?? 4, onchange: (e) => { p.respiro = Math.min(10, Math.max(0, +e.target.value || 0)); marcarSujo(); } })),
+      ] : [
         campoSel('Enquadramento', p.enquadramento || 'cheio', [['moldura', 'Janela + fundo desfocado (referência)'], ['cheio', 'Tela cheia (corte 9:16)']], muda('enquadramento')),
         campoSel('Transições', p.transicoes_modo || 'auto', [['por_jogo', 'Pan só quando muda o jogo (referência)'], ['auto', 'Variadas em todo tópico']], muda('transicoes_modo'))]),
       campoSel('Cor do destaque', p.legenda_cor || 'amarelo', [['amarelo', 'Amarelo'], ['verde', 'Verde'], ['vermelho', 'Vermelho'], ['ciano', 'Ciano'], ['rosa', 'Rosa']], muda('legenda_cor')),
