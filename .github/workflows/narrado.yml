@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   video:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # fixo: a troca do ubuntu-latest para o 26 (out/2026) não pode mudar o render
     timeout-minutes: 300  # vídeo longo do YouTube (até 25 min) leva bem mais que o curto
     env:
       GH_TOKEN: ${{ github.token }}
@@ -99,7 +99,12 @@ jobs:
           ls -la job
 
       - name: Montar o vídeo
-        run: python -u narrado/pipeline.py "${{ inputs.fase }}" job
+        run: |
+          set -o pipefail
+          # o log vai para a release a cada minuto: dá para ver onde parou mesmo se o servidor travar
+          ( while sleep 60; do gh release upload "$NARRADO_TAG" job/log_servidor.txt --clobber >/dev/null 2>&1 || true; done ) &
+          python -u narrado/pipeline.py "${{ inputs.fase }}" job 2>&1 | tee job/log_servidor.txt
+          gh release upload "$NARRADO_TAG" job/log_servidor.txt --clobber >/dev/null 2>&1 || true
 
       - name: Publicar erro
         if: ${{ failure() && !startsWith(inputs.fase, 'teste') }}
@@ -109,3 +114,4 @@ jobs:
               "${{ inputs.fase }}" "$(date +%s)" > job/status.json
           fi
           gh release upload "$NARRADO_TAG" job/status.json --clobber || true
+          gh release upload "$NARRADO_TAG" job/log_servidor.txt --clobber || true
