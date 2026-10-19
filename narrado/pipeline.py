@@ -448,7 +448,7 @@ def preparar(pasta, st):
     nomes, n_trailers = jogos_necessarios(job, cenas)
     corrido = job.get("formato") == "horizontal" and job.get("edicao", "corrido") == "corrido"
     if corrido:  # o trailer toca corrido: 1 basta por jogo (2 no principal), sem análise de trechos
-        n_trailers = {n: (2 if i == 0 else 1) for i, n in enumerate(nomes)}
+        n_trailers = {n: (4 if i == 0 else 3) for i, n in enumerate(nomes)}
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
@@ -478,15 +478,25 @@ def preparar(pasta, st):
     def prog(k, n):
         st.etapa(f"Escolhendo os melhores trechos dos trailers ({k}/{n})", 18 + int(10 * k / n))
     if corrido:
-        banco = assets.banco_corrido(jogos, os.path.join(pasta, "thumbs"))
-        for j in jogos:  # jogo da lista sem trailer nenhum: gameplay longa do Dailymotion
-            if any(m["tipo"] == "v" and m["jogo"] == j["chave"] for m in banco.values()):
+        banco = assets.banco_corrido(jogos, os.path.join(pasta, "thumbs"), prog)
+        # cada jogo precisa de vídeo aproveitável para o tempo de tela dele (sem o trailer dar a volta e repetir):
+        # faltando, completa com gameplay longa do Dailymotion
+        for j in jogos:
+            fala = sum(len(c["texto"].split()) for c in cenas
+                       if c.get("assunto") and (assets.mesmo_jogo(c["assunto"], j["nome"], 0.4) or norm(c["assunto"]) == norm(j["nome"])))
+            precisa = fala / 2.6 * 1.15 + 8
+            tem = assets.segundos_de_video(banco, j["chave"])
+            if fala and tem >= precisa:
                 continue
-            st.etapa(f"Buscando gameplay de {j['nome']}", 26)
+            if not fala and tem > 0:
+                continue
+            st.etapa(f"Buscando gameplay de {j['nome']} (tinha {tem:.0f}s de {precisa:.0f}s)", 26)
             g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
             if g:
+                banco.update(assets.banco_corrido([dict(j, screens=[], trailers=[g])], os.path.join(pasta, "thumbs"),
+                                                  ti0=len(j["trailers"])))
                 j["trailers"].append(g)
-                banco.update(assets.banco_corrido([dict(j, screens=[], trailers=[g])], os.path.join(pasta, "thumbs")))
+                print(f"{j['nome']}: {tem:.0f}s → {assets.segundos_de_video(banco, j['chave']):.0f}s de vídeo", flush=True)
     else:
         banco = _banco_cortes(jogos, cenas, nomes, job, pasta, st, prog)
     banco.update(assets.baixar_imagens_materia(job.get("imagens_materia"), RAW))

@@ -1044,24 +1044,98 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     return banco
 
 
-def banco_corrido(jogos_info, pasta_thumbs):
-    """Banco do vídeo longo "trailer corrido": cada trailer entra inteiro (o render toca em sequência, com o som),
-    sem a análise de trechos curtos (que era a parte mais lenta). Screenshots passam pelo filtro de sempre."""
+def trechos_corridos(video):
+    """Trailer para tocar CORRIDO (YouTube): todos os planos, na ordem, menos os que não podem ir ao ar —
+    logos de estúdio/classificação do começo, cartelas e telas com texto (aviso de violência, menu, anúncio,
+    datas), tela preta. O fim do trailer (logo do jogo) é usado à parte pelo render, no fecho do capítulo.
+
+    Um passe só no trailer: detecção de cortes + quadros da tela inteira a 2 por segundo."""
+    import subprocess
+    import tempfile
+    from PIL import Image, ImageStat
+    dur = duracao(video)
+    if dur < 6:
+        return []
+    with tempfile.TemporaryDirectory() as tmp:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-i", video, "-filter_complex",
+                            "[0:v]split[a][b];[a]scale=320:-2,select='gt(scene,0.30)',showinfo,nullsink;"
+                            "[b]fps=2,scale=640:-2[q]", "-map", "[q]", "-q:v", "4", os.path.join(tmp, "q%05d.jpg")],
+                           capture_output=True, text=True)
+        cortes = [float(x) for x in re.findall(r"pts_time:([\d.]+)", r.stderr)]
+        n = len([f for f in os.listdir(tmp) if f.startswith("q")])
+
+        def quadro(t):
+            k = min(max(int(t * 2) + 1, 1), max(n, 1))
+            q = os.path.join(tmp, f"q{k:05d}.jpg")
+            return q if os.path.exists(q) else None
+
+        def ruim(t):
+            q = quadro(t)
+            if not q:
+                return "sem quadro"
+            im = Image.open(q).convert("L")
+            h = im.height
+            if ImageStat.Stat(im.crop((0, int(h * 0.2), im.width, int(h * 0.8)))).mean[0] < 14:
+                return "preto"
+            if _fracao_texto_east(q) >= 0.0022:
+                return "texto"
+            return None
+
+        ini = dur * 0.06 if dur < 60 else max(dur * 0.06, 8.0)
+        fim = dur * 0.92
+        marcas = [0.0] + cortes + [dur]
+        planos = [(max(a, ini) + 0.05, min(b, fim) - 0.05) for a, b in zip(marcas, marcas[1:])]
+        bons, conta = [], {}
+        for a, b in planos:
+            if b - a < 0.6:
+                continue
+            pontos = [(a + b) / 2] + ([a + 0.4, b - 0.4] if b - a > 3.5 else [])
+            motivo = next((m for m in (ruim(t) for t in pontos) if m), None)
+            if motivo:
+                conta[motivo] = conta.get(motivo, 0) + 1
+                continue
+            bons.append({"t": round(a, 2), "dur": round(b - a, 2)})
+    print(f"trailer corrido {os.path.basename(video)}: {dur:.0f}s, {len(planos)} planos, "
+          f"{sum(x['dur'] for x in bons):.0f}s aproveitáveis; descartes {conta}", flush=True)
+    return bons
+
+
+def _analisar_corrido(arquivo):
+    return arquivo, trechos_corridos(arquivo)
+
+
+def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
+    """Banco do vídeo longo "trailer corrido": os planos aproveitáveis de cada trailer, na ordem (o render toca
+    em sequência, com o som). Screenshots passam pelo filtro de sempre."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
     so_telas = [dict(j, trailers=[]) for j in jogos_info]
     banco = montar_banco(so_telas, pasta_thumbs)
+    arquivos = [t["arquivo"] for j in jogos_info for t in j["trailers"]]
+    analise = {}
+    if arquivos:
+        nucleos = os.cpu_count() or 2
+        with ProcessPoolExecutor(max_workers=max(1, min(len(arquivos), nucleos)), initializer=_iniciar_processo,
+                                 initargs=(1,)) as ex:
+            futuros = [ex.submit(_analisar_corrido, a) for a in arquivos]
+            for k, f in enumerate(as_completed(futuros), 1):
+                try:
+                    a, trechos = f.result()
+                    analise[a] = trechos
+                except Exception as e:
+                    print(f"aviso: análise de trailer falhou: {e}", flush=True)
+                if progresso:
+                    progresso(k, len(arquivos))
     for j in jogos_info:
         for ti, t in enumerate(j["trailers"]):
-            try:
-                d = duracao(t["arquivo"])
-            except Exception:
-                continue
-            if d < 8:
-                continue
-            ini = min(max(0.06 * d, 4.0), 12.0)  # pula logos de estúdio/classificação do começo
-            banco[f"{j['chave']}_t{ti}_c"] = {"tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
-                                              "t": round(ini, 2), "dur": round(d - ini, 2), "corrido": True,
-                                              "fim": round(d, 2)}
+            for c in analise.get(t["arquivo"], []):
+                banco[f"{j['chave']}_t{ti + ti0}_{int(c['t'] * 10)}"] = {
+                    "tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
+                    "t": c["t"], "dur": c["dur"], "corrido": True}
     return banco
+
+
+def segundos_de_video(banco, chave):
+    return sum(m.get("dur", 0) for m in banco.values() if m.get("jogo") == chave and m["tipo"] == "v")
 
 
 def sprite(banco, pasta_raw, destino, col=10, tw=108, th=192):

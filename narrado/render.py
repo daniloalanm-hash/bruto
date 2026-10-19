@@ -372,19 +372,18 @@ def voz_com_respiro(voz_wav, cortes, g, destino):
 def _faixa_midia(m):
     """(início, fim) tocável de uma mídia de vídeo do banco."""
     a = float(m.get("t", 0))
-    if m.get("corrido"):
-        return a, float(m.get("fim", a + m.get("dur", 10))) - 0.4
     return a, a + float(m.get("dur", 3))
 
 
-def montar_corrido(projeto, banco, faixas, seg_dir):
-    """Decide os trechos do modo corrido: cada jogo toca o trailer dele em sequência (de onde parou),
-    a abertura é uma montagem rápida dos jogos da lista e cada capítulo fecha no fim do trailer (logo)."""
+def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
+    """Decide os trechos do modo corrido: cada jogo toca o trailer dele em sequência (de onde parou, pulando só
+    os planos ruins), a abertura é uma montagem rápida dos jogos da lista e cada capítulo fecha no fim do trailer
+    (logo do jogo)."""
     cenas = projeto["cenas"]
     caps = set(cenas_de_capitulo(projeto))
     primeiro_cap = min(caps) if caps else None
     g_resp = float(projeto.get("respiro", 4) or 0) if projeto.get("respiro_cortes") else 0.0
-    vids, imgs, ordem = {}, {}, []
+    brutos, imgs, ordem = {}, {}, []
     for c in cenas:
         j = c.get("jogo")
         if j and j not in ordem:
@@ -392,57 +391,71 @@ def montar_corrido(projeto, banco, faixas, seg_dir):
     for mid, m in banco.items():
         if m.get("cartao") or m.get("capa") or m.get("jogo") in (None, "cartao", "materia", "commons"):
             continue
-        (vids if m["tipo"] == "v" else imgs).setdefault(m["jogo"], []).append(mid)
-    for j in vids:
-        vids[j].sort(key=lambda x: (banco[x]["arquivo"], banco[x].get("t", 0)))
-    cursor = {}  # jogo -> [índice da mídia, posição]
+        if m["tipo"] == "v":
+            brutos.setdefault(m["jogo"], []).append((m["arquivo"], *_faixa_midia(m), mid))
+        else:
+            imgs.setdefault(m["jogo"], []).append(mid)
+    # planos bons vizinhos viram um trecho contínuo só (o trailer corre com os cortes dele)
+    vids = {}
+    for j, lst in brutos.items():
+        lst.sort()
+        faixas_j = []
+        for arq, a, b, mid in lst:
+            if faixas_j and faixas_j[-1][0] == arq and a <= faixas_j[-1][2] + 0.35:
+                faixas_j[-1][2] = max(faixas_j[-1][2], b)
+            else:
+                faixas_j.append([arq, a, b, mid])
+        vids[j] = [f for f in faixas_j if f[2] - f[1] >= 1.0]
+    cursor = {}  # jogo -> [índice do trecho, posição]
     visitas = {}
 
     def tomar(j, d):
-        """Trechos (mid, t0, dur) que cobrem d segundos do material do jogo j, continuando de onde parou."""
+        """Pedaços (mid, t0, dur) que cobrem d segundos do material do jogo j, continuando de onde parou."""
         lst = vids.get(j)
         if not lst:
             return []
         i, pos = cursor.get(j, [0, None])
         out, falta, voltas = [], d, 0
         while falta > 0.02 and voltas < 3 * len(lst) + 3:
-            a, b = _faixa_midia(banco[lst[i]])
+            arq, a, b, mid = lst[i]
             p = a if pos is None else max(pos, a)
             disp = b - p
-            if disp < 1.0:
+            if disp < 0.9:
                 i, pos, voltas = (i + 1) % len(lst), None, voltas + 1
                 continue
             take = min(falta, disp)
-            if 0 < falta - take < 0.8:  # não deixa um pedacinho de 0,5 s sozinho
+            if 0 < falta - take < 0.8:  # não deixa um pedacinho solto no fim
                 take = max(take - (0.8 - (falta - take)), 0.5)
-            out.append((lst[i], p, take))
+            out.append((mid, p, take))
             falta -= take
             pos = p + take
         cursor[j] = [i, pos]
         return out
 
     def final_do_trailer(j, d):
-        """Os últimos d segundos do trailer em uso (logo/título do jogo), se ainda não foram mostrados."""
+        """Os últimos d segundos do arquivo em uso (logo/título do jogo), se ainda não foram mostrados."""
         lst = vids.get(j)
         if not lst:
             return None
         i, pos = cursor.get(j, [0, None])
-        a, b = _faixa_midia(banco[lst[i]])
-        ini = b - d
-        if ini < (pos or a) + 1.0:
+        arq, a, b, mid = lst[i]
+        try:
+            total_arq = _dur_fonte.get(arq) or duracao(os.path.join(pasta_raw, arq))
+        except Exception:
             return None
-        cursor[j] = [i, b]
-        return (lst[i], ini, d)
+        ini = total_arq - d - 0.3
+        if ini < (pos if pos is not None else a) + 1.0 or "_g_" in arq:  # gameplay longa não tem logo no fim
+            return None
+        return (mid, ini, d)
 
     def plano_abertura(j):
-        lst = vids.get(j)
+        lst = [f for f in vids.get(j, []) if f[2] - f[1] >= CORTE_ABERTURA + 0.3] or vids.get(j)
         if not lst:
             return None
         v = visitas.get(j, 0)
         visitas[j] = v + 1
-        a, b = _faixa_midia(banco[lst[v % len(lst)]])
-        t = a + (b - a) * (0.45 + 0.13 * (v % 4))
-        return (lst[v % len(lst)], min(t, b - CORTE_ABERTURA - 0.2), CORTE_ABERTURA)
+        arq, a, b, mid = lst[(len(lst) // 2 + v) % len(lst)]  # do meio do trailer: a parte de ação
+        return (mid, max(a, min((a + b) / 2 - CORTE_ABERTURA / 2, b - CORTE_ABERTURA)), CORTE_ABERTURA)
 
     tarefas, lista, usados, k = [], [], [], 0
     giro = 0
@@ -1136,7 +1149,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         print(f"pouco material ({distintos} mídias para {total:.0f}s): cortes de {corte:.1f}s", flush=True)
     diag = []
     if corrido:
-        tarefas, lista, usados_cena = montar_corrido(projeto, banco, faixas, seg_dir)
+        tarefas, lista, usados_cena = montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw)
         tarefas = [(t[0], t[1], t[2], os.path.join(pasta_raw, t[2]["arquivo"]), *t[4:]) for t in tarefas]
     for fi, (c, a, b) in enumerate([] if corrido else faixas):
         dur = b - a
