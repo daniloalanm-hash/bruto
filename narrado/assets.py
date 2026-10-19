@@ -1052,7 +1052,7 @@ def trechos_corridos(video):
     Um passe só no trailer: detecção de cortes + quadros da tela inteira a 2 por segundo."""
     import subprocess
     import tempfile
-    from PIL import Image, ImageStat
+    from PIL import Image
     dur = duracao(video)
     if dur < 6:
         return []
@@ -1075,7 +1075,17 @@ def trechos_corridos(video):
                 return "sem quadro"
             im = Image.open(q).convert("L")
             h = im.height
-            if ImageStat.Stat(im.crop((0, int(h * 0.2), im.width, int(h * 0.8)))).mean[0] < 14:
+            meio = im.crop((0, int(h * 0.15), im.width, int(h * 0.85)))
+            # preto de verdade (transição, tela de carregamento): nem os pontos mais claros aparecem.
+            # Jogo escuro (terror) com luz em parte da cena passa.
+            hist = meio.histogram()
+            tot, acum, p95 = sum(hist), 0, 0
+            for v, c in enumerate(hist):
+                acum += c
+                if acum >= tot * 0.95:
+                    p95 = v
+                    break
+            if p95 < 28:
                 return "preto"
             if _fracao_texto_east(q) >= 0.0022:
                 return "texto"
@@ -1084,17 +1094,29 @@ def trechos_corridos(video):
         ini = dur * 0.06 if dur < 60 else max(dur * 0.06, 8.0)
         fim = dur * 0.92
         marcas = [0.0] + cortes + [dur]
-        planos = [(max(a, ini) + 0.05, min(b, fim) - 0.05) for a, b in zip(marcas, marcas[1:])]
-        bons, conta = [], {}
-        for a, b in planos:
+        bons, conta, n_planos = [], {}, 0
+        for a, b in zip(marcas, marcas[1:]):
+            a, b = max(a, ini) + 0.05, min(b, fim) - 0.05
             if b - a < 0.6:
                 continue
-            pontos = [(a + b) / 2] + ([a + 0.4, b - 0.4] if b - a > 3.5 else [])
-            motivo = next((m for m in (ruim(t) for t in pontos) if m), None)
-            if motivo:
-                conta[motivo] = conta.get(motivo, 0) + 1
-                continue
-            bons.append({"t": round(a, 2), "dur": round(b - a, 2)})
+            n_planos += 1
+            # o plano é avaliado a cada 0,5 s: só o pedaço ruim sai (cartela que aparece no meio, fade no preto)
+            pts = [a + 0.25 + 0.5 * i for i in range(max(1, int((b - a) / 0.5)))]
+            run_ini = None
+            for t in pts + [None]:
+                motivo = ruim(t) if t is not None else "fim"
+                if motivo is None:
+                    if run_ini is None:
+                        run_ini = max(a, t - 0.25)
+                    continue
+                if t is not None:
+                    conta[motivo] = conta.get(motivo, 0) + 1
+                if run_ini is not None:
+                    fim_run = min(b, (t - 0.25) if t is not None else b)
+                    if fim_run - run_ini >= 1.0:
+                        bons.append({"t": round(run_ini, 2), "dur": round(fim_run - run_ini, 2)})
+                    run_ini = None
+        planos = range(n_planos)
     print(f"trailer corrido {os.path.basename(video)}: {dur:.0f}s, {len(planos)} planos, "
           f"{sum(x['dur'] for x in bons):.0f}s aproveitáveis; descartes {conta}", flush=True)
     return bons

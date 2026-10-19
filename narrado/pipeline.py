@@ -482,13 +482,13 @@ def preparar(pasta, st):
         # cada jogo precisa de vídeo aproveitável para o tempo de tela dele (sem o trailer dar a volta e repetir):
         # faltando, completa com gameplay longa do Dailymotion
         for j in jogos:
-            fala = sum(len(c["texto"].split()) for c in cenas
-                       if c.get("assunto") and (assets.mesmo_jogo(c["assunto"], j["nome"], 0.4) or norm(c["assunto"]) == norm(j["nome"])))
-            precisa = fala / 2.6 * 1.15 + 8
+            n_pal = sum(len(c["texto"].split()) for c in cenas
+                        if c.get("assunto") and (assets.mesmo_jogo(c["assunto"], j["nome"], 0.4) or norm(c["assunto"]) == norm(j["nome"])))
+            precisa = n_pal / 2.6 * 1.15 + 8
             tem = assets.segundos_de_video(banco, j["chave"])
-            if fala and tem >= precisa:
+            if n_pal and tem >= precisa:
                 continue
-            if not fala and tem > 0:
+            if not n_pal and tem > 0:
                 continue
             st.etapa(f"Buscando gameplay de {j['nome']} (tinha {tem:.0f}s de {precisa:.0f}s)", 26)
             g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
