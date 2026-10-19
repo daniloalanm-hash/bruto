@@ -726,6 +726,81 @@ def teste_fontes(pasta, st):
     if pub:
         pub(destino)
 
+TESTE_REF = "https://www.youtube.com/watch?v=jYfAR2fk8Oo"
+
+
+def teste_referencia(pasta, st):
+    """Diagnóstico: baixa um vídeo de referência (baixa resolução) e mede o ritmo de edição — cortes por
+    minuto, duração média das tomadas, folhas de quadros e a legenda automática (roteiro)."""
+    import glob
+    import shutil
+    ref = os.path.join(pasta, "ref")
+    os.makedirs(ref, exist_ok=True)
+    rel, log = {"url": TESTE_REF}, []
+    arq = None
+    for cli in ("default", "tv,web_safari", "mweb", "ios"):
+        cmd = ["yt-dlp", TESTE_REF, "-f", "bv*[height<=360]+ba/b[height<=360]/worst", "--merge-output-format", "mp4",
+               "-o", os.path.join(ref, "v.%(ext)s"), "--write-auto-subs", "--write-subs", "--sub-langs", "pt.*,pt",
+               "--sub-format", "vtt", "--no-playlist", "--quiet", "--no-warnings"]
+        if cli != "default":
+            cmd += ["--extractor-args", f"youtube:player_client={cli}"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        log.append(f"{cli}: rc={r.returncode} {r.stderr[-400:]}")
+        achados = [f for f in glob.glob(os.path.join(ref, "v.*")) if f.endswith((".mp4", ".webm", ".mkv"))]
+        if achados:
+            arq = achados[0]
+            break
+    rel["log"] = log
+    saidas = []
+    if arq:
+        dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", arq],
+                                   capture_output=True, text=True).stdout.strip() or 0)
+        rel["duracao"] = dur
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-i", arq, "-vf", "select='gt(scene,0.30)',showinfo", "-an", "-f", "null", "-"],
+                           capture_output=True, text=True)
+        cortes = [float(x) for x in re.findall(r"pts_time:([\d.]+)", r.stderr)]
+        rel["cortes"] = [round(c, 2) for c in cortes]
+        if cortes:
+            tomadas = [b - a for a, b in zip([0.0] + cortes, cortes + [dur])]
+            rel["tomada_media"] = round(sum(tomadas) / len(tomadas), 2)
+            rel["tomada_mediana"] = round(sorted(tomadas)[len(tomadas) // 2], 2)
+            rel["cortes_por_minuto"] = [sum(1 for c in cortes if m * 60 <= c < (m + 1) * 60) for m in range(int(dur // 60) + 1)]
+        # loudness ao longo do tempo (fala x trilha)
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-i", arq, "-af", "ebur128=peak=none", "-f", "null", "-"],
+                           capture_output=True, text=True)
+        ms = re.findall(r"t:\s*([\d.]+).*?M:\s*(-?[\d.]+)", r.stderr)
+        rel["loudness_m_por_s"] = [float(m) for t, m in ms if abs(float(t) - round(float(t))) < 0.05][:2000]
+        # folhas de quadros: abertura (1 q/s, 0-90 s), um item inteiro (47-114 s) e o vídeo todo (1 q/10 s)
+        for nome, ini, fim, fps in (("abertura", 0, 60, 1), ("abertura2", 60, 120, 1), ("item20", 47, 114, 1),
+                                    ("final", max(dur - 120, 0), dur, 1), ("geral", 0, dur, 0.1)):
+            dest = os.path.join(pasta, f"ref_{nome}.jpg")
+            n = int((fim - ini) * fps) + 1
+            cols = 10
+            rows = max(1, -(-n // cols))
+            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(ini), "-t", str(fim - ini), "-i", arq,
+                            "-vf", f"fps={fps},scale=192:-2,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                                   f"text='%{{eif\\:t+{ini}\\:d}}':x=4:y=4:fontsize=16:fontcolor=yellow:box=1:boxcolor=black,"
+                                   f"tile={cols}x{rows}", "-frames:v", "1", "-q:v", "4", dest], capture_output=True)
+            if os.path.exists(dest):
+                saidas.append(dest)
+        # trecho de áudio da abertura (trilha + efeitos) e da transição entre itens
+        for nome, ini, d in (("ref_audio_abertura.mp3", 0, 60), ("ref_audio_item.mp3", 100, 30)):
+            dest = os.path.join(pasta, nome)
+            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(ini), "-t", str(d), "-i", arq,
+                            "-vn", "-b:a", "96k", dest], capture_output=True)
+            if os.path.exists(dest):
+                saidas.append(dest)
+        subs = glob.glob(os.path.join(ref, "*.vtt"))
+        if subs:
+            dest = os.path.join(pasta, "ref_legenda.vtt")
+            shutil.copy(subs[0], dest)
+            saidas.append(dest)
+    destino = os.path.join(pasta, "teste_referencia.json")
+    gravar(destino, rel)
+    pub = publicador()
+    if pub:
+        pub(destino, *saidas)
+
 
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
@@ -733,7 +808,7 @@ def main():
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
