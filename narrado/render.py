@@ -1375,6 +1375,16 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         if progresso:
             progresso(fi + 1, len(faixas) * 2)
 
+    # durações no grid de quadros (acumulado): cada trecho sai com o número exato de quadros e a soma bate com o
+    # total — a junção sem reencodar funciona (antes sobrava ~0,6 s em 10 min: reencodava o vídeo inteiro de novo)
+    acum, novas = 0.0, []
+    for tf in tarefas:
+        ini_f = round(acum * FPS)
+        acum += tf[4]
+        d_q = max(1, round(acum * FPS) - ini_f) / FPS
+        novas.append((*tf[:4], d_q, *tf[5:]))
+    tarefas = novas
+
     def codificar(tf):
         k, mid, m, src, d, out, fx, rep, midias = tf
         if m.get("corrido"):
