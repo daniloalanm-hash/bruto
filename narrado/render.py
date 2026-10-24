@@ -1269,6 +1269,8 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             if vids_c:
                 mid = max(vids_c, key=lambda x: (banco[x].get("dur", 0), -uso.get(x, 0)))
                 m = dict(banco[mid], som=True)
+                if escolhido == mid and projeto["cenas"][c].get("pausa_t") is not None:
+                    m["t"] = float(projeto["cenas"][c]["pausa_t"])  # instante exato do trailer (ex.: a música)
                 out = os.path.join(seg_dir, f"{k:04d}.mp4")
                 tarefas.append((k, mid, m, os.path.join(pasta_raw, m["arquivo"]), pz, out, None, 0, [mid]))
                 usados_cena[-1]["cortes"].append(mid)
