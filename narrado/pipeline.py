@@ -450,7 +450,10 @@ def preparar(pasta, st):
     nomes, n_trailers = jogos_necessarios(job, cenas)
     corrido = job.get("formato") == "horizontal" and job.get("edicao", "corrido") == "corrido"
     if corrido:  # o trailer toca corrido: 1 basta por jogo (2 no principal), sem análise de trechos
-        n_trailers = {n: (4 if i == 0 else 3) for i, n in enumerate(nomes)}
+        # jogo citado de passagem (1 tópico) não precisa de 3 trailers: análise custa ~30 s por trailer
+        assuntos_c = [c.get("assunto") for c in cenas if c.get("assunto")]
+        n_trailers = {n: (4 if i == 0 else 3 if assuntos_c.count(n) >= 4 else 2 if assuntos_c.count(n) >= 2 else 1)
+                      for i, n in enumerate(nomes)}
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
     assets.TEXTO_ROTEIRO = " ".join(c["texto"] for c in cenas)  # personagem/DLC citado ganha o vídeo/arte dele

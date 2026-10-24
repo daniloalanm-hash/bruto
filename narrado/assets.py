@@ -46,6 +46,14 @@ def mesmo_jogo(pedido, achado, minimo=0.5):
     n2, k2 = _marcas(achado)
     if n1 != (n2 & n1) or (n2 - n1 and n1):
         return False
+    # palavra a mais ANTES do nome pedido é outro jogo ("Augment: Anthem" ≠ "Anthem"); depois costuma ser
+    # subtítulo/edição ("Mass Effect Legendary Edition"). Exceção: autor na frente ("Sid Meier's Civilization")
+    ws2 = re.findall(r"[a-z0-9]+", re.sub(r"[^\w\s]", " ", achado.lower()))
+    primeira = next((i for i, w in enumerate(ws2) if w in k1), None)
+    if primeira and "'s" not in achado.lower() and "’s" not in achado.lower():
+        antes = [w for w in ws2[:primeira] if len(w) >= 3 and w not in GENERICAS and w not in k1 and not w.isdigit()]
+        if antes:
+            return False
     # pedido sem número e loja com número: é outro jogo ("Anthem" ≠ "ANTHEM#9", "Hades" ≠ "Hades II").
     # Ano no nome ("Cyberpunk 2077") não conta
     if not n1 and any(not (str(x).isdigit() and 1900 <= int(x) <= 2100) for x in n2):
