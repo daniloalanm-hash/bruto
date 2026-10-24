@@ -418,10 +418,11 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
     for mid, m in banco.items():
         if m.get("cartao") or m.get("capa") or m.get("jogo") in (None, "cartao", "materia", "commons"):
             continue
+        chave_j = ("p", m["personagem"]) if m.get("personagem") else m["jogo"]  # personagem: reservado ao tópico dele
         if m["tipo"] == "v":
-            brutos.setdefault(m["jogo"], []).append((m["arquivo"], *_faixa_midia(m), mid))
+            brutos.setdefault(chave_j, []).append((m["arquivo"], *_faixa_midia(m), mid))
         else:
-            imgs.setdefault(m["jogo"], []).append(mid)
+            imgs.setdefault(chave_j, []).append(mid)
     # planos bons vizinhos viram um trecho contínuo só (o trailer corre com os cortes dele)
     vids = {}
     for j, lst in brutos.items():
@@ -528,7 +529,16 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
             if prox_cap and g_resp:
                 fim = final_do_trailer(jogo, min(g_resp + 1.5, dur * 0.5)) if dur > g_resp + 3 else None
             corpo = dur - (fim[2] if fim else 0)
-            pecas = tomar(jogo, corpo)
+            pecas = []
+            for pn in cenas[c].get("personagens") or []:  # o personagem citado aparece primeiro
+                fatia = min(8.0, corpo * 0.6) - sum(p[2] for p in pecas)
+                if fatia < 1.0:
+                    break
+                pv = tomar(("p", pn), fatia)
+                if not pv and imgs.get(("p", pn)):
+                    pv = [(imgs[("p", pn)][0], 0.0, min(3.5, fatia))]
+                pecas += pv
+            pecas += tomar(jogo, corpo - sum(p[2] for p in pecas))
             if not pecas and corpo > 0.05:
                 # jogo sem vídeo: as imagens dele (inteiras), 4 s cada
                 ims = imgs.get(jogo) or [x for j in ordem for x in imgs.get(j, [])][:6]
@@ -1224,6 +1234,20 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 quando = cartoes.momento_do_nome(projeto, projeto["cenas"][c].get("imagem") or "", cena=c)
                 jf = 1 if not quando else min(max(int((quando[1] - a) / (dur / n)), 0), n - 1)
                 fixo.setdefault(jf, fid)
+        # personagem citado (vídeo/arte oficial dele): entra no corte em que o nome é falado; um 2º trecho logo depois
+        pers_c = projeto["cenas"][c].get("personagens") or []
+        for pn in pers_c:
+            meus = sorted((x for x, mm in banco.items() if mm.get("personagem") == pn),
+                          key=lambda x: (banco[x]["tipo"] != "i", uso.get(x, 0)))
+            if not meus:
+                continue
+            quando = cartoes.momento_do_nome(projeto, pn, cena=c)
+            jp = 0 if not quando else min(max(int((quando[1] - a) / (dur / n)), 0), n - 1)
+            while jp in fixo and jp + 1 < n:
+                jp += 1
+            fixo.setdefault(jp, meus[0])
+            if len(meus) > 1 and jp + 1 < n:
+                fixo.setdefault(jp + 1, meus[1])
         for cid, cm in banco.items():
             if cm.get("cartao") == "capa":
                 # capa do jogo entra no corte em que o NOME dele é falado pela 1ª vez (fora da chamada do gancho)
@@ -1240,11 +1264,13 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 mid = midias[0]
             else:
                 # o trecho MENOS usado no vídeo até aqui (não repete enquanto houver inédito); cartão não volta
-                giro = [x for x in midias if not (banco[x].get("cartao") and uso.get(x))] or midias
+                giro = [x for x in midias if not (banco[x].get("cartao") and uso.get(x))
+                        and (not banco[x].get("personagem") or banco[x]["personagem"] in pers_c)] or midias
                 # todo material do mesmo jogo vale (não só os 6 sugeridos para o tópico) — regra do jogo certo mantida
                 jogo_c = projeto["cenas"][c].get("jogo")
                 extras = [x for x, mm in banco.items() if jogo_c and mm.get("jogo") == jogo_c and x not in giro
-                          and not mm.get("cartao") and not mm.get("capa")]
+                          and not mm.get("cartao") and not mm.get("capa")
+                          and (not mm.get("personagem") or mm["personagem"] in pers_c)]
                 ultimo_mid = usados_cena[-1]["cortes"][-1] if usados_cena[-1]["cortes"] else None
                 ordem = {x: i for i, x in enumerate(giro + extras)}
                 mid = min(giro + extras, key=lambda x: (uso.get(x, 0), x == ultimo_mid, ordem[x]))

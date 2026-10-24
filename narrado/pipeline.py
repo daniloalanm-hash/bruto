@@ -133,8 +133,9 @@ def planejar(cenas, banco, jogos, longo=False):
     principal = max(contagem, key=contagem.get) if contagem else (jogos[0]["chave"] if jogos else None)
     fila = {}
     for j in jogos:  # intercala 2 trechos de trailer : 1 imagem, sem repetir até esgotar
-        vs = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "v"]
-        im = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "i"]
+        # mídia de personagem citado fica reservada para o tópico que fala dele (não aparece em outro lugar)
+        vs = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "v" and not d.get("personagem")]
+        im = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "i" and not d.get("personagem")]
         seq = []
         por_imagem = 4 if len(vs) >= 3 * max(len(im), 1) else 3 if len(vs) >= 2 * max(len(im), 1) else 2
         while vs or im:
@@ -452,6 +453,7 @@ def preparar(pasta, st):
         n_trailers = {n: (4 if i == 0 else 3) for i, n in enumerate(nomes)}
 
     st.etapa("Buscando trailers e imagens oficiais", 5)
+    assets.TEXTO_ROTEIRO = " ".join(c["texto"] for c in cenas)  # personagem/DLC citado ganha o vídeo/arte dele
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
     bib = da_biblioteca(list(dict.fromkeys(nomes + [c["assunto"] for c in cenas if c.get("assunto")])))
     links += [b for b in bib if not any(b.get("url") and b["url"] == x["url"] for x in links)]
@@ -549,6 +551,12 @@ def preparar(pasta, st):
             w["manter"] = True
         completar_cenas(palavras)
 
+    # personagens citados em cada tópico (com vídeo/arte própria no banco): o render mostra ELE quando é falado
+    nomes_p = sorted({m["personagem"] for m in banco.values() if m.get("personagem")})
+    for c in cenas:
+        ps = [n for n in nomes_p if assets.citado(n, c["texto"])]
+        if ps:
+            c["personagens"] = ps
     cenas = planejar(cenas, banco, jogos, longo=job.get("formato") == "horizontal")
     for c in cenas:
         fotos = fotos_termo.get(c.get("imagem")) or []

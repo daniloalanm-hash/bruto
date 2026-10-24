@@ -191,7 +191,102 @@ def _steam(nome, pasta, max_trailers=MAX_TRAILERS, dicas=()):
                 info["trailers"].append({"arquivo": p, "nome": m.get("name", "")})
         except Exception as e:
             print(f"aviso: trailer {i} de {oficial} falhou: {e}")
+    try:
+        _personagens_steam(d, appid, info, pasta, oficial)
+    except Exception as e:
+        print(f"aviso: personagens de {oficial}: {e}", flush=True)
     return info
+
+
+# ---------------------------------------------------------------- personagens (luta, heróis, DLC)
+
+TEXTO_ROTEIRO = ""  # o pipeline põe aqui o texto do roteiro: só baixa vídeo/imagem de personagem que é citado
+_FILLER = {"trailer", "traler", "en", "jp", "pt", "br", "animated", "story", "newcos", "new", "cos", "game", "official",
+           "launch", "gameplay", "character", "costume", "dlc", "classic", "teaser", "reveal", "the", "pack", "edition",
+           "deluxe", "bundle", "pre", "order", "bonus", "outfit", "skin", "set"}
+
+
+def _palavras(t):
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(t).lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.findall(r"[a-z0-9]+", re.sub(r"(?<=[a-z])(?=[A-Z])", " ", t))
+
+
+def nome_de_personagem(bruto, jogo, dlc=False):
+    """'BlueMary_trailer_en' -> 'Blue Mary'; 'FATAL FURY CotW - DLC Costume "Classic Mai Shiranui"' -> 'Mai Shiranui'."""
+    s = str(bruto or "")
+    if dlc:
+        q = re.findall(r'["“”]([^"“”]+)["“”]', s)
+        s = q[-1] if q else (s.split(" - ", 1)[1] if " - " in s else s)
+    s = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", s.replace("_", " "))
+    jogo_t = set(_palavras(jogo)) | {"cotw"}
+    toks = [t for t in re.findall(r"[A-Za-z0-9\-\.]+", s)]
+    bons = [t for t in toks if t.lower().strip(".") not in _FILLER and t.lower().strip(".") not in jogo_t]
+    nome = " ".join(bons).strip(" -.")
+    return nome if len(nome.replace(" ", "")) >= 2 else ""
+
+
+def citado(nome, texto):
+    """O personagem é citado no texto? Todas as palavras do nome (2+ letras) aparecem; "Season Pass 3" exige o número."""
+    tn = " " + " ".join(_palavras(texto)) + " "
+    toks = [t for t in _palavras(nome) if len(t) >= 2 or t.isdigit()]
+    if not toks:
+        return False
+    if not re.search(r"(season|pass|vol|temporada)", " ".join(toks)):
+        toks = [t for t in toks if not t.isdigit()]
+    return bool(toks) and all(f" {t} " in tn for t in toks)
+
+
+def _personagens_steam(d, appid, info, pasta, oficial):
+    """Vídeos e imagens de personagem/DLC citados no roteiro (o vídeo do Fatal Fury mostrava outro lutador quando
+    o roteiro falava da Mai Shiranui). Marca cada arquivo com o nome em info["personagens"]."""
+    texto = TEXTO_ROTEIRO
+    if not texto:
+        return
+    chave = info["chave"]
+    feitos = set()
+    for i, m in enumerate(d.get("movies", [])):
+        nome = nome_de_personagem(m.get("name"), oficial)
+        if not nome or nome in feitos or not citado(nome, texto):
+            continue
+        src = None
+        for k in ("mp4", "webm"):
+            if m.get(k):
+                src = m[k].get("max") or m[k].get("480")
+                break
+        src = src or m.get("hls_h264") or m.get("dash_h264")
+        p = os.path.join(pasta, f"{chave}_p{i}.mp4")
+        try:
+            if src and _baixar_trailer(src, p):
+                info["trailers"].append({"arquivo": p, "nome": m.get("name", ""), "personagem": nome})
+                info.setdefault("personagens", {})[os.path.basename(p)] = nome
+                feitos.add(nome)
+                print(f"personagem citado: {nome} (vídeo {m.get('name')})", flush=True)
+        except Exception as e:
+            print(f"aviso: vídeo de {nome} falhou: {e}", flush=True)
+    for dl in (d.get("dlc") or [])[:45]:
+        try:
+            x = json.loads(_get(f"https://store.steampowered.com/api/appdetails?appids={dl}&l=english"))[str(dl)]
+        except Exception:
+            continue
+        if not x.get("success"):
+            continue
+        xd = x["data"]
+        nome = nome_de_personagem(xd.get("name"), oficial, dlc=True)
+        if not nome or not citado(nome, texto):
+            continue
+        for k, sc in enumerate(xd.get("screenshots", [])[:4]):
+            p = os.path.join(pasta, f"{chave}_d{dl}_{k}.jpg")
+            try:
+                if not os.path.exists(p):
+                    with open(p, "wb") as f:
+                        f.write(_get(sc["path_full"]))
+                info["screens"].append(p)
+                info.setdefault("personagens", {})[os.path.basename(p)] = nome
+            except Exception:
+                pass
+        print(f"personagem citado: {nome} (DLC {xd.get('name')}: {len(xd.get('screenshots', []))} imagens)", flush=True)
 
 
 def _app_store(nome, pasta):
@@ -1038,7 +1133,12 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     for j in jogos_info:
         antes = len(banco)
         loja = j.get("fonte") == "App Store"
+        pers = j.get("personagens") or {}
         for i, p in enumerate(j["screens"]):
+            if os.path.basename(p) in pers:  # arte oficial do personagem/DLC citado: entra sempre
+                banco[f"{j['chave']}_s{i}"] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p),
+                                               "personagem": pers[os.path.basename(p)], "encaixar": True}
+                continue
             if loja:
                 # screenshot de loja: usa só a faixa sem a chamada de marketing
                 faixa = faixa_sem_texto(p)
@@ -1054,7 +1154,8 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
             for c in analise.get(t["arquivo"], []):
                 mid = f"{j['chave']}_t{ti + ti0}_{int(c['t'] * 10)}"
                 banco[mid] = {"tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
-                              "t": c["t"], "dur": c["dur"], "mov": c.get("mov", 0), "sat": round(c["s"], 1)}
+                              "t": c["t"], "dur": c["dur"], "mov": c.get("mov", 0), "sat": round(c["s"], 1),
+                              **({"personagem": t["personagem"]} if t.get("personagem") else {})}
         if len(banco) == antes:  # tudo tinha texto (ex.: screenshots de loja com chamada): melhor isso que nada
             for i, p in enumerate(j["screens"][:6]):
                 banco[f"{j['chave']}_s{i}"] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p)}
@@ -1190,7 +1291,8 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
             for c in analise.get(t["arquivo"], []):
                 banco[f"{j['chave']}_t{ti + ti0}_{int(c['t'] * 10)}"] = {
                     "tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
-                    "t": c["t"], "dur": c["dur"], "corrido": True}
+                    "t": c["t"], "dur": c["dur"], "corrido": True,
+                    **({"personagem": t["personagem"]} if t.get("personagem") else {})}
     return banco
 
 
