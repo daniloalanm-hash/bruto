@@ -951,13 +951,41 @@ def teste_quadros(pasta, st):
         pub(*saidas)
 
 
+def teste_steam(pasta, st):
+    """Diagnóstico: nomes dos vídeos da Steam do jogo e das DLCs (para casar personagem citado com vídeo dele)."""
+    job = ler(os.path.join(pasta, "job.json"))
+    rel = {}
+    for nome in job.get("jogos") or []:
+        achado = assets.achar_jogo(nome)
+        if not achado:
+            continue
+        appid = achado[0]
+        d = json.loads(assets._get(f"https://store.steampowered.com/api/appdetails?appids={appid}&l=portuguese"))[str(appid)]["data"]
+        info = {"appid": appid, "movies": [m.get("name") for m in d.get("movies", [])], "dlc": []}
+        for dl in (d.get("dlc") or [])[:60]:
+            try:
+                x = json.loads(assets._get(f"https://store.steampowered.com/api/appdetails?appids={dl}&l=english"))[str(dl)]
+                if x.get("success"):
+                    xd = x["data"]
+                    info["dlc"].append({"id": dl, "nome": xd.get("name"), "movies": [m.get("name") for m in xd.get("movies", [])],
+                                        "screens": len(xd.get("screenshots", []))})
+            except Exception as e:
+                info["dlc"].append({"id": dl, "erro": str(e)[:80]})
+        rel[nome] = info
+    destino = os.path.join(pasta, "teste_steam.json")
+    gravar(destino, rel)
+    pub = publicador()
+    if pub:
+        pub(destino)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
