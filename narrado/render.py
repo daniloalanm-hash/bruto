@@ -1400,6 +1400,24 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
              f"[{idx}:a]aresample=48000,loudnorm=I=-20:TP=-2:LRA=11,aresample=48000,volume={vol:.3f}[jg];"
              f"[jg][jmsc]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=700:makeup=1[jgd];"
              f"[jma][jgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
+    # cama sonora (YouTube): música gerada por código, sem direito autoral. Fica por baixo de tudo e só aparece
+    # de verdade quando o resto silencia (respiro sem som de trailer, imagem parada, trecho mudo do trailer):
+    # abaixa sozinha com a voz E com o som do jogo. Com trilha da biblioteca, a trilha ocupa esse lugar.
+    trilha_ok = bool((projeto.get("trilha") or {}).get("arquivo")) and projeto.get("musica", True) and \
+        os.path.exists(os.path.join(pasta_raw, (projeto.get("trilha") or {}).get("arquivo", "")))
+    if W > H and projeto.get("cama", True) and not trilha_ok:
+        clima = projeto.get("cama_clima") or efeitos.clima_do_video(projeto.get("titulo"), projeto.get("cenas", []))
+        arq_cama = efeitos.cama_sonora(clima, os.path.join(pasta_trab, f"cama_{clima}.wav"))
+        print(f"cama sonora: clima {clima}", flush=True)
+        entradas.extend(["-stream_loop", "-1", "-i", arq_cama])
+        ic = entradas.count("-i") - 1
+        vol = 10 ** (float(projeto.get("cama_db", -13)) / 20)
+        base = a.rsplit("[a]", 1)[0]
+        a = (f"{base}[cm0];[cm0]asplit[cma][cmsc];"
+             f"[{ic}:a]aresample=48000,volume={vol:.3f},afade=t=in:d=1.5,"
+             f"afade=t=out:st={max(total - 2.5, 0):.2f}:d=2.4,atrim=0:{total:.2f}[cam];"
+             f"[cam][cmsc]sidechaincompress=threshold=0.03:ratio=6:attack=40:release=900:makeup=1[camd];"
+             f"[cma][camd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
     # trilha de fundo (da biblioteca, jogo "Trilha"): baixa sozinha quando a voz fala (sidechain), sobe nas pausas
     trilha = projeto.get("trilha") or {}
     arq_tri = os.path.join(pasta_raw, trilha["arquivo"]) if trilha.get("arquivo") else ""

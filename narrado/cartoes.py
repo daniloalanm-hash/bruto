@@ -591,11 +591,22 @@ def aplicar(projeto, raw, fontes, pasta_trab):
     novo = False
     primeira = not projeto.get("cartoes_aplicados")
 
+    # YouTube (vídeo longo do canal): sem cartão de notícia e sem imagens da matéria — a matéria de origem
+    # (ex.: blog da Loja dos Gifts) não tem ligação com o canal; no lugar entra o material do jogo
+    if W > H:
+        tirar = {k for k, m in banco.items() if m.get("cartao") == "manchete" or m.get("jogo") == "materia"}
+        for c in cenas:
+            if c.get("midias"):
+                c["midias"] = [m for m in c["midias"] if m not in tirar]
+        for k in tirar:
+            banco.pop(k, None)
+            novo = True
+
     # 1) manchete
     mat = projeto.get("materia") or {}
     titulo = (mat.get("titulo") or "").strip()
     url = mat.get("url") or projeto.get("fonte") or ""
-    if titulo and len(cenas) > 1:
+    if titulo and len(cenas) > 1 and H > W:
         img = next((os.path.join(raw, m["arquivo"]) for m in banco.values()
                     if m.get("jogo") == "materia" and os.path.exists(os.path.join(raw, m["arquivo"]))), None)
         img = img or _quadro_da_cena(projeto, 1, raw, pasta_trab) or _quadro_da_cena(projeto, 0, raw, pasta_trab)

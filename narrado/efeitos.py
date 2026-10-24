@@ -198,3 +198,98 @@ def light_leak(destino, dur=LEAK_DUR, semente=7):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", 16, destino)
     shutil.rmtree(pasta, ignore_errors=True)
     return destino
+
+
+# ---------------------------------------------------------------- cama sonora (fundo sem direitos autorais)
+
+_NOTA = {"C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11}
+CLIMAS = {
+    # acordes (nota, menor?) — 4 por volta de 64 s; bpm só no clima com pulso
+    "tenso": {"acordes": [("A", True), ("F", False), ("D", True), ("E", False)], "vento": 0.35, "bpm": 0, "brilho": 0.35},
+    "neutro": {"acordes": [("C", False), ("A", True), ("F", False), ("G", False)], "vento": 0.08, "bpm": 0, "brilho": 0.6},
+    "energia": {"acordes": [("E", True), ("C", False), ("G", False), ("D", False)], "vento": 0.0, "bpm": 90, "brilho": 0.75},
+}
+
+
+def clima_do_video(titulo, cenas=()):
+    """Clima da cama pelo assunto do vídeo (terror pede tensão; top/lançamento pede pulso)."""
+    t = " ".join([str(titulo or "")] + [str(c.get("texto") or "")[:200] for c in list(cenas)[:6]]).lower()
+    if any(p in t for p in ("terror", "horror", "medo", "assustador", "macabr", "sombri", "mistério", "misterio",
+                            "creepy", "bizarr", "maldit", "assombr")):
+        return "tenso"
+    if any(p in t for p in ("top ", "melhores", "lançamento", "lancamento", "ranking", "mais vendidos", "imperdíve")):
+        return "energia"
+    return "neutro"
+
+
+def cama_sonora(clima, destino, dur=64.0, semente=11):
+    """Cama musical gerada por código (sem direito autoral nenhum): pad de acordes, grave contínuo, vento no
+    clima tenso e pulso suave no clima energia. 64 s que emendam sem costura (o render repete em loop)."""
+    cfg = CLIMAS.get(clima) or CLIMAS["neutro"]
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    rng = np.random.default_rng(semente)
+    esq, dir_ = np.zeros(n), np.zeros(n)
+    passo = dur / len(cfg["acordes"])
+    hz = lambda semi, oit: 440.0 * 2 ** ((semi - 9) / 12 + (oit - 4))  # noqa: E731
+    for k, (raiz, menor) in enumerate(cfg["acordes"]):
+        r = _NOTA[raiz]
+        notas = [(r, 3), (r + (3 if menor else 4), 3), (r + 7, 3), (r, 4)]
+        # janela do acorde com 3 s de fusão para o próximo (circular: o último funde no primeiro)
+        centro = (k + 0.5) * passo
+        dist = np.abs(((t - centro + dur / 2) % dur) - dur / 2)
+        env = np.clip((passo / 2 + 1.5 - dist) / 3.0, 0, 1)
+        env = env * env * (3 - 2 * env)
+        for i, (semi, oit) in enumerate(notas):
+            f = hz(semi, oit)
+            for lado, sinal in ((esq, -1), (dir_, 1)):
+                f_l = f * (1 + sinal * 0.0025)  # leve desafinação entre os canais: pad "largo"
+                onda = (np.sin(2 * np.pi * f_l * t) + cfg["brilho"] * 0.35 * np.sin(4 * np.pi * f_l * t)
+                        + cfg["brilho"] * 0.12 * np.sin(6 * np.pi * f_l * t))
+                lado += onda * env * (0.22 if i else 0.3)
+        # grave: a raiz uma oitava abaixo
+        g = np.sin(2 * np.pi * hz(r, 2) * t) * env * 0.45
+        esq += g
+        dir_ += g
+    # respiração lenta do pad (período de 16 s: fecha a volta certinho)
+    lfo = 0.8 + 0.2 * np.sin(2 * np.pi * t / 16.0)
+    esq *= lfo
+    dir_ *= lfo
+    if cfg["vento"]:
+        for lado in (esq, dir_):
+            v = _filtro_varredura(n, 180, 700, largura_rel=0.6, semente=int(rng.integers(1, 99)), grave=0.0)
+            v = v / (np.abs(v).max() + 1e-9)
+            onda = 0.6 + 0.4 * np.sin(2 * np.pi * t / 32.0 + rng.uniform(0, 6.28))
+            lado += v * onda * cfg["vento"]
+    if cfg["bpm"]:
+        bat = 60.0 / cfg["bpm"]
+        tk = np.arange(int(0.25 * SR)) / SR
+        kick = np.sin(2 * np.pi * (45 + 70 * np.exp(-tk * 30)) * tk) * np.exp(-tk * 14)
+        hat = rng.standard_normal(int(0.03 * SR)) * np.exp(-np.arange(int(0.03 * SR)) / SR * 160)
+        hat = np.diff(hat, prepend=0)  # agudo
+        b = 0.0
+        while b < dur - 0.01:
+            i = int(b * SR)
+            j = min(i + len(kick), n)
+            for lado in (esq, dir_):
+                lado[i:j] += kick[: j - i] * 0.55
+            ih = int((b + bat / 2) * SR)
+            jh = min(ih + len(hat), n)
+            if ih < n:
+                esq[ih:jh] += hat[: jh - ih] * 0.05
+                dir_[ih:jh] += hat[: jh - ih] * 0.07
+            b += bat
+    # emenda sem costura: os 2 s finais se fundem com o começo
+    m = int(2.0 * SR)
+    rampa = np.linspace(0, 1, m)
+    for lado in (esq, dir_):
+        lado[:m] = lado[:m] * rampa + lado[-m:] * (1 - rampa)
+    esq, dir_ = esq[: n - m], dir_[: n - m]
+    pico = max(np.abs(esq).max(), np.abs(dir_).max()) + 1e-9
+    est = (np.stack([esq, dir_], axis=1) / pico * 0.7 * 32767).astype(np.int16)
+    with wave.open(destino, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(SR)
+        w.writeframes(est.tobytes())
+    return destino
