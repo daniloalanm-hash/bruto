@@ -316,6 +316,12 @@ def cenas_de_capitulo(projeto):
     return [k for k, c in enumerate(projeto["cenas"]) if k > 0 and str(c.get("capitulo") or "").strip()]
 
 
+def norm_txt(t):
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(t).lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
 def pausa_da_cena(cena):
     """Segundos de "pausa com o som do jogo" depois do tópico (YouTube): a narração para e o jogo aparece."""
     try:
@@ -1242,12 +1248,18 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             if not meus:
                 continue
             quando = cartoes.momento_do_nome(projeto, pn, cena=c)
+            if not quando:  # o Whisper às vezes come metade do nome ("de Shiranui"): tenta a palavra mais marcante
+                for tk in sorted(re.findall(r"[a-z0-9]+", norm_txt(pn)), key=len, reverse=True)[:2]:
+                    if len(tk) >= 4:
+                        quando = cartoes.momento_do_nome(projeto, tk, cena=c)
+                        if quando:
+                            break
             jp = 0 if not quando else min(max(int((quando[1] - a) / (dur / n)), 0), n - 1)
             while jp in fixo and jp + 1 < n:
                 jp += 1
             fixo.setdefault(jp, meus[0])
-            if len(meus) > 1 and jp + 1 < n:
-                fixo.setdefault(jp + 1, meus[1])
+            if jp + 1 < n:  # fica na tela mais um corte (outro material dele, ou a mesma arte com outro movimento)
+                fixo.setdefault(jp + 1, meus[1] if len(meus) > 1 else meus[0])
         for cid, cm in banco.items():
             if cm.get("cartao") == "capa":
                 # capa do jogo entra no corte em que o NOME dele é falado pela 1ª vez (fora da chamada do gancho)

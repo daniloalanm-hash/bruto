@@ -203,7 +203,9 @@ def _steam(nome, pasta, max_trailers=MAX_TRAILERS, dicas=()):
 TEXTO_ROTEIRO = ""  # o pipeline põe aqui o texto do roteiro: só baixa vídeo/imagem de personagem que é citado
 _FILLER = {"trailer", "traler", "en", "jp", "pt", "br", "animated", "story", "newcos", "new", "cos", "game", "official",
            "launch", "gameplay", "character", "costume", "dlc", "classic", "teaser", "reveal", "the", "pack", "edition",
-           "deluxe", "bundle", "pre", "order", "bonus", "outfit", "skin", "set"}
+           "deluxe", "bundle", "pre", "order", "bonus", "outfit", "skin", "set", "anime", "cinematic", "opening",
+           "ending", "ost", "collab", "collaboration", "final", "debut", "version", "update", "intro", "battle", "mode",
+           "announcement", "announce", "release", "date", "s1", "s2", "s3", "s4", "ver", "movie", "video", "pv", "cm"}
 
 
 def _palavras(t):
@@ -233,8 +235,9 @@ def citado(nome, texto):
     toks = [t for t in _palavras(nome) if len(t) >= 2 or t.isdigit()]
     if not toks:
         return False
-    if not re.search(r"(season|pass|vol|temporada)", " ".join(toks)):
-        toks = [t for t in toks if not t.isdigit()]
+    if re.search(r"(season|pass|vol|temporada)", " ".join(toks)) and any(t.isdigit() for t in toks):
+        return f" {' '.join(toks)} " in tn  # "Season Pass 3": a sequência exata (o "2" de "Switch 2" não conta)
+    toks = [t for t in toks if not t.isdigit()]
     return bool(toks) and all(f" {t} " in tn for t in toks)
 
 
