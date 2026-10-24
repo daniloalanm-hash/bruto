@@ -178,6 +178,17 @@ def partir_pausas(blocos, db, passo):
     quieto = np.convolve(quieto.astype(float), np.ones(k) / k, mode="same") >= 0.5
     novos = []
     anterior_pont = True
+
+    def cauda(t0, maximo=0.35):
+        """Fim real do som depois de t0: rabo de sílaba ("…e dois", "-ria") que o filtro suavizado tomou por
+        silêncio. Vai até o último quadro ainda perto do nível de fala (limiar - 6 dB) nos próximos 0,35 s."""
+        i0 = int(t0 / passo)
+        ult = None
+        for i in range(i0, min(i0 + int(maximo / passo), len(db))):
+            if db[i] > limiar - 6:
+                ult = i
+        return (ult + 1) * passo if ult is not None else t0
+
     for b in blocos:
         k0, k1 = int(b["cs"] / passo), int(b["ce"] / passo)
         cortes = []
@@ -192,20 +203,15 @@ def partir_pausas(blocos, db, passo):
                 # depois de pontuação fica um respiro curto (~0,2 s)
                 antes = [w for w in b["pal"] if w["s"] < a_]
                 pont = bool(antes) and bool(re.search(r"[.,!?;:…]$", str(antes[-1].get("legenda") or antes[-1]["w"])))
-                limite, resto = (PAUSA_MAX, PAUSA_RESTO) if pont else (0.22, 0.05)
+                limite, resto = (PAUSA_MAX, PAUSA_RESTO) if pont else (0.14, 0.03)
                 # só pausa no MEIO (as pontas do bloco já são tratadas pelo definir_cortes)
                 if b_ - a_ > limite and a_ > b["cs"] + 0.15 and b_ < b["ce"] - 0.15:
-                    # final de palavra que morre baixinho ("própri-a") fica abaixo do limiar e parecia pausa:
-                    # o corte respeita o fim da palavra segundo o Whisper (até 0,3 s além do som forte) e o
-                    # começo da seguinte — senão a sílaba final some
-                    depois = [w for w in b["pal"] if w["s"] >= a_]
-                    x0 = a_ + resto
-                    if antes:
-                        x0 = max(x0, min(antes[-1]["e"], a_ + 0.30) + 0.04)
+                    # final de palavra que morre baixinho ("própri-a", "…e dois") fica abaixo do limiar
+                    # suavizado e parecia pausa: o corte só começa depois do rabo real do som (pelo volume;
+                    # o fim que o Whisper dá costuma se esticar por cima da hesitação, não serve)
+                    x0 = max(a_, cauda(a_)) + resto
                     x1 = b_ - resto
-                    if depois:
-                        x1 = min(x1, max(depois[0]["s"], b_ - 0.30) - 0.04)
-                    if x1 - x0 > 0.08:
+                    if x1 - x0 > 0.06:
                         cortes.append((x0, x1))
                 i = j
             else:
@@ -226,8 +232,7 @@ def partir_pausas(blocos, db, passo):
         while k > k0 and quieto[k - 1]:
             k -= 1
         if (k1 - k) * passo > m_fim + 0.05:
-            ult = b["pal"][-1]["e"] if b["pal"] else 0
-            b["ce"] = min(b["ce"], max(k * passo + m_fim, min(ult, k * passo + 0.30) + 0.04))
+            b["ce"] = min(b["ce"], cauda(k * passo) + m_fim)
         if not cortes:
             novos.append(b)
             continue

@@ -607,8 +607,28 @@ def so_legenda(pasta, st):
     st.pronto({"versao": projeto["versao"], "duracao": projeto.get("duracao")})
 
 
+def aplicar_ajustes(projeto):
+    """Ajustes pontuais feitos pelo Claude a pedido do Danilo (narrado/ajustes/<tag>.json no repositório):
+    campos por tópico, ex.: {"cenas": {"14": {"pausa": 10}}}. Valem uma vez: ficam gravados no projeto."""
+    tag = os.environ.get("NARRADO_TAG") or ""
+    arq = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ajustes", f"{tag}.json")
+    if not tag or not os.path.exists(arq):
+        return
+    aj = ler(arq) or {}
+    feitos = projeto.setdefault("ajustes_aplicados", [])
+    marca = aj.get("id") or os.path.getmtime(arq)
+    if marca in feitos:
+        return
+    for k, campos in (aj.get("cenas") or {}).items():
+        if str(k).isdigit() and int(k) < len(projeto["cenas"]):
+            projeto["cenas"][int(k)].update(campos)
+    feitos.append(marca)
+    print(f"ajustes aplicados: {aj}", flush=True)
+
+
 def rerender(pasta, st):
     projeto = ler(os.path.join(pasta, "projeto.json"))
+    aplicar_ajustes(projeto)
     st.etapa("Preparando o material", 5)
     falta = [m for m in projeto["banco"].values() if not os.path.exists(os.path.join(RAW, m["arquivo"]))]
     if any(m.get("jogo") not in ("materia", "proprio") for m in falta):

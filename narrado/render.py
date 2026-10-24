@@ -1261,6 +1261,9 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         if pz:
             jogo_c = projeto["cenas"][c].get("jogo")
             vids_c = [x for x, mm in banco.items() if mm["tipo"] == "v" and mm.get("jogo") == jogo_c and not mm.get("cartao")]
+            escolhido = projeto["cenas"][c].get("pausa_midia")
+            if escolhido in banco and banco[escolhido]["tipo"] == "v":
+                vids_c = [escolhido]  # trecho escolhido a dedo (ex.: o que mostra a música/criatura citada)
             if vids_c:
                 mid = max(vids_c, key=lambda x: (banco[x].get("dur", 0), -uso.get(x, 0)))
                 m = dict(banco[mid], som=True)
