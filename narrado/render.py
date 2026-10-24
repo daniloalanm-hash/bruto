@@ -287,6 +287,7 @@ def seg_video_proprio(src, t0, dur, out, trans):
 # ---------------------------------------------------------------- YouTube "trailer corrido" (fórmula dos tops)
 
 FADE_CAP = 0.35      # mergulho no preto entre um jogo e outro (cada lado)
+CORTE_FINAL = 1.7    # encerramento (depois da última fala): montagem rápida dos jogos do vídeo
 CORTE_ABERTURA = 2.4  # montagem da abertura: um plano curto de cada jogo da lista
 
 
@@ -534,7 +535,10 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
             fim = None
             if prox_cap and g_resp:
                 fim = final_do_trailer(jogo, min(g_resp + 1.5, dur * 0.5)) if dur > g_resp + 3 else None
-            corpo = dur - (fim[2] if fim else 0)
+            final_m = 0.0
+            if fi == len(faixas) - 1 and len([j for j in ordem if vids.get(j)]) >= 1:
+                final_m = min(float(projeto.get("cauda", 10) or 0), max(dur - 2.0, 0.0))
+            corpo = dur - (fim[2] if fim else 0) - final_m
             pecas = []
             for pn in cenas[c].get("personagens") or []:  # o personagem citado aparece primeiro
                 fatia = min(8.0, corpo * 0.6) - sum(p[2] for p in pecas)
@@ -552,11 +556,25 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                 pecas = [(ims[i % len(ims)], 0.0, corpo / nn) for i in range(nn)] if ims else []
             if fim:
                 pecas.append(fim)
+            if final_m > 0.5:
+                # encerramento dinâmico: cortes rápidos com os melhores planos de todos os jogos (sem o som deles;
+                # a cama sonora sobe sozinha quando a voz acaba)
+                com_video = [j for j in ordem if vids.get(j)]
+                t_acum, g2 = 0.0, 0
+                while t_acum < final_m - 0.05:
+                    d = min(CORTE_FINAL, final_m - t_acum)
+                    if final_m - t_acum - d < 0.8:
+                        d = final_m - t_acum
+                    pl = plano_abertura(com_video[(g2 * 3 + 1) % len(com_video)])
+                    g2 += 1
+                    pecas.append((pl[0], pl[1], d, True))
+                    t_acum += d
         if not pecas:  # nada de material: repete o último trecho em vez de quebrar o vídeo
             ult = tarefas[-1] if tarefas else None
             pecas = [(ult[1], ult[2].get("t", 0), dur)] if ult else []
-        for pi, (mid, t0, d) in enumerate(pecas):
-            m = dict(banco[mid], t=t0, corrido=banco[mid]["tipo"] == "v")
+        for pi, peca in enumerate(pecas):
+            mid, t0, d = peca[:3]
+            m = dict(banco[mid], t=t0, corrido=banco[mid]["tipo"] == "v", mudo=len(peca) > 3)
             m["fi"] = abre_cap and pi == 0
             m["fo"] = prox_cap and pi == len(pecas) - 1
             out = os.path.join(seg_dir, f"{k:04d}.mp4")
@@ -580,7 +598,7 @@ def audio_corrido(tarefas, pasta_raw, pasta_trab):
             pass
         wav = os.path.join(pasta, f"{k:04d}.wav")
         ok = False
-        if (m.get("corrido") or m.get("som")) and m["tipo"] == "v":
+        if (m.get("corrido") or m.get("som")) and m["tipo"] == "v" and not m.get("mudo"):
             src = os.path.join(pasta_raw, m["arquivo"])
             t0 = _inicio_seguro(src, m.get("t", 0), d)
             fades = ["afade=t=in:d=0.5", f"afade=t=out:st={max(d - 0.6, 0):.3f}:d=0.6"] if m.get("som") else []
@@ -1216,9 +1234,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     for fi, (c, a, b) in enumerate([] if corrido else faixas):
         dur = b - a
         pz = pausa_da_cena(projeto["cenas"][c]) if W > H else 0.0
+        final_m = 0.0
         if W > H and fi == len(faixas) - 1:
-            # encerramento do YouTube (gameplay depois da última fala): um trecho só, com o som do jogo
-            pz = max(pz, float(projeto.get("cauda", 10) or 0))
+            # encerramento do YouTube (depois da última fala): montagem rápida dos jogos do vídeo
+            final_m = float(projeto.get("cauda", 10) or 0)
+            if dur > final_m + 1.0:
+                dur -= final_m
+            else:
+                final_m = 0.0
         if pz and dur > pz + 1.0:
             dur -= pz  # a pausa vira UM trecho contínuo do jogo no fim (com o som dele), sem picotar
         else:
@@ -1320,6 +1343,35 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             else:  # sem vídeo do jogo: o último trecho se estende
                 t_ult = tarefas[-1]
                 tarefas[-1] = (*t_ult[:4], t_ult[4] + pz, *t_ult[5:])
+        if final_m:
+            todos = [x for x, mm in banco.items() if mm["tipo"] == "v" and not mm.get("cartao") and not mm.get("personagem")
+                     and mm.get("jogo") not in ("materia", "commons")]
+            por_jogo = {}
+            for x in sorted(todos, key=lambda x: (-banco[x].get("mov", 0), uso.get(x, 0))):
+                por_jogo.setdefault(banco[x]["jogo"], []).append(x)
+            fila_f = []
+            while any(por_jogo.values()):  # intercala os jogos: um plano de cada
+                for jg in list(por_jogo):
+                    if por_jogo[jg]:
+                        fila_f.append(por_jogo[jg].pop(0))
+            t_acum, g2 = 0.0, 0
+            while fila_f and t_acum < final_m - 0.05:
+                d = min(CORTE_FINAL, final_m - t_acum)
+                if final_m - t_acum - d < 0.8:
+                    d = final_m - t_acum
+                mid = fila_f[g2 % len(fila_f)]
+                g2 += 1
+                out = os.path.join(seg_dir, f"{k:04d}.mp4")
+                tarefas.append((k, mid, banco[mid], os.path.join(pasta_raw, banco[mid]["arquivo"]), d, out, None,
+                                uso.get(mid, 0), [mid]))
+                uso[mid] = uso.get(mid, 0) + 1
+                usados_cena[-1]["cortes"].append(mid)
+                lista.append(out)
+                k += 1
+                t_acum += d
+            if not fila_f:  # sem vídeo nenhum: o último trecho se estende
+                t_ult = tarefas[-1]
+                tarefas[-1] = (*t_ult[:4], t_ult[4] + final_m, *t_ult[5:])
         if progresso:
             progresso(fi + 1, len(faixas) * 2)
 
@@ -1487,14 +1539,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         idx = nova_entrada(sfx)
         a = (f"[1:a]apad[vz0];[{idx}:a]apad[fx0];[vz0][fx0]amix=inputs=2:duration=first:normalize=0,"
              f"alimiter=limit=0.95:level=disabled[a]")
-    # som do trailer por baixo da narração: abaixa sozinho quando a voz fala e sobe no respiro entre os jogos
+    # som do jogo: some quando a voz fala (a cama fica por baixo) e aparece nos respiros e pausas sem narração
     if som_jogo:
         idx = nova_entrada(som_jogo)
         vol = 10 ** (float(projeto.get("jogo_db", 0)) / 20)
         base = a.rsplit("[a]", 1)[0]
         a = (f"{base}[jm0];[jm0]asplit[jma][jmsc];"
              f"[{idx}:a]aresample=48000,{'loudnorm=I=-20:TP=-2:LRA=11,aresample=48000,' if corrido else ''}volume={vol:.3f}[jg];"
-             f"[jg][jmsc]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=700:makeup=1[jgd];"
+             f"[jg][jmsc]sidechaincompress=threshold=0.008:ratio=20:attack=15:release=450:makeup=1[jgd];"
              f"[jma][jgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
     # cama sonora (YouTube): música gerada por código, sem direito autoral. Toca o vídeo inteiro, baixinha por
     # baixo da voz (~16 dB abaixo, só clima), e sobe quando o resto silencia (pausas, imagem parada, trecho mudo

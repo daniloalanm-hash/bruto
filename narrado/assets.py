@@ -46,6 +46,10 @@ def mesmo_jogo(pedido, achado, minimo=0.5):
     n2, k2 = _marcas(achado)
     if n1 != (n2 & n1) or (n2 - n1 and n1):
         return False
+    # pedido sem número e loja com número: é outro jogo ("Anthem" ≠ "ANTHEM#9", "Hades" ≠ "Hades II").
+    # Ano no nome ("Cyberpunk 2077") não conta
+    if not n1 and any(not (str(x).isdigit() and 1900 <= int(x) <= 2100) for x in n2):
+        return False
     return len(k1 & k2) >= max(1, round(len(k1) * 0.75))
 
 

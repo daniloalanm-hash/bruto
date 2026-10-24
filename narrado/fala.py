@@ -746,4 +746,50 @@ def editar(palavras, cenas, nomes=()):
             w["legenda"] = w["legenda"][:pont.start()]
             alvo["legenda"] = re.sub(r"[.,:;!?…]+$", "", alvo["legenda"]) + pont.group(0)
 
+    sobras_de_tomada(palavras)
     return palavras, faltando
+
+
+def sobras_de_tomada(palavras):
+    """Começo de tomada abandonada que ficou ("Toda | essa virada…" descartado | "Tudo é essa virada!"): 1 a 3
+    palavras mantidas, seguidas de palavras descartadas que o narrador REPETE logo na tomada seguinte. Elas
+    pertencem à tentativa que ele refez: saem, senão o áudio parece repetir ("Toda… Tudo é essa virada")."""
+    ordem = sorted(palavras, key=lambda w: w["s"])
+    n = len(ordem)
+    i = 0
+    while i < n:
+        if not ordem[i].get("manter"):
+            i += 1
+            continue
+        j = i + 1
+        # o pedaço mantido termina numa palavra descartada ou numa pausa (> 0,6 s: outra frase/tomada)
+        while j < n and ordem[j].get("manter") and ordem[j]["s"] - ordem[j - 1]["e"] <= 0.6:
+            j += 1
+        run = ordem[i:j]
+        k = j
+        while k < n and not ordem[k].get("manter"):
+            k += 1
+        desc = ordem[j:k]
+        if not desc:  # terminou numa pausa, não numa descartada: segue
+            i = j
+            continue
+        if 1 <= len(run) <= 3 and k < n and (i == 0 or run[0]["s"] - ordem[i - 1]["e"] > 0.6 or
+                                             not ordem[i - 1].get("manter")):
+            seguinte = [norm(w["w"]) for w in ordem[k:k + 8]]
+            repetidas = [norm(w["w"]) for w in desc if norm(w["w"])]
+            meu = [norm(w["w"]) for w in run]
+            refeita = repetidas and sum(1 for x in repetidas if x in seguinte) >= max(1, int(len(repetidas) * 0.6))
+            # a sobra é mesmo o começo daquela tomada: a retomada começa parecido ("Toda" ~ "Tudo") ou o próprio
+            # pedaço foi repetido logo antes dela ("Em 2014," … "Em 2014, Dragon Age")
+            cauda_desc = [norm(w["w"]) for w in desc[-len(run):]]
+            repetiu_igual = cauda_desc == meu
+            parecido = seguinte and sim(meu[0], seguinte[0]) >= 0.5
+            if refeita and (repetiu_igual or parecido):
+                for w in run:
+                    w["manter"] = False
+                if repetiu_igual:  # fica a versão da tomada boa, colada no resto da frase
+                    for w_novo, w_velho in zip(desc[-len(run):], run):
+                        w_novo.update(manter=True, cena=w_velho.get("cena"), legenda=w_velho.get("legenda") or w_novo["w"])
+                print(f"fala: sobra de tomada refeita removida: \"{' '.join(w['w'] for w in run)}\"", flush=True)
+        i = j
+
