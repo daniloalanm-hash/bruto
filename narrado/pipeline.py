@@ -631,7 +631,13 @@ def rerender(pasta, st):
     aplicar_ajustes(projeto)
     st.etapa("Preparando o material", 5)
     falta = [m for m in projeto["banco"].values() if not os.path.exists(os.path.join(RAW, m["arquivo"]))]
-    if any(m.get("jogo") not in ("materia", "proprio") for m in falta):
+    # YouTube usa o som do trailer (pausa com o jogo, modo corrido): trailer antigo do cache veio sem som
+    sem_som = projeto.get("formato") == "horizontal" and any(
+        m["tipo"] == "v" and m.get("jogo") not in ("materia", "proprio") and os.path.exists(os.path.join(RAW, m["arquivo"]))
+        and not assets.tem_audio(os.path.join(RAW, m["arquivo"])) for m in projeto["banco"].values())
+    if sem_som:
+        print("trailers do cache sem som: baixando de novo com o áudio", flush=True)
+    if sem_som or any(m.get("jogo") not in ("materia", "proprio") for m in falta):
         garantir_assets(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]], permitir_vazio=True,
                         trailers=projeto.get("trailers_busca"))
     for i, ln in enumerate(projeto.get("links_video") or []):

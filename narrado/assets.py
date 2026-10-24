@@ -116,24 +116,34 @@ def _decodifica(p):
     return r.returncode == 0 and len(erros) <= 2
 
 
+def tem_audio(p):
+    try:
+        r = run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", p])
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
 def _baixar_trailer(src, p):
     """Baixa os primeiros TRECHO_MAX s de um trailer (cópia direta; se sair corrompida ou o contêiner não aceitar,
     reencoda). Arquivo já baixado é conferido uma vez (marca .ok ao lado)."""
-    ok = p + ".ok"
+    ok = p + ".ok2"  # .ok2: baixado COM o som (o YouTube longo usa o áudio do trailer); .ok antigo era sem som
     if os.path.exists(p) and os.path.exists(ok):
         return True
-    if os.path.exists(p) and _decodifica(p):
+    if os.path.exists(p) and _decodifica(p) and tem_audio(p):
         open(ok, "w").close()
         return True
+    if os.path.exists(p) and not tem_audio(p):
+        os.remove(p)  # cópia antiga, sem som: baixa de novo
     if os.path.exists(p):
         print(f"aviso: {os.path.basename(p)} estava corrompido; baixando de novo reencodando", flush=True)
         os.remove(p)
-        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:1080",
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:1080",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
         open(ok, "w").close()
         return os.path.exists(p)
     try:
-        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-c:v", "copy", "-movflags", "+faststart", p)
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-movflags", "+faststart", p)
         if duracao(p) < 3 or not _decodifica(p):
             raise RuntimeError("curto ou corrompido")
         open(ok, "w").close()
@@ -141,7 +151,7 @@ def _baixar_trailer(src, p):
     except Exception:
         if os.path.exists(p):
             os.remove(p)
-        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:1080",
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:1080",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
         open(ok, "w").close()
     return os.path.exists(p)
@@ -229,14 +239,14 @@ def _youtube(nome, chave, pasta, n=2):
         try:
             r = subprocess.run(
                 ["yt-dlp", f"ytsearch{n}:{nome} trailer oficial", "--playlist-items", str(i + 1),
-                 "--match-filter", "duration < 900", "-f", "bv*[height<=1080][ext=mp4]/bv*[height<=1080]",
+                 "--match-filter", "duration < 900", "-f", "bv*[height<=1080][ext=mp4]+ba/bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]",
                  "--download-sections", f"*0-{TRECHO_MAX}", "--no-playlist", "--quiet", "--no-warnings",
                  "-o", tmp + ".%(ext)s"], capture_output=True, text=True, timeout=240)
             baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))), None)
             if r.returncode != 0 or not baixado:
                 print(f"aviso: YouTube não liberou o trailer de {nome}: {(r.stderr or '').strip()[-200:]}")
                 break
-            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:'min(1080,ih)'",
                    "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
             os.remove(baixado)
             saida.append({"arquivo": p, "nome": "YouTube"})
@@ -328,7 +338,7 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
         tmp = os.path.join(pasta, f"{chave}_d{i}_{vid}.tmp")
         try:
             r = subprocess.run(["yt-dlp", f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
-                                "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]/b",
+                                "--no-warnings", "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b",
                                 "--download-sections", f"*0-{TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
                                capture_output=True, text=True, timeout=240)
             baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))),
@@ -336,7 +346,7 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
             if r.returncode != 0 or not baixado:
                 print(f"aviso: Dailymotion não baixou {titulo}: {(r.stderr or '').strip()[-160:]}")
                 continue
-            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:'min(1080,ih)'",
                    "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
             os.remove(baixado)
             print(f"Dailymotion: {titulo} ({int(duracao(p))}s baixados)", flush=True)
@@ -360,14 +370,14 @@ def baixar_link_video(url, chave, pasta, i):
     tmp = p[:-4] + ".tmp"
     try:
         r = subprocess.run(["yt-dlp", url, "--no-playlist", "--quiet", "--no-warnings",
-                            "-f", "bv*[height<=1080]/b[height<=1080]/b", "--download-sections", f"*0-{TRECHO_MAX}",
+                            "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b", "--download-sections", f"*0-{TRECHO_MAX}",
                             "-o", tmp + ".%(ext)s", "--print", "after_move:%(title)s"],
                            capture_output=True, text=True, timeout=300)
         baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))), None)
         if r.returncode != 0 or not baixado:
             print(f"aviso: não consegui baixar o link {url}: {(r.stderr or '').strip()[-200:]}", flush=True)
             return None
-        ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+        ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:'min(1080,ih)'",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
         os.remove(baixado)
         print(f"link: {r.stdout.strip()[:80]} ({int(duracao(p))}s)", flush=True)
@@ -420,7 +430,7 @@ def baixar_espalhado(src, p, janelas=18, cada=12.0):
     except Exception:
         total = 0.0
     if total < TRECHO_MAX * 2:
-        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+        ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:'min(1080,ih)'",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
         return
     import tempfile
@@ -431,7 +441,7 @@ def baixar_espalhado(src, p, janelas=18, cada=12.0):
             t0 = ini + (fim - ini) * k / max(janelas - 1, 1)
             q = os.path.join(tmp, f"j{k:02d}.mp4")
             try:
-                ffmpeg("-user_agent", UA, "-ss", f"{t0:.1f}", "-i", src, "-t", f"{cada:.1f}", "-an",
+                ffmpeg("-user_agent", UA, "-ss", f"{t0:.1f}", "-i", src, "-t", f"{cada:.1f}", "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-af", "apad", "-shortest",
                        "-vf", "scale=-2:'min(1080,ih)',fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", 20,
                        "-video_track_timescale", "15360", q)
                 if duracao(q) > 2:
@@ -479,7 +489,7 @@ def gameplay_longo(nome, chave, pasta, janelas=24, cada=10.0):
         if alt and alt < 720:
             continue
         try:
-            r = subprocess.run(["yt-dlp", "-g", "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]/b",
+            r = subprocess.run(["yt-dlp", "-g", "--no-warnings", "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b",
                                 f"https://www.dailymotion.com/video/{vid}"], capture_output=True, text=True, timeout=90)
             url = (r.stdout or "").strip().splitlines()[0] if r.returncode == 0 and r.stdout.strip() else ""
             if not url:
@@ -559,7 +569,7 @@ def baixar_videos_site(url, chave, pasta, limite=14):
         p = os.path.join(pasta, f"{chave}_w{hashlib.md5(u.encode()).hexdigest()[:8]}.mp4")
         try:
             if not (os.path.exists(p) and duracao(p) > 1):
-                ffmpeg("-user_agent", UA, "-i", u, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                ffmpeg("-user_agent", UA, "-i", u, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:'min(1080,ih)'",
                        "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
             if duracao(p) > 1:
                 saida.append({"arquivo": p, "nome": u.rsplit("/", 1)[-1]})
