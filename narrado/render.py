@@ -572,6 +572,8 @@ def audio_corrido(tarefas, pasta_raw, pasta_trab):
                 fades.append(f"afade=t=in:st=0:d={FADE_CAP:.2f}")
             if m.get("fo"):
                 fades.append(f"afade=t=out:st={max(d - FADE_CAP, 0):.3f}:d={FADE_CAP:.2f}")
+            if m.get("som") and not m.get("corrido"):
+                fades.append("loudnorm=I=-17:TP=-2:LRA=11")  # pausa com som do jogo: no volume certo sozinha
             af = ",".join(["aresample=48000", "aformat=sample_fmts=s16:channel_layouts=stereo", "apad",
                            f"atrim=0:{d:.4f}", "afade=t=in:d=0.04", f"afade=t=out:st={max(d - 0.04, 0):.3f}:d=0.04"] + fades)
             import subprocess
@@ -1447,7 +1449,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         vol = 10 ** (float(projeto.get("jogo_db", 0)) / 20)
         base = a.rsplit("[a]", 1)[0]
         a = (f"{base}[jm0];[jm0]asplit[jma][jmsc];"
-             f"[{idx}:a]aresample=48000,loudnorm=I=-20:TP=-2:LRA=11,aresample=48000,volume={vol:.3f}[jg];"
+             f"[{idx}:a]aresample=48000,{'loudnorm=I=-20:TP=-2:LRA=11,aresample=48000,' if corrido else ''}volume={vol:.3f}[jg];"
              f"[jg][jmsc]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=700:makeup=1[jgd];"
              f"[jma][jgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
     # cama sonora (YouTube): música gerada por código, sem direito autoral. Fica por baixo de tudo e só aparece

@@ -916,13 +916,35 @@ def teste_trecho(pasta, st):
         pub(destino)
 
 
+QUADROS_TESTE = ["madison_t0.mp4", "madison_t1.mp4", "madison_t2.mp4"]
+
+
+def teste_quadros(pasta, st):
+    """Diagnóstico: folha de quadros (1 a cada 2 s, com o tempo) dos vídeos do cache, para escolher trechos."""
+    saidas = []
+    for nome in QUADROS_TESTE:
+        src = os.path.join(RAW, nome)
+        if not os.path.exists(src):
+            garantir_assets(["MADiSON"], permitir_vazio=True, trailers={"MADiSON": 3})
+        if not os.path.exists(src):
+            continue
+        dest = os.path.join(pasta, "quadros_" + nome.replace(".mp4", ".jpg"))
+        ffmpeg("-i", src, "-vf", "fps=1/2,scale=240:-2,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+               "text='%{pts\\:hms}':x=3:y=3:fontsize=14:fontcolor=yellow:box=1:boxcolor=black,tile=10x8",
+               "-frames:v", 1, "-q:v", 4, dest)
+        saidas.append(dest)
+    pub = publicador()
+    if pub and saidas:
+        pub(*saidas)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
