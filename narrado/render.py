@@ -316,52 +316,79 @@ def cenas_de_capitulo(projeto):
     return [k for k, c in enumerate(projeto["cenas"]) if k > 0 and str(c.get("capitulo") or "").strip()]
 
 
+def pausa_da_cena(cena):
+    """Segundos de "pausa com o som do jogo" depois do tópico (YouTube): a narração para e o jogo aparece."""
+    try:
+        return min(max(float(cena.get("pausa") or 0), 0.0), 20.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def precisa_respiro(projeto):
+    return L["W"] > L["H"] and (e_corrido(projeto) or any(pausa_da_cena(c) for c in projeto.get("cenas", [])))
+
+
 def com_respiro(projeto):
-    """Cópia do projeto com N s de silêncio antes de cada capítulo (o trailer sobe nesse respiro).
-    Devolve (cópia, pontos de corte na voz original). A voz é emendada igual por quem chamar."""
+    """Cópia do projeto com silêncio na voz: N s antes de cada capítulo (modo corrido, o trailer sobe nesse
+    respiro) e a pausa pedida depois de um tópico (o som do jogo aparece: música, criatura, cena).
+    Devolve (cópia, [(ponto de corte na voz original, segundos)]). A voz é emendada igual por quem chamar."""
     import copy
     pr = copy.deepcopy(projeto)
+    if not precisa_respiro(pr):
+        return pr, []
     try:
         g = min(max(float(pr.get("respiro", 4) or 0), 0.0), 10.0)
     except (TypeError, ValueError):
         g = 4.0
-    if g <= 0 or not e_corrido(pr):
-        return pr, [], 0.0
     mant = sorted((w for w in pr["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None),
                   key=lambda w: w["ns"])
-    caps = set(cenas_de_capitulo(pr))
-    cortes, vistos = [], set()
-    for i, w in enumerate(mant):
-        if i == 0 or w["cena"] in vistos or w["cena"] not in caps:
+    cortes = []
+    if g > 0 and e_corrido(pr):
+        caps = set(cenas_de_capitulo(pr))
+        vistos = set()
+        for i, w in enumerate(mant):
+            if i == 0 or w["cena"] in vistos or w["cena"] not in caps:
+                continue
+            vistos.add(w["cena"])
+            ant = mant[i - 1]
+            if ant["cena"] == w["cena"]:
+                continue
+            cortes.append((round((ant.get("ne", ant["ns"]) + w["ns"]) / 2, 3), g))
+    for ci, c in enumerate(pr["cenas"]):
+        pz = pausa_da_cena(c)
+        if not pz:
             continue
-        vistos.add(w["cena"])
-        ant = mant[i - 1]
-        if ant["cena"] == w["cena"]:
+        idx = [i for i, w in enumerate(mant) if w["cena"] == ci]
+        if not idx:
             continue
-        cortes.append(round((ant.get("ne", ant["ns"]) + w["ns"]) / 2, 3))
+        ult = mant[idx[-1]]
+        fim = ult.get("ne", ult["ns"])
+        prox = mant[idx[-1] + 1]["ns"] if idx[-1] + 1 < len(mant) else None
+        t = fim + 0.15 if prox is None else min(fim + 0.15, (fim + prox) / 2)
+        cortes.append((round(t, 3), pz))
     cortes.sort()
     for w in pr["palavras"]:
         if "ns" in w:
-            k = sum(1 for c in cortes if c <= w["ns"])
-            if k:
-                w["ns"] = round(w["ns"] + g * k, 3)
+            soma = sum(gg for c, gg in cortes if c <= w["ns"])
+            if soma:
+                w["ns"] = round(w["ns"] + soma, 3)
                 if "ne" in w:
-                    w["ne"] = round(w["ne"] + g * k, 3)
-    pr["duracao_voz"] = float(pr["duracao_voz"]) + g * len(cortes)
-    pr["respiro_cortes"] = cortes
-    return pr, cortes, g
+                    w["ne"] = round(w["ne"] + soma, 3)
+    pr["duracao_voz"] = float(pr["duracao_voz"]) + sum(gg for _, gg in cortes)
+    pr["respiro_cortes"] = [list(x) for x in cortes]
+    return pr, cortes
 
 
-def voz_com_respiro(voz_wav, cortes, g, destino):
-    """A voz com silêncio de g segundos em cada ponto de corte."""
+def voz_com_respiro(voz_wav, cortes, destino):
+    """A voz com silêncio em cada ponto de corte [(t, segundos)]."""
     if not cortes:
         return voz_wav
-    lim = [0.0] + list(cortes) + [None]
+    lim = [0.0] + [c for c, _ in cortes] + [None]
     partes = []
     for i in range(len(lim) - 1):
         a, b = lim[i], lim[i + 1]
         tr = f"atrim=start={a:.3f}" + (f":end={b:.3f}" if b is not None else "")
-        pad = f",apad=pad_dur={g:.3f}" if b is not None else ""
+        pad = f",apad=pad_dur={cortes[i][1]:.3f}" if b is not None else ""
         partes.append(f"[0:a]{tr},asetpts=PTS-STARTPTS{pad}[p{i}]")
     n = len(partes)
     grafo = ";".join(partes) + ";" + "".join(f"[p{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]"
@@ -382,7 +409,7 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
     cenas = projeto["cenas"]
     caps = set(cenas_de_capitulo(projeto))
     primeiro_cap = min(caps) if caps else None
-    g_resp = float(projeto.get("respiro", 4) or 0) if projeto.get("respiro_cortes") else 0.0
+    g_resp = float(projeto.get("respiro", 4) or 0) if (projeto.get("respiro_cortes") and e_corrido(projeto)) else 0.0
     brutos, imgs, ordem = {}, {}, []
     for c in cenas:
         j = c.get("jogo")
@@ -537,10 +564,10 @@ def audio_corrido(tarefas, pasta_raw, pasta_trab):
             pass
         wav = os.path.join(pasta, f"{k:04d}.wav")
         ok = False
-        if m.get("corrido") and m["tipo"] == "v":
+        if (m.get("corrido") or m.get("som")) and m["tipo"] == "v":
             src = os.path.join(pasta_raw, m["arquivo"])
             t0 = _inicio_seguro(src, m.get("t", 0), d)
-            fades = []
+            fades = ["afade=t=in:d=0.5", f"afade=t=out:st={max(d - 0.6, 0):.3f}:d=0.6"] if m.get("som") else []
             if m.get("fi"):
                 fades.append(f"afade=t=in:st=0:d={FADE_CAP:.2f}")
             if m.get("fo"):
@@ -1006,7 +1033,7 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
     É o único passo de um ajuste "só de legenda": não refaz cenas, voz nem efeitos.
     """
     definir_formato(projeto)
-    if e_corrido(projeto) and "respiro_cortes" not in projeto:
+    if precisa_respiro(projeto) and "respiro_cortes" not in projeto:
         projeto = dict(com_respiro(projeto)[0], timeline=projeto.get("timeline"))  # só legenda: mesmos tempos do vídeo
     pasta_trab = os.path.abspath(pasta_trab)
     os.makedirs(pasta_trab, exist_ok=True)
@@ -1148,10 +1175,10 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     os.makedirs(seg_dir)
     orig = projeto
     corrido = e_corrido(projeto)
-    if corrido:
-        # fórmula dos tops: respiro antes de cada jogo (a voz ganha silêncio; o trailer sobe ali)
-        projeto, cortes_r, g_r = com_respiro(projeto)
-        voz_wav = voz_com_respiro(voz_wav, cortes_r, g_r, os.path.join(pasta_trab, "voz_respiro.wav"))
+    if precisa_respiro(projeto):
+        # fórmula dos tops: respiro antes de cada jogo; e pausas pedidas com o som do jogo (a voz ganha silêncio)
+        projeto, cortes_r = com_respiro(projeto)
+        voz_wav = voz_com_respiro(voz_wav, cortes_r, os.path.join(pasta_trab, "voz_respiro.wav"))
     faixas, total, tipos = linha_tempo(projeto)
     trans_cena = {} if corrido else transicoes(projeto, faixas)
     lista, k = [], 0
@@ -1170,6 +1197,11 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         tarefas = [(t[0], t[1], t[2], os.path.join(pasta_raw, t[2]["arquivo"]), *t[4:]) for t in tarefas]
     for fi, (c, a, b) in enumerate([] if corrido else faixas):
         dur = b - a
+        pz = pausa_da_cena(projeto["cenas"][c]) if W > H else 0.0
+        if pz and dur > pz + 1.0:
+            dur -= pz  # a pausa vira UM trecho contínuo do jogo no fim (com o som dele), sem picotar
+        else:
+            pz = 0.0
         n = max(1, round(dur / corte))
         if f"cartao_cap_{c}" in banco:
             n = max(n, math.ceil(dur / 2.6))  # a cartela de capítulo fica ~2,5 s; depois volta o jogo
@@ -1226,6 +1258,20 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             tarefas.append((k, mid, m, src, d, out, fx, rep, midias))
             lista.append(out)
             k += 1
+        if pz:
+            jogo_c = projeto["cenas"][c].get("jogo")
+            vids_c = [x for x, mm in banco.items() if mm["tipo"] == "v" and mm.get("jogo") == jogo_c and not mm.get("cartao")]
+            if vids_c:
+                mid = max(vids_c, key=lambda x: (banco[x].get("dur", 0), -uso.get(x, 0)))
+                m = dict(banco[mid], som=True)
+                out = os.path.join(seg_dir, f"{k:04d}.mp4")
+                tarefas.append((k, mid, m, os.path.join(pasta_raw, m["arquivo"]), pz, out, None, 0, [mid]))
+                usados_cena[-1]["cortes"].append(mid)
+                lista.append(out)
+                k += 1
+            else:  # sem vídeo do jogo: o último trecho se estende
+                t_ult = tarefas[-1]
+                tarefas[-1] = (*t_ult[:4], t_ult[4] + pz, *t_ult[5:])
         if progresso:
             progresso(fi + 1, len(faixas) * 2)
 
@@ -1290,7 +1336,8 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", completo)
         visual = completo
 
-    som_jogo = audio_corrido(tarefas, pasta_raw, pasta_trab) if corrido else None
+    tem_som = corrido or any(t[2].get("som") for t in tarefas)
+    som_jogo = audio_corrido(tarefas, pasta_raw, pasta_trab) if tem_som else None
     corte_gancho = faixas[1][1] if len(faixas) > 1 else total
     blocos = blocos_com_destaque(projeto)
     cortes = {c: a for c, a, b in faixas[1:]}

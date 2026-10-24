@@ -443,7 +443,8 @@ def preparar(pasta, st):
                  if "numero" in c else {}),
               **({"imagem": str(c["imagem"]).strip()} if c.get("imagem") else {}),
               **({"capitulo": str(c["capitulo"]).strip()[:80]} if c.get("capitulo") else {}),
-              **({"ficha": {k: str(v)[:70] for k, v in c["ficha"].items() if v}} if isinstance(c.get("ficha"), dict) else {})}
+              **({"ficha": {k: str(v)[:70] for k, v in c["ficha"].items() if v}} if isinstance(c.get("ficha"), dict) else {}),
+              **({"pausa": min(max(float(c["pausa"]), 0), 20)} if str(c.get("pausa") or "").replace(".", "", 1).isdigit() and float(c["pausa"]) > 0 else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes, n_trailers = jogos_necessarios(job, cenas)
     corrido = job.get("formato") == "horizontal" and job.get("edicao", "corrido") == "corrido"

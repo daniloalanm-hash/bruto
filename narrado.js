@@ -346,6 +346,7 @@ function roteiroDaIA(r, materia) {
     cenas: (r.cenas || []).filter((c) => c.texto).map((c) => ({
       texto: c.texto, destaques: c.destaques || [], assunto: c.assunto || null, emoji: c.emoji || null,
       imagem: typeof c.imagem === 'string' && c.imagem.trim() ? c.imagem.trim().slice(0, 60) : null,
+      ...(+c.pausa > 0 ? { pausa: Math.min(15, Math.max(4, Math.round(+c.pausa))) } : {}),
       numero: c.numero && c.numero.valor && String(c.texto).includes(String(c.numero.valor).split(' ')[0])
         ? { valor: String(c.numero.valor), rotulo: String(c.numero.rotulo || ''),
           ...(Array.isArray(c.numero.times) && c.numero.times.length === 2 ? { times: c.numero.times.map(String) } : {}) } : null,
@@ -430,6 +431,7 @@ const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Para cada
 - "destaques": 1 a 3 expressões copiadas do texto que merecem destaque na legenda;
 - "assunto": o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null;
 - "imagem": SÓ quando o trecho cita pelo nome um console/aparelho ou uma pessoa real (ex.: "PlayStation 1", "Steam Deck", "Hideo Kojima", "Ridley Scott") — o nome exato para buscar foto real. Empresa, estúdio, publisher, filme ou objeto genérico: null (vira foto aleatória). Na dúvida, null;
+- "pausa": SÓ no YouTube, quando o trecho fala de algo que vale VER E OUVIR no jogo (uma música, o som/grito de uma criatura, uma cena marcante): segundos (8 a 12) em que a narração para e o jogo aparece com o som dele; senão null. No máximo 1 a cada 2 minutos;
 - "numero": se houver UM número de impacto (dinheiro, %, quantidade grande, placar), {"valor": "como está no texto", "rotulo": "2 a 5 palavras"}; senão null.`;
 
 function promptAbertura(plano, palavras) {
@@ -463,7 +465,7 @@ ${meio ? '- no meio deste capítulo, uma frase curta e natural pedindo para se i
 
 ${REGRAS_CENA}
 
-Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "imagem": null, "numero": null}]}`;
+Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "imagem": null, "pausa": null, "numero": null}]}`;
 }
 
 async function roteiroLongo(materia, segundos, onStatus = () => {}) {
@@ -1441,7 +1443,7 @@ $$('[data-vista]').forEach((b) => b.addEventListener('click', () => {
 function assinaturaEstrutural(p) {
   return JSON.stringify({
     palavras: p.palavras.map((w) => [w.manter ? 1 : 0, w.cena]),
-    cenas: p.cenas.map((c) => [c.midias, c.entrada || 'auto', c.transicao || 'auto', c.jogo]),
+    cenas: p.cenas.map((c) => [c.midias, c.entrada || 'auto', c.transicao || 'auto', c.jogo, +c.pausa || 0]),
     voz: p.voz?.reducao_ruido,
     outros: [p.jl_quadros, p.transicao_gancho, p.sfx, p.zoom_enfase, p.titulo_estilo, !!(p.titulo_gancho !== false && p.titulo_tela),
       p.enquadramento, p.transicoes_modo, p.musica],
@@ -1714,10 +1716,15 @@ function renderCenas() {
       }
       entrada = h('div', { class: 'linha-trans' }, h('label', { class: 'entrada-lbl' }, 'Entrada: ', sel), trans);
     }
+    // YouTube: depois deste tópico, a narração para e o jogo aparece com o som dele (música, criatura, cena)
+    const pausa = p.formato === 'horizontal' ? h('label', { class: 'entrada-lbl', title: 'A narração para e o jogo aparece com o som dele (música, criatura, cena)' },
+      'Depois: mostrar o jogo com som por ',
+      h('input', { type: 'number', min: 0, max: 20, step: 1, value: +c.pausa || 0, style: { width: '56px' },
+        onchange: (e) => { c.pausa = Math.min(20, Math.max(0, +e.target.value || 0)); marcarSujo(); } }), ' s') : null;
     box.append(h('div', { class: 'lc-cena' },
       h('b', {}, `Tópico ${ci + 1} · ${nomeJogo(c.jogo)}`),
       h('p', {}, `${n ? `${n} cortes · ` : ''}${c.texto}`),
-      entrada, tira));
+      entrada, pausa, tira));
   });
 }
 

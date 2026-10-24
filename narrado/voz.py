@@ -195,7 +195,18 @@ def partir_pausas(blocos, db, passo):
                 limite, resto = (PAUSA_MAX, PAUSA_RESTO) if pont else (0.22, 0.05)
                 # só pausa no MEIO (as pontas do bloco já são tratadas pelo definir_cortes)
                 if b_ - a_ > limite and a_ > b["cs"] + 0.15 and b_ < b["ce"] - 0.15:
-                    cortes.append((a_ + resto, b_ - resto))
+                    # final de palavra que morre baixinho ("própri-a") fica abaixo do limiar e parecia pausa:
+                    # o corte respeita o fim da palavra segundo o Whisper (até 0,3 s além do som forte) e o
+                    # começo da seguinte — senão a sílaba final some
+                    depois = [w for w in b["pal"] if w["s"] >= a_]
+                    x0 = a_ + resto
+                    if antes:
+                        x0 = max(x0, min(antes[-1]["e"], a_ + 0.30) + 0.04)
+                    x1 = b_ - resto
+                    if depois:
+                        x1 = min(x1, max(depois[0]["s"], b_ - 0.30) - 0.04)
+                    if x1 - x0 > 0.08:
+                        cortes.append((x0, x1))
                 i = j
             else:
                 i += 1
@@ -215,7 +226,8 @@ def partir_pausas(blocos, db, passo):
         while k > k0 and quieto[k - 1]:
             k -= 1
         if (k1 - k) * passo > m_fim + 0.05:
-            b["ce"] = min(b["ce"], k * passo + m_fim)
+            ult = b["pal"][-1]["e"] if b["pal"] else 0
+            b["ce"] = min(b["ce"], max(k * passo + m_fim, min(ult, k * passo + 0.30) + 0.04))
         if not cortes:
             novos.append(b)
             continue
