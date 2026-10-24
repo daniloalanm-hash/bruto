@@ -1200,6 +1200,9 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     for fi, (c, a, b) in enumerate([] if corrido else faixas):
         dur = b - a
         pz = pausa_da_cena(projeto["cenas"][c]) if W > H else 0.0
+        if W > H and fi == len(faixas) - 1:
+            # encerramento do YouTube (gameplay depois da última fala): um trecho só, com o som do jogo
+            pz = max(pz, float(projeto.get("cauda", 10) or 0))
         if pz and dur > pz + 1.0:
             dur -= pz  # a pausa vira UM trecho contínuo do jogo no fim (com o som dele), sem picotar
         else:
@@ -1455,9 +1458,9 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
              f"[{idx}:a]aresample=48000,{'loudnorm=I=-20:TP=-2:LRA=11,aresample=48000,' if corrido else ''}volume={vol:.3f}[jg];"
              f"[jg][jmsc]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=700:makeup=1[jgd];"
              f"[jma][jgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
-    # cama sonora (YouTube): música gerada por código, sem direito autoral. Fica por baixo de tudo e só aparece
-    # de verdade quando o resto silencia (respiro sem som de trailer, imagem parada, trecho mudo do trailer):
-    # abaixa sozinha com a voz E com o som do jogo. Com trilha da biblioteca, a trilha ocupa esse lugar.
+    # cama sonora (YouTube): música gerada por código, sem direito autoral. Toca o vídeo inteiro, baixinha por
+    # baixo da voz (~16 dB abaixo, só clima), e sobe quando o resto silencia (pausas, imagem parada, trecho mudo
+    # do trailer). Com trilha da biblioteca, a trilha ocupa esse lugar.
     trilha_ok = bool((projeto.get("trilha") or {}).get("arquivo")) and projeto.get("musica", True) and \
         os.path.exists(os.path.join(pasta_raw, (projeto.get("trilha") or {}).get("arquivo", "")))
     if W > H and projeto.get("cama", True) and not trilha_ok:
@@ -1466,12 +1469,12 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         print(f"cama sonora: clima {clima}", flush=True)
         entradas.extend(["-stream_loop", "-1", "-i", arq_cama])
         ic = entradas.count("-i") - 1
-        vol = 10 ** (float(projeto.get("cama_db", -13)) / 20)
+        vol = 10 ** (float(projeto.get("cama_db", -11)) / 20)
         base = a.rsplit("[a]", 1)[0]
         a = (f"{base}[cm0];[cm0]asplit[cma][cmsc];"
              f"[{ic}:a]aresample=48000,volume={vol:.3f},afade=t=in:d=1.5,"
              f"afade=t=out:st={max(total - 2.5, 0):.2f}:d=2.4,atrim=0:{total:.2f}[cam];"
-             f"[cam][cmsc]sidechaincompress=threshold=0.03:ratio=6:attack=40:release=900:makeup=1[camd];"
+             f"[cam][cmsc]sidechaincompress=threshold=0.03:ratio=2:attack=60:release=900:makeup=1[camd];"
              f"[cma][camd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]")
     # trilha de fundo (da biblioteca, jogo "Trilha"): baixa sozinha quando a voz fala (sidechain), sobe nas pausas
     trilha = projeto.get("trilha") or {}
