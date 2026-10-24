@@ -1394,7 +1394,8 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
 
     # ênfase (zoom + pop) quando aparece palavra destacada: espaçada, longe das trocas de tópico
     tempos_destaque = []
-    for b in blocos:
+    # YouTube: sem zoom/pop nas palavras destacadas — no vídeo longo o "pop" parece anunciar algo novo na tela
+    for b in ([] if W > H else blocos):
         if b.get("destaque") and all(abs(b["ini"] - t) > 0.5 for t in cortes.values()) and b["ini"] > 0.4:
             if not tempos_destaque or b["ini"] - tempos_destaque[-1] >= ESPACO_ENFASE:
                 tempos_destaque.append(b["ini"])

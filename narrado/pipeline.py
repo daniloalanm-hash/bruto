@@ -568,6 +568,12 @@ def preparar(pasta, st):
         "post": job.get("post") or {},
         **{k: job[k] for k in ESTILO_PADRAO if k in job},
     }
+    if projeto["formato"] == "horizontal":
+        # YouTube: sem legenda queimada por padrão (legenda na tela em português pode limitar a entrega fora
+        # do Brasil; o YouTube gera a dele) — dá para ligar no editor
+        projeto["legenda_estilo"] = job.get("legenda_estilo") if job.get("legenda_estilo") == "nenhuma" or \
+            job.get("legenda_youtube") else "nenhuma"
+        projeto["zoom_enfase"] = False
     if corrido:
         projeto.update(edicao="corrido", musica=job.get("musica", False) is True, zoom_enfase=False,
                        legenda_estilo=job.get("legenda_estilo") or "nenhuma")
@@ -619,6 +625,7 @@ def aplicar_ajustes(projeto):
     marca = aj.get("id") or os.path.getmtime(arq)
     if marca in feitos:
         return
+    projeto.update(aj.get("projeto") or {})
     for k, campos in (aj.get("cenas") or {}).items():
         if str(k).isdigit() and int(k) < len(projeto["cenas"]):
             projeto["cenas"][int(k)].update(campos)
