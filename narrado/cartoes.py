@@ -704,9 +704,10 @@ VERMELHO_FICHA = (230, 16, 22)
 def titulo_da_ficha(cena, ficha):
     """ "12º — Pragmata": a posição vem do título do capítulo ("12º Pragmata"), o nome da ficha."""
     cap = str(cena.get("capitulo") or "")
-    m = re.match(r"\s*(?:top\s*)?#?\s*(\d{1,2})\s*[º°o.]?(?=\s|[-—:]|$)", cap, re.I)
+    # posição só quando é posição de verdade: "12º", "#12", "12." — "31 Anos de História" não é o 31º lugar
+    m = re.match(r"\s*(?:top\s*)?(?:#\s*(\d{1,2})|(\d{1,2})\s*[º°ª]|(\d{1,2})\.)(?=\s|[-—:]|$)", cap, re.I)
     nome = str(ficha.get("jogo") or "").strip() or re.sub(r"^\s*#?\d{1,2}\s*[º°o.]?\s*[-—:]?\s*", "", cap).strip()
-    return f"{m.group(1)}º — {nome}" if m else nome
+    return f"{next(g for g in m.groups() if g)}º — {nome}" if m else nome
 
 
 def ficha(titulo, linhas, fontes, destino, escala=1.0):
