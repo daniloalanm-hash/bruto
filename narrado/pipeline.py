@@ -870,13 +870,38 @@ def teste_corrido(pasta, st):
     preparar(pasta, st)
 
 
+TRECHOS_TESTE = [(315.5, 321.0), (410.5, 419.0), (420.5, 428.5)]
+
+
+def teste_trecho(pasta, st):
+    """Diagnóstico: transcrição detalhada (sem dicas, com probabilidade por palavra) de trechos da gravação."""
+    import numpy as np
+    from faster_whisper import WhisperModel
+    job = ler(os.path.join(pasta, "job.json"))
+    audio = fala._audio16k(os.path.join(pasta, job["voz"]["arquivo"]))
+    model = WhisperModel("large-v3", device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+    rel = []
+    for a, b in TRECHOS_TESTE:
+        clip = audio[int(a * 16000):int(b * 16000)].astype(np.float32)
+        for prompt in (None, "Em julho de 2022, mil novecentos"):
+            segs, _ = model.transcribe(clip, language="pt", word_timestamps=True, vad_filter=False, beam_size=5,
+                                       initial_prompt=prompt, condition_on_previous_text=False)
+            rel.append({"trecho": [a, b], "prompt": prompt, "palavras": [
+                (round(a + w.start, 2), round(a + w.end, 2), w.word, round(w.probability, 2)) for sg in segs for w in sg.words]})
+    destino = os.path.join(pasta, "teste_trecho.json")
+    gravar(destino, rel)
+    pub = publicador()
+    if pub:
+        pub(destino)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
