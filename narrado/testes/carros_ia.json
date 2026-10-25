@@ -1,0 +1,31 @@
+{
+ "id": "teste-carros-ia",
+ "titulo": "3 carros que conquistaram o Brasil (e um que caiu feio)",
+ "titulo_tela": "3 CARROS QUE CONQUISTARAM O BRASIL",
+ "formato": "horizontal", "edicao": "corrido", "legenda_estilo": "nenhuma", "musica": false, "zoom_enfase": false,
+ "nicho": "carros", "canal": "Canal Teste", "marca_dagua": "", "cama_clima": "suave",
+ "jogos": ["Jeep Compass", "Toyota Corolla Cross", "Hyundai i30"],
+ "voz": {"modo": "ia", "voz_ia": "pt-BR-AntonioNeural"},
+ "post": {"legenda": "Teste do canal de carros.", "hashtags": ["carros"], "titulo_yt": "3 carros que conquistaram o Brasil"},
+ "thumbs": [{"texto": "O REI DOS SUVS", "destaque": "REI"}, {"texto": "3 CARROS LENDÁRIOS", "destaque": "LENDÁRIOS"}, {"texto": "CAIU.", "destaque": ""}],
+ "cenas": [
+  {"capitulo": "Introdução", "texto": "Um SUV que passou de meio milhão de vendas em menos de dez anos. Um Toyota que anda com etanol e eletricidade ao mesmo tempo. E um hatch que foi o queridinho do Brasil e sumiu do mapa.", "assunto": "Jeep Compass", "destaques": ["meio milhão"]},
+  {"texto": "Hoje você vai conhecer três carros que marcaram o mercado brasileiro. E fica até o fim, porque a história do terceiro tem uma virada que pouca gente lembra.", "assunto": "Toyota Corolla Cross"},
+  {"texto": "Aqui no canal a gente conta a história por trás dos carros. Se curte esse tipo de vídeo, já se inscreve.", "assunto": "Hyundai i30"},
+  {"capitulo": "Jeep Compass: o fenômeno de Pernambuco", "ficha": {"carro": "Jeep Compass", "ano": "2016 em diante", "motor": "1.3 turbo / 2.0 diesel", "preco": ""}, "texto": "Setembro de 2016. A Jeep lança o Compass, fabricado em Goiana, no interior de Pernambuco.", "assunto": "Jeep Compass"},
+  {"texto": "A aposta era alta: um SUV médio, mais caro que a maioria do mercado, feito no Nordeste. E deu muito certo.", "assunto": "Jeep Compass"},
+  {"texto": "O Compass chegou a liderar a categoria de SUVs e apareceu várias vezes no top 10 dos carros mais vendidos do país.", "assunto": "Jeep Compass"},
+  {"texto": "E o número que resume tudo: mais de 500 mil unidades vendidas no Brasil, em menos de dez anos.", "assunto": "Jeep Compass", "numero": {"valor": "500 mil", "rotulo": "unidades vendidas no Brasil"}},
+  {"texto": "Hoje ele também é vendido em vários países da América Latina, e uma nova geração já está a caminho. Mas tinha um japonês de olho nesse trono.", "assunto": "Jeep Compass"},
+  {"capitulo": "Toyota Corolla Cross: o híbrido que bebe etanol", "ficha": {"carro": "Toyota Corolla Cross", "ano": "2021 em diante", "motor": "2.0 flex / híbrido flex", "preco": "R$ 139.990 (lançamento)"}, "texto": "Março de 2021. A Toyota lança o Corolla Cross, feito em Sorocaba, no interior de São Paulo.", "assunto": "Toyota Corolla Cross"},
+  {"texto": "E aqui vem a sacada: além da versão flex, ele tem uma versão híbrida que também roda com etanol.", "assunto": "Toyota Corolla Cross"},
+  {"texto": "São três motores trabalhando juntos: dois elétricos e um a combustão flex. Segundo a própria Toyota, foi o segundo veículo híbrido do mundo capaz de rodar com etanol.", "assunto": "Toyota Corolla Cross"},
+  {"texto": "No lançamento, a versão flex começava em 139 mil e 990 reais, e a híbrida em 179 mil e 990.", "assunto": "Toyota Corolla Cross", "numero": {"valor": "R$ 139.990", "rotulo": "preço inicial no lançamento", "comparar": {"valor": "R$ 179.990", "rotulo": "versão híbrida"}}},
+  {"texto": "O câmbio da versão flex tem dez marchas simuladas, e teve até uma série especial limitada a 1.200 unidades. Mas nem todo carro de sucesso termina bem.", "assunto": "Toyota Corolla Cross"},
+  {"capitulo": "Hyundai i30: do topo ao esquecimento", "ficha": {"carro": "Hyundai i30", "ano": "2009 a 2016", "motor": "2.0 16V (1ª geração)", "potencia": "145 cv"}, "texto": "Março de 2009. Chega da Coreia do Sul o Hyundai i30, com motor 2.0 de 145 cavalos.", "assunto": "Hyundai i30"},
+  {"texto": "Ele virou febre. Foi o hatch médio mais licenciado do Brasil em 2010 e 2011, com mais de 35 mil unidades por ano.", "assunto": "Hyundai i30", "numero": {"valor": "35 mil", "rotulo": "unidades por ano no auge"}},
+  {"texto": "Só que em 2013 veio a segunda geração, com motor 1.6 menos potente. E as vendas despencaram de 35 mil para 6 mil em um ano.", "assunto": "Hyundai i30", "numero": {"valor": "6 mil", "rotulo": "vendas em 2013, queda", "comparar": {"valor": "35 mil", "rotulo": "vendas em 2012"}}},
+  {"texto": "Nem o motor 1.8 de 150 cavalos e o câmbio de seis marchas, em 2015, salvaram. Em 2016 ele saiu de linha, depois de mais de 120 mil unidades vendidas.", "assunto": "Hyundai i30"},
+  {"texto": "E você, ficaria com qual dos três? Comenta aí. Se curtiu, deixa o like, se inscreve e assiste esse outro vídeo aqui.", "assunto": "Hyundai i30"}
+ ]
+}

@@ -1111,13 +1111,41 @@ def teste_carros(pasta, st):
         pub(*[os.path.join(pasta, x) for x in ("carros_teste.jpg", "carros_teste.json") if os.path.exists(os.path.join(pasta, x))])
 
 
+def teste_job(pasta, st):
+    """Teste de ponta a ponta com voz de IA a partir de um job do repositório (narrado/testes/<nome>.json):
+    roda numa subpasta sem publicar por cima do projeto da release e publica só os arquivos com prefixo."""
+    import shutil
+    nome = os.environ.get("NARRADO_TESTE") or "carros_ia"
+    origem = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testes", f"{nome}.json")
+    sub = os.path.join(pasta, f"teste_{nome}")
+    os.makedirs(sub, exist_ok=True)
+    shutil.copy(origem, os.path.join(sub, "job.json"))
+    tag = os.environ.pop("NARRADO_TAG", None)  # sem publicar: final.mp4/projeto.json da release ficam intactos
+    try:
+        preparar(sub, st)
+    finally:
+        if tag:
+            os.environ["NARRADO_TAG"] = tag
+    pub = publicador()
+    if pub:
+        saidas = []
+        for x in ("final.mp4", "projeto.json", "thumb_1.jpg", "thumb_2.jpg", "thumb_3.jpg"):
+            p = os.path.join(sub, x)
+            if os.path.exists(p):
+                d = os.path.join(sub, f"{nome}_{x}")
+                shutil.copy(p, d)
+                saidas.append(d)
+        if saidas:
+            pub(*saidas)
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "teste_carros": teste_carros, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "teste_carros": teste_carros, "teste_job": teste_job, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
