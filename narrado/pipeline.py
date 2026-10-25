@@ -637,6 +637,16 @@ def aplicar_ajustes(projeto):
     if marca in feitos:
         return
     projeto.update(aj.get("projeto") or {})
+    if aj.get("remover_arquivos"):  # material ruim (ex.: gameplay que era review com gente na câmera)
+        import fnmatch
+        fora = {k for k, m in projeto["banco"].items()
+                if any(fnmatch.fnmatch(m.get("arquivo", ""), pad) for pad in aj["remover_arquivos"])}
+        for k in fora:
+            projeto["banco"].pop(k, None)
+        for c in projeto["cenas"]:
+            if c.get("midias"):
+                c["midias"] = [m for m in c["midias"] if m not in fora]
+        print(f"ajustes: {len(fora)} mídias removidas", flush=True)
     if aj.get("limpar_sobras"):
         fala.sobras_de_tomada(projeto["palavras"])
     for k, campos in (aj.get("cenas") or {}).items():
