@@ -397,10 +397,10 @@ TENTADOS_DM = {}  # chave do jogo -> ids do Dailymotion já baixados (a 2ª roda
 
 # ---------------------------------------------------------------- nicho carros
 NICHO = os.environ.get("NARRADO_NICHO", "games")  # "carros": material de montadora, sem som original, sem gente
-RUIM_CARRO = re.compile(r"crash|acidente|accident|batida|toy|brinquedo|hot ?wheels|lego|miniatur|kids|crian|"
-                        r"\bgta\b|forza|gran turismo|need for speed|assetto|beamng|game|jogo|mod\b|unboxing|"
-                        r"compara|\bvs\.?\b|podcast|live|reac|react|parte \d|part \d|leil[aã]o|auction|"
-                        r"rc\b|controle remoto|drift|tuning|tunado|rebaixad|som automotivo|paredão", re.I)
+RUIM_CARRO = re.compile(r"\b(crash|acidente|accident|batida|toys?|brinquedos?|hot ?wheels|lego|miniaturas?|miniature|kids|"
+                        r"crian[cç]as?|gta|forza|gran turismo|need for speed|assetto|beamng|games?|gameplay|jogos?|mods?|"
+                        r"unboxing|comparativo|comparison|vs\.?|podcast|live|reacts?|reaction|rea[cç][aã]o|parte \d|part \d|"
+                        r"leil[aã]o|auction|rc|controle remoto|drift|tuning|tunado|rebaixado|som automotivo|pared[aã]o)\b", re.I)
 BOM_CARRO = re.compile(r"exterior|interior|design|driving|on the road|official|oficial|footage|b-?roll|"
                        r"walkaround|reveal|world premiere|lan[cç]amento|apresenta|first look|4k|uhd", re.I)
 MONTADORAS = re.compile(r"hyundai|toyota|volkswagen|\bvw\b|fiat|jeep|chevrolet|\bgm\b|ford|renault|nissan|honda|"
