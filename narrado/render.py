@@ -10,6 +10,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 
 import cartoes
 import efeitos
@@ -307,6 +308,33 @@ def _tamanho(src):
     return _dims[src]
 
 
+def area_do_trecho(src, t0, dur):
+    """Imagem útil do trecho (tarja preta fora) em fração [x, y, w, h], por 6 quadros do próprio trecho.
+    Mais firme que o cropdetect: um quadro claro no meio (flash, transição) não desfaz a tarja."""
+    import numpy as np
+    w, h = 192, 108
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-t", f"{max(dur, 0.5):.3f}",
+                        "-vf", f"fps={6 / max(dur, 0.5):.4f},scale={w}:{h},format=gray", "-frames:v", "6",
+                        "-f", "rawvideo", "-"], capture_output=True)
+    q = np.frombuffer(r.stdout, dtype=np.uint8)
+    n = len(q) // (w * h)
+    if n < 2:
+        return None
+    q = q[: n * w * h].reshape(n, h, w)
+    col = (q[:, 27:81, :].max(1) > 40).mean(0)
+    lin = (q[:, :, 48:144].max(2) > 40).mean(0)
+    cs, ls = np.nonzero(col >= 0.5)[0], np.nonzero(lin >= 0.5)[0]
+    if len(cs) < w * 0.4 or len(ls) < h * 0.4:
+        return None
+    x0, x1, y0, y1 = int(cs[0]), int(cs[-1]) + 1, int(ls[0]), int(ls[-1]) + 1
+    # tarja de verdade é simétrica; cena escura num lado só (terror, noite) não é tarja
+    if abs(x0 - (w - x1)) > w * 0.04:
+        x0, x1 = 0, w
+    if abs(y0 - (h - y1)) > h * 0.05:
+        y0, y1 = 0, h
+    return [x0 / w, y0 / h, (x1 - x0) / w, (y1 - y0) / h]
+
+
 def _delogo(src, marca):
     """Apaga (borra) a logo fixa de site que veio no vídeo — caixa em fração da imagem original."""
     d = _tamanho(src) if marca else None
@@ -324,14 +352,14 @@ def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False, marca=None, ar
     n, pad = _quadros_exatos(dur)
     # tarja: o trecho (cropdetect) acha plano 4:3 no meio de trailer; a medida do vídeo inteiro (area) acha a
     # tarja que o cropdetect não vê (logo de site dentro dela). Vale a que recorta mais nas laterais.
-    c = area_util(src, t0)
-    dims = _tamanho(src)
-    larg_c = int(c[0]) / dims[0] if c and dims else 1.0
-    if area and area[2] < larg_c - 0.02:
-        x, y, w, h = area
+    c = area_do_trecho(src, t0, dur)
+    if area and (not c or area[2] < c[2] - 0.02):
+        c = area
+    if c and (c[2] < 0.985 or c[3] < 0.985):
+        x, y, w, h = c
         pre = f"crop=trunc(iw*{w:.4f}/2)*2:trunc(ih*{h:.4f}/2)*2:trunc(iw*{x:.4f}):trunc(ih*{y:.4f}),"
     else:
-        pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+        pre = ""
     pre = _delogo(src, marca) + pre
     fx = ""
     if fade_in:
