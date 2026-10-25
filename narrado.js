@@ -113,9 +113,22 @@ async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
   for (const m of modelos) {
     for (let tentativa = 0; tentativa < 3; tentativa++) {
       if (tentativa) { onStatus(`IA ocupada, tentando de novo (${m})…`); await sleep(tentativa * 4000); }
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: payload,
-      });
+      // nunca esperar para sempre: pedido travado vira nova tentativa (ou o próximo modelo)
+      const ctl = new AbortController();
+      const limite = opcoes.timeout || (buscar ? 100000 : 75000);
+      const relogio = setTimeout(() => ctl.abort(), limite);
+      let res;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: payload, signal: ctl.signal,
+        });
+      } catch (e) {
+        clearTimeout(relogio);
+        ultimo = e.name === 'AbortError' ? `a IA demorou mais de ${Math.round(limite / 1000)} s` : (e.message || 'falha de rede');
+        if (opcoes.semRepetir) throw new Error(ultimo);
+        continue;
+      }
+      clearTimeout(relogio);
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
         const txt = (body.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
@@ -527,7 +540,11 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
   // 1) pesquisa: a matéria é a âncora; a IA busca outras notícias/fontes do mesmo assunto
   onStatus('Pesquisando outras notícias e fontes sobre o assunto…');
   let dossie = null;
-  try { dossie = await gemini(promptPesquisa(materia, extras), onStatus, { buscar: true }); } catch (e) { console.warn('pesquisa', e); }
+  // pesquisa tem prazo: se a IA demorar, o roteiro segue só com a matéria (e a busca da etapa seguinte)
+  try { dossie = await gemini(promptPesquisa(materia, extras), onStatus, { buscar: true, timeout: 70000, semRepetir: true }); } catch (e) {
+    console.warn('pesquisa', e);
+    onStatus('Pesquisa extra demorou; seguindo com a matéria…');
+  }
   const pesquisa = textoDossie(dossie);
   // 2) estrutura dos capítulos com a matéria + o dossiê
   onStatus('A IA está montando os capítulos…');
@@ -545,10 +562,25 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
   const abertura = norm(ab);
   if (abertura[0]) abertura[0].capitulo = 'Introdução';
   cenas.push(...abertura);
-  for (let i = 0; i < plano.capitulos.length; i++) {
-    onStatus(`Escrevendo o capítulo ${i + 1} de ${plano.capitulos.length}: ${plano.capitulos[i].titulo}`);
-    const anterior = cenas.slice(-2).map((c) => c.texto).join(' ');
-    const r = await gemini(promptCapitulo(plano, i, anterior), onStatus);
+  // capítulos em paralelo (3 de cada vez): bem mais rápido que um por um. A emenda entre eles usa o plano
+  // (título e último fato do capítulo anterior) em vez do texto já escrito.
+  const nCap = plano.capitulos.length;
+  const prontos = new Array(nCap);
+  let feitos = 0, proximo = 0;
+  onStatus(`Escrevendo os ${nCap} capítulos…`);
+  const trabalhador = async () => {
+    while (proximo < nCap) {
+      const i = proximo++;
+      const ant = i === 0 ? abertura.slice(-2).map((c) => c.texto).join(' ')
+        : `${plano.capitulos[i - 1].titulo}: ${(plano.capitulos[i - 1].fatos || []).slice(-1)[0] || ''}`;
+      prontos[i] = await gemini(promptCapitulo(plano, i, ant), onStatus);
+      feitos++;
+      onStatus(`Escrevendo os capítulos: ${feitos} de ${nCap} prontos…`);
+    }
+  };
+  await Promise.all([trabalhador(), trabalhador(), trabalhador()]);
+  for (let i = 0; i < nCap; i++) {
+    const r = prontos[i];
     const cs = norm(r);
     if (cs[0]) cs[0].capitulo = plano.capitulos[i].titulo;
     const fi = plano.capitulos[i].ficha;
