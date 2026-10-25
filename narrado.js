@@ -106,7 +106,7 @@ async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
   // com busca: a IA pesquisa no Google (o modo JSON não combina com a busca; o JSON é extraído do texto)
   const corpo = (buscar) => JSON.stringify(buscar
     ? { contents: [{ role: 'user', parts: [{ text: prompt }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0.7 } }
-    : { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.8 } });
+    : { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.9 } });
   let buscar = !!opcoes.buscar;
   let payload = corpo(buscar);
   let ultimo = '';
@@ -485,6 +485,23 @@ ${(materia.texto || '').slice(0, 12000)}
 ${extras ? `\nOUTRAS FONTES\n${extras.slice(0, 14000)}` : ''}`;
 }
 
+// voz do canal: o que deixa o texto vivo (a IA, sem isso, escreve "relatório": fato atrás de fato, tom de jornal)
+const VOZ_CANAL = `COMO O CANAL FALA (o mais importante):
+- Conte como HISTÓRIA para um amigo, não como notícia. Use "você" e "a gente". Faça perguntas para quem assiste ("E o nome? Todo mundo pensa na carteira de trabalho.").
+- Frases curtas, de falar em voz alta. Uma ideia por frase. Varie o ritmo: frase curta de impacto depois de uma mais longa.
+- Revele aos poucos: arme a curiosidade ANTES de entregar o fato ("E aqui vem a sacada:", "Mas tem um detalhe:", "Só que…").
+- Mostre com exemplos concretos e engraçados em vez de adjetivos (os nomes das lojas, o ônibus da Transpobre) — nada de "incrível", "impressionante", "vale destacar".
+- Opinião e humor leve são bem-vindos ("O trocadilho é de propósito.", "Se a CLT apertar, tem a dark web.").
+- NÃO escreva: "Além disso", "Vale ressaltar", "É importante destacar", "Em suma", "Nesse sentido", "Por fim", "Confira", "Neste vídeo", "Fique ligado", listas de fatos em sequência, frases de assessoria de imprensa.
+- Use só os fatos que rendem história — não precisa encaixar todos. Melhor 3 fatos bem contados que 8 empilhados.
+- Escreva o capítulo como um texto falado CONTÍNUO e só depois divida em cenas: cada cena continua a conversa da anterior.
+
+EXEMPLO DO TOM (outro vídeo, não copie o conteúdo):
+"O GTA 6 só chega em novembro. Mas um brasileiro não quis esperar: ele fez o próprio GTA. E ele se passa em Santa Catarina."
+"O jogo se passa em São Catarino, um estado fictício inspirado em Santa Catarina. E aqui vem a sacada: a ilha é gerada do zero a cada partida."
+"E o humor é muito brasileiro: são mais de 50 lojas, com nomes como Analanche, Espetinho de Gato e Farma Aura. O ônibus? É da Transpobre."
+"Mas, se a CLT apertar, tem a dark web: lá aparecem trabalhos de agiota e de matador de aluguel. A pergunta é qual caminho você vai seguir."`;
+
 const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Nunca cite outros canais, youtubers, streamers ou influenciadores pelo nome. Para cada cena:
 - "texto": o que será falado — português do Brasil falado, natural e animado, como quem conta para um amigo gamer; frases curtas; números em algarismos; sem emojis, sem aspas, sem "neste vídeo";
 - "destaques": 1 a 3 expressões copiadas do texto que merecem destaque na legenda;
@@ -501,6 +518,8 @@ function promptAbertura(plano, palavras) {
 
 Capítulos do vídeo: ${plano.capitulos.map((c) => c.titulo).join(' | ')}
 
+${VOZ_CANAL}
+
 ${REGRAS_CENA}
 
 Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": null, "imagem": null, "numero": null}]}`;
@@ -512,15 +531,17 @@ function promptCapitulo(plano, i, anterior) {
   const meio = i === Math.floor(plano.capitulos.length / 2);
   return `Você escreve para o canal de YouTube "${CANAL}". Vídeo: "${plano.titulo}".
 Escreva o CAPÍTULO ${i + 1} de ${plano.capitulos.length}: "${c.titulo}", com ~${c.palavras || 150} palavras, dividido em cenas.
-Use estes fatos (todos, com os números e nomes): ${(c.fatos || []).join(' • ')}
+Fatos disponíveis (escolha os que rendem história; números e nomes exatos): ${(c.fatos || []).join(' • ')}
 Jogos deste capítulo: ${(c.jogos || plano.jogos || []).join(', ')}
 
 Regras do capítulo:
 - comece emendando com o fim do trecho anterior ("${(anterior || '').slice(-200)}") — sem repetir, sem "no capítulo anterior";
-- ritmo de YouTube: contexto + detalhe curioso + por que isso importa; nada de enrolação;
+- ritmo de YouTube: arme a curiosidade, conte o detalhe, diga por que isso importa para quem joga; nada de enrolação;
 ${c.ficha ? `- capítulo de UM jogo (o trailer dele roda por baixo): abra com uma frase que vende o jogo, diga o nome dele cedo, depois premissa/história, como é jogar, "um detalhe interessante é que…" (fato pouco conhecido) e feche com um veredito curto de por que ele está nessa posição;` : ''}
 ${ultimo ? `- este é o ÚLTIMO capítulo: entregue a revelação mais forte prometida no começo e feche o vídeo: uma pergunta específica para os comentários + pedido de inscrição e like + "e assiste esse outro vídeo aqui" (tela final);` : '- termine com um mini-gancho para o próximo capítulo ("e o próximo é ainda mais bizarro");'}
 ${meio ? '- no meio deste capítulo, uma frase curta e natural pedindo para se inscrever no canal (sem interromper a história);' : ''}
+
+${VOZ_CANAL}
 
 ${REGRAS_CENA}
 
