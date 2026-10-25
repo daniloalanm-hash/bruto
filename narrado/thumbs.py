@@ -331,6 +331,85 @@ def epica(fundo, fontes, destino, selo=None):
     return destino
 
 
+VERMELHO = (235, 32, 38)
+
+
+def _seta_queda(w, h):
+    """Linha de gráfico despencando (vermelha, com brilho e seta) — o símbolo de 'queda' das thumbs que mais rodam."""
+    from PIL import Image, ImageDraw, ImageFilter
+    pts = [(0.02, 0.56), (0.14, 0.64), (0.24, 0.59), (0.36, 0.75), (0.46, 0.70), (0.62, 0.86), (0.84, 0.90)]
+    pts = [(x * w, y * h) for x, y in pts]
+    camada = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(camada)
+    d.line(pts, fill=VERMELHO + (255,), width=26, joint="curve")
+    (x1, y1), (x2, y2) = pts[-2], pts[-1]
+    import math
+    ang = math.atan2(y2 - y1, x2 - x1)
+    ponta = (x2 + 60 * math.cos(ang), y2 + 60 * math.sin(ang))
+    lados = [(x2 + 52 * math.cos(ang + s), y2 + 52 * math.sin(ang + s)) for s in (math.pi / 2, -math.pi / 2)]
+    d.polygon([ponta, lados[0], lados[1]], fill=VERMELHO + (255,))
+    contorno = camada.getchannel("A").filter(ImageFilter.MaxFilter(13))
+    base = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    preto = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+    base.paste(preto, (0, 0), contorno)
+    brilho = Image.new("RGBA", (w, h), VERMELHO + (0,))
+    brilho.putalpha(camada.getchannel("A").filter(ImageFilter.GaussianBlur(22)).point(lambda v: int(v * 0.8)))
+    base.alpha_composite(brilho)
+    base.alpha_composite(camada)
+    return base
+
+
+def _palavra(texto, fontes, tam, cor):
+    from PIL import Image, ImageDraw, ImageFilter
+    f = _fonte(fontes, "Anton-Regular.ttf", tam)
+    tmp = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    cont = max(8, tam // 14)
+    w = int(tmp.textlength(texto, font=f)) + 4 * cont + 40
+    img = Image.new("RGBA", (w, int(tam * 1.25) + 40), (0, 0, 0, 0))
+    ImageDraw.Draw(img).text((20 + 2 * cont, 20), texto, font=f, fill=cor, stroke_width=cont, stroke_fill=(0, 0, 0))
+    sombra = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    sombra.putalpha(img.getchannel("A").point(lambda v: int(v * 0.75)).filter(ImageFilter.GaussianBlur(12)))
+    base = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    base.alpha_composite(sombra, (8, 12))
+    base.alpha_composite(img)
+    return base
+
+
+def impacto(fundo, palavra, fontes, destino, selo=None):
+    """Close do personagem no centro + UMA palavra gigante (partida em volta do rosto, como 'ACA | BOU')
+    + gráfico despencando. Padrão das thumbs de 'fim/queda' com mais views."""
+    from PIL import Image, ImageEnhance
+    foco = _rosto(fundo)
+    img = _cobrir(Image.open(fundo), W, H, foco, alvo_x=0.5, zoom=1.25 if foco else 1.05)
+    img = ImageEnhance.Color(_tratar(img, 1.1)).enhance(0.75)  # tom mais sério
+    img = _vinheta(img, 0.6).convert("RGBA")
+    img.alpha_composite(_seta_queda(W, H))
+    pal = re.sub(r"\s+", "", str(palavra or "").upper())[:9] or "FIM."
+    letras = re.sub(r"\W", "", pal)
+    if foco and len(letras) >= 5:  # parte a palavra em volta do rosto
+        meio = (len(pal) + 1) // 2
+        esq, dir_ = _palavra(pal[:meio], fontes, 250, BRANCO), _palavra(pal[meio:], fontes, 250, BRANCO)
+        larg = max(esq.width, dir_.width)
+        if larg > W * 0.36:
+            esc = W * 0.36 / larg
+            esq = esq.resize((int(esq.width * esc), int(esq.height * esc)))
+            dir_ = dir_.resize((int(dir_.width * esc), int(dir_.height * esc)))
+        y = int(H * 0.30)
+        img.alpha_composite(esq, (max(0, int(W * 0.03)), y))
+        img.alpha_composite(dir_, (min(W - dir_.width, int(W * 0.97) - dir_.width), y))
+    else:
+        t = _palavra(pal, fontes, 300, BRANCO)
+        if t.width > W * 0.9:
+            esc = W * 0.9 / t.width
+            t = t.resize((int(t.width * esc), int(t.height * esc)))
+        img.alpha_composite(t, ((W - t.width) // 2, H - t.height + 10))
+    if selo:
+        s = _selo(selo, fontes, 56)
+        img.alpha_composite(s, (W - s.width - 26, 24))
+    img.convert("RGB").save(destino, quality=92)
+    return destino
+
+
 # ---------------------------------------------------------------- textos
 
 def _selo_do_titulo(titulo):
@@ -347,10 +426,15 @@ def textos(projeto):
     base = str(projeto.get("titulo_tela") or projeto.get("titulo") or "").strip()
     pal = re.findall(r"[\wÀ-ÿ]+", base)
     curto = " ".join(pal[:4]) or "VOCÊ PRECISA VER"
-    extra = [{"texto": curto, "destaque": pal[-1] if pal else ""},
+    extra = [{"texto": " ".join(pal[:3]) or curto, "destaque": pal[-1] if pal else ""},
              {"texto": " ".join(pal[:3]) or curto, "destaque": pal[1] if len(pal) > 1 else ""},
-             {"texto": curto, "destaque": ""}]
-    return (ts + extra)[:3]
+             {"texto": "FIM.", "destaque": ""}]
+    ts = (ts + extra[len(ts):])[:3]
+    # a 3ª é UMA palavra (estilo impacto): se a IA mandou frase, fica a palavra de destaque
+    t3 = ts[2]
+    if len(str(t3["texto"]).split()) > 1:
+        ts[2] = {"texto": t3.get("destaque") or str(t3["texto"]).split()[-1], "destaque": ""}
+    return ts
 
 
 def gerar(projeto, raw, fontes, pasta):
@@ -395,5 +479,5 @@ def gerar(projeto, raw, fontes, pasta):
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
     saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
-    saidas.append(epica(epi, fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
+    saidas.append(impacto(epi, tx[2]["texto"], fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
     return saidas
