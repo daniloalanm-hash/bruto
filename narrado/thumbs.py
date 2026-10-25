@@ -47,19 +47,34 @@ def _tem_texto(caminho):
         return False
 
 
-def _tem_rosto(caminho):
-    """Rosto/personagem grande na imagem (Haar do OpenCV): thumb com personagem chama mais."""
+_ROSTOS = {}
+
+
+def _rosto(caminho):
+    """Centro (x, y em fração) do maior rosto da imagem, ou None (Haar do OpenCV)."""
+    if caminho in _ROSTOS:
+        return _ROSTOS[caminho]
+    r = None
     try:
         import cv2
         img = cv2.imread(caminho, cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            return False
-        img = cv2.resize(img, (640, int(640 * img.shape[0] / img.shape[1])))
-        det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-        rostos = det.detectMultiScale(img, 1.1, 6, minSize=(60, 60))
-        return len(rostos) > 0
+        if img is not None:
+            h0, w0 = img.shape[:2]
+            img = cv2.resize(img, (640, int(640 * h0 / w0)))
+            det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+            rostos = det.detectMultiScale(img, 1.1, 6, minSize=(60, 60))
+            if len(rostos):
+                x, y, w, h = max(rostos, key=lambda q: q[2] * q[3])
+                r = ((x + w / 2) / img.shape[1], (y + h / 2) / img.shape[0])
     except Exception:
-        return False
+        r = None
+    _ROSTOS[caminho] = r
+    return r
+
+
+def _tem_rosto(caminho):
+    """Rosto/personagem grande na imagem: thumb com personagem chama mais."""
+    return _rosto(caminho) is not None
 
 
 def candidatas(projeto, raw, pasta, por_jogo=8):
@@ -108,12 +123,18 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
 
 # ---------------------------------------------------------------- desenho
 
-def _cobrir(img, w, h):
+def _cobrir(img, w, h, foco=None, alvo_x=0.5, zoom=1.0):
+    """Recorta cobrindo w x h; com foco (rosto), põe o rosto em alvo_x da largura (manchete: à direita do texto)."""
     from PIL import Image
     img = img.convert("RGB")
-    esc = max(w / img.width, h / img.height)
+    esc = max(w / img.width, h / img.height) * zoom
     img = img.resize((int(img.width * esc) + 1, int(img.height * esc) + 1), Image.LANCZOS)
-    x, y = (img.width - w) // 2, (img.height - h) // 2
+    if foco:
+        x = int(foco[0] * img.width - alvo_x * w)
+        y = int(foco[1] * img.height - 0.42 * h)
+    else:
+        x, y = (img.width - w) // 2, (img.height - h) // 2
+    x, y = min(max(x, 0), img.width - w), min(max(y, 0), img.height - h)
     return img.crop((x, y, x + w, y + h))
 
 
@@ -216,7 +237,8 @@ def _selo(texto, fontes, tam=46, cor_fundo=AMARELO, cor_txt=(10, 10, 10)):
 
 def manchete(fundo, texto, destaque, fontes, destino):
     from PIL import Image
-    img = _tratar(_cobrir(Image.open(fundo), W, H), 1.0)
+    foco = _rosto(fundo)
+    img = _tratar(_cobrir(Image.open(fundo), W, H, foco, alvo_x=0.72, zoom=1.15 if foco else 1.0), 1.0)
     img = _degrade_lateral(_vinheta(img, 0.35), ate=0.66, alfa=215)
     txt = _texto_bloco(texto, destaque, fontes, largura=640, max_tam=175)
     base = img.convert("RGBA")
@@ -234,7 +256,7 @@ def trio(fundos, texto, destaque, fontes, destino, selo=None):
     incl = 70
     fatia = W / n
     for i, fz in enumerate(fundos):
-        img = _tratar(_cobrir(Image.open(fz), int(fatia + incl * 2), H), 0.9)
+        img = _tratar(_cobrir(Image.open(fz), int(fatia + incl * 2), H, _rosto(fz)), 0.9)
         m = Image.new("L", (W, H), 0)
         x0, x1 = i * fatia, (i + 1) * fatia
         pts = [(x0 + (incl if i else -incl), 0), (x1 + (incl if i < n - 1 else incl * 2), 0),
@@ -264,7 +286,7 @@ def trio(fundos, texto, destaque, fontes, destino, selo=None):
 
 def epica(fundo, fontes, destino, selo=None):
     from PIL import Image
-    img = _vinheta(_tratar(_cobrir(Image.open(fundo), W, H), 1.25), 0.45).convert("RGBA")
+    img = _vinheta(_tratar(_cobrir(Image.open(fundo), W, H, _rosto(fundo), alvo_x=0.5), 1.25), 0.45).convert("RGBA")
     if selo:
         s = _selo(selo, fontes, 52)
         img.alpha_composite(s, (W - s.width - 26, 24))
@@ -307,9 +329,10 @@ def gerar(projeto, raw, fontes, pasta):
     tx = textos(projeto)
     selo = _selo_do_titulo(projeto.get("titulo") or (projeto.get("post") or {}).get("titulo_yt") or "")
     saidas = []
-    melhor = cands[principal][0][1]
+    # manchete: de preferência com personagem (rosto) do jogo principal
+    melhor = next((c for n, c in cands[principal][:6] if _tem_rosto(c)), cands[principal][0][1])
     saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
-    outros = [cands[ch][0][1] for ch in ordem[:3]]
+    outros = [next((c for n, c in cands[ch] if c != melhor), cands[ch][0][1]) for ch in ordem[:3]]
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
     saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
