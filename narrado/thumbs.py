@@ -61,8 +61,13 @@ def _rosto(caminho):
         if img is not None:
             h0, w0 = img.shape[:2]
             img = cv2.resize(img, (640, int(640 * h0 / w0)))
-            det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-            rostos = det.detectMultiScale(img, 1.1, 6, minSize=(60, 60))
+            rostos = []
+            for casc, viz in (("haarcascade_frontalface_default.xml", 6), ("haarcascade_frontalface_alt2.xml", 4),
+                              ("haarcascade_profileface.xml", 5)):  # arte de jogo engana o detector: tenta 3
+                det = cv2.CascadeClassifier(cv2.data.haarcascades + casc)
+                rostos = list(det.detectMultiScale(img, 1.08, viz, minSize=(50, 50)))
+                if rostos:
+                    break
             if len(rostos):
                 x, y, w, h = max(rostos, key=lambda q: q[2] * q[3])
                 r = ((x + w / 2) / img.shape[1], (y + h / 2) / img.shape[0])
@@ -332,15 +337,16 @@ def gerar(projeto, raw, fontes, pasta):
     # manchete: de preferência com personagem (rosto) do jogo principal
     melhor = next((c for n, c in cands[principal][:6] if _tem_rosto(c)), cands[principal][0][1])
     saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
-    outros = [next((c for n, c in cands[ch] if c != melhor), cands[ch][0][1]) for ch in ordem[:3]]
-    if len(outros) < 2:
-        outros = [c for _, c in cands[principal][:3]]
-    saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
-    # épica: top lista -> a imagem mais forte do vídeo todo; senão a 2ª melhor do jogo principal
+    # épica escolhida antes: as 3 versões nunca repetem a mesma imagem
     if selo:
         todas = sorted((n, c) for ch in cands for n, c in cands[ch][:3])
         epi = next((c for n, c in reversed(todas) if c != melhor), melhor)
     else:
-        epi = next((c for n, c in cands[principal][1:]), melhor)
+        epi = next((c for n, c in cands[principal] if c != melhor), melhor)
+    usadas = {melhor, epi}
+    outros = [next((c for n, c in cands[ch] if c not in usadas), cands[ch][0][1]) for ch in ordem[:3]]
+    if len(outros) < 2:
+        outros = [c for _, c in cands[principal][:3]]
+    saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
     saidas.append(epica(epi, fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
     return saidas
