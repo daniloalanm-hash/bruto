@@ -1297,9 +1297,11 @@ def analisar_quadros(pasta_quadros):
     pilha = np.stack([np.asarray(Image.open(os.path.join(pasta_quadros, f)).convert("L").resize((320, 180)),
                                  dtype=np.float32) for f in arqs[::passo]])
     saida = {}
-    # tarja: linha/coluna que quase nunca acende (p97 no tempo; ruído de compressão fica abaixo de 40)
-    acende = np.percentile(pilha, 97, axis=0)
-    linhas, colunas = np.nonzero(acende.max(1) > 40)[0], np.nonzero(acende.max(0) > 40)[0]
+    # tarja: linha/coluna acesa em menos de 15% dos quadros (um trecho em tela cheia — abertura, créditos —
+    # não desfaz a tarja do resto do vídeo; ruído de compressão fica abaixo de 40)
+    acesa_col = (pilha.max(1) > 40).mean(0)
+    acesa_lin = (pilha.max(2) > 40).mean(0)
+    linhas, colunas = np.nonzero(acesa_lin > 0.15)[0], np.nonzero(acesa_col > 0.15)[0]
     if len(linhas) < 60 or len(colunas) < 100:
         return {}
     r0, r1, c0, c1 = int(linhas[0]), int(linhas[-1]) + 1, int(colunas[0]), int(colunas[-1]) + 1
@@ -1355,7 +1357,7 @@ def checar_marca(video):
     import json
     import subprocess
     import tempfile
-    cache = video + ".quadros.json"
+    cache = video + ".quadros2.json"
     if os.path.exists(cache):
         return json.load(open(cache))
     with tempfile.TemporaryDirectory() as tmp:
