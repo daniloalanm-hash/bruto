@@ -1208,6 +1208,24 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
                 grafo.append(f"{v}[cta{i}]overlay=x=(W-w)/2:y={y_cta}:eof_action=pass:"
                              f"enable='between(t\\,{t0:.3f}\\,{t0 + dur_cta:.3f})'[vc{i}]")
                 v = f"[vc{i}]"
+    # YouTube: número de impacto falado vira cartão com o número contando + gráfico (canto superior direito)
+    if L["W"] > L["H"] and projeto.get("graficos", True):
+        import grafico
+        for i, (t0, num) in enumerate(grafico.momentos(projeto, tl, total)):
+            try:
+                g = grafico.gerar(num, os.path.join(pasta_trab, f"grafico{i}"), pasta_fontes, largura=W)
+            except Exception as e:
+                print(f"aviso: gráfico do número {num.get('valor')} não gerado: {e}", flush=True)
+                g = None
+            if not g:
+                continue
+            padrao, dur_g, (gw, _) = g
+            entradas += ["-framerate", str(FPS), "-i", padrao]
+            idx = entradas.count("-i") - 1
+            grafo.append(f"[{idx}:v]format=rgba,setpts=PTS+{t0:.3f}/TB[gr{i}]")
+            grafo.append(f"{v}[gr{i}]overlay=x=W-w-{int(30 * W / 1920)}:y={int(40 * H / 1080)}:eof_action=pass:"
+                         f"enable='between(t\\,{t0:.3f}\\,{t0 + dur_g:.3f})'[vgr{i}]")
+            v = f"[vgr{i}]"
     # YouTube (fórmula dos tops): ficha do jogo no canto inferior esquerdo quando o capítulo dele começa
     if e_corrido(projeto):
         for i, (t0, png) in enumerate(fichas_png(projeto, tl, pasta_fontes, pasta_trab)):
@@ -1643,6 +1661,11 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         if corrido:
             for t in tempos_ficha(projeto, usados_cena):
                 eventos.append((t, "woosh", 0.3))
+        if W > H and projeto.get("graficos", True):
+            import grafico
+            for t, _ in grafico.momentos(projeto, usados_cena, total):
+                eventos.append((t, "woosh", 0.35))
+                eventos.append((t + 0.15 + grafico.CONTA, "pop", 0.4))
         for c, t in cortes.items():
             if f"cartao_cap_{c}" in banco:
                 eventos.append((t + 0.05, "impacto", 0.4))
