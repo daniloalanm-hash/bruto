@@ -85,9 +85,23 @@ def gerar(numero, pasta, fontes, largura=1920):
             final, font=_fonte(fontes, "Anton-Regular.ttf", tam)) > livre:
         tam -= 4 * e
     f_num = _fonte(fontes, "Anton-Regular.ttf", tam)
-    f_rot = _fonte(fontes, "Poppins-Bold.ttf", 34 * e)
     f_peq = _fonte(fontes, "Poppins-Medium.ttf", 26 * e)
-    rotulo = str(numero.get("rotulo") or "").upper()[:34]
+    rotulo = str(numero.get("rotulo") or "").upper()[:40]
+    # rótulo cabe na mesma largura do número (nunca por baixo do gráfico)
+    medir = ImageDraw.Draw(Image.new("RGBA", (4, 4)))
+    tam_r = 34 * e
+    while tam_r > 22 * e and medir.textlength(rotulo, font=_fonte(fontes, "Poppins-Bold.ttf", tam_r)) > livre:
+        tam_r -= 2 * e
+    f_rot = _fonte(fontes, "Poppins-Bold.ttf", tam_r)
+    while rotulo and medir.textlength(rotulo, font=f_rot) > livre:
+        rotulo = rotulo[:-2].rstrip() + "…"
+    # rótulo logo abaixo do número (número encolhido não deixa buraco)
+    caixa = medir.textbbox((0, 0), final, font=f_num)
+    y_num = int(30 + 22 * e + (118 * e - tam) * 0.55)
+    y_rot = y_num + caixa[3] + int(14 * e)
+    # sentido do gráfico: número de perda (demissão, corte, queda, prejuízo) desce em vermelho
+    negativo = bool(re.search(r"demiss|cort|queda|perd|prejuí|preju|fech|cancel|demit|redu|caiu|despenc|-",
+                              f"{rotulo} {numero.get('valor')}".lower()))
     x_txt = int(30 + 44 * e)
     graf_w = int(230 * e)  # área do gráfico à direita
     n = int(DUR * FPS)
@@ -98,8 +112,9 @@ def gerar(numero, pasta, fontes, largura=1920):
         u = _suave((t - 0.15) / CONTA)
         v = alvo * u
         txt = f"{pre}{fmt(v, casas)}{suf}"
-        d.text((x_txt, int(30 + 22 * e)), txt, font=f_num, fill=AMARELO, stroke_width=int(3 * e), stroke_fill=(0, 0, 0))
-        d.text((x_txt + 2, int(30 + 168 * e)), rotulo, font=f_rot, fill=BRANCO)
+        d.text((x_txt, y_num), txt, font=f_num, fill=AMARELO, stroke_width=int(3 * e), stroke_fill=(0, 0, 0))
+        if not lido_c:
+            d.text((x_txt + 2, y_rot), rotulo, font=f_rot, fill=BRANCO)
         gx0, gx1 = int(30 + W - graf_w - 26 * e), int(30 + W - 30 * e)
         gy0, gy1 = int(30 + 40 * e), int(30 + 250 * e)
         if pct:  # anel enchendo
@@ -130,19 +145,23 @@ def gerar(numero, pasta, fontes, largura=1920):
                     d.rounded_rectangle((bx, gy0, gx1, gy0 + int(70 * e)), int(14 * e), fill=(235, 32, 38))
                     d.text(((bx + gx1) // 2, gy0 + int(35 * e)), s, font=_fonte(fontes, "Anton-Regular.ttf", 52 * e),
                            fill=BRANCO, anchor="mm")
-        else:  # barrinhas subindo + seta
+        else:  # barrinhas subindo (ou descendo, em vermelho, se o número é de perda) + seta
             nb = 5
             bw = (gx1 - gx0) / (nb * 1.6)
+            destaque = (235, 32, 38) if negativo else AMARELO
             for k in range(nb):
-                alt = (0.28 + 0.72 * (k + 1) / nb) * (gy1 - gy0) * _suave((t - 0.1 - 0.12 * k) / 0.7)
+                deg = (nb - k) if negativo else (k + 1)
+                alt = (0.28 + 0.72 * deg / nb) * (gy1 - gy0) * _suave((t - 0.1 - 0.12 * k) / 0.7)
                 x = gx0 + k * bw * 1.6
-                cor = AMARELO if k == nb - 1 else (70, 76, 92)
+                cor = destaque if k == nb - 1 else (70, 76, 92)
                 if alt > 2:
                     d.rounded_rectangle((x, gy1 - alt, x + bw, gy1), int(6 * e), fill=cor)
             if u > 0.5:
-                d.line([(gx0, gy1 - 30 * e), (gx1 - 18 * e, gy0 + 24 * e)], fill=BRANCO, width=int(6 * e))
-                a = math.atan2((gy0 + 24 * e) - (gy1 - 30 * e), (gx1 - 18 * e) - gx0)
-                px, py = gx1 - 18 * e, gy0 + 24 * e
+                a0 = (gx0, gy0 + 24 * e) if negativo else (gx0, gy1 - 30 * e)
+                a1 = (gx1 - 18 * e, gy1 - 30 * e) if negativo else (gx1 - 18 * e, gy0 + 24 * e)
+                d.line([a0, a1], fill=BRANCO, width=int(6 * e))
+                a = math.atan2(a1[1] - a0[1], a1[0] - a0[0])
+                px, py = a1
                 d.polygon([(px + 26 * e * math.cos(a), py + 26 * e * math.sin(a)),
                            (px + 22 * e * math.cos(a + 2.4), py + 22 * e * math.sin(a + 2.4)),
                            (px + 22 * e * math.cos(a - 2.4), py + 22 * e * math.sin(a - 2.4))], fill=BRANCO)
