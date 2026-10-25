@@ -292,12 +292,38 @@ CAUDA_YT = 20.0      # tela final do YouTube: os cartões ("assista também", in
 CORTE_ABERTURA = 2.4  # montagem da abertura: um plano curto de cada jogo da lista
 
 
-def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False):
+_dims = {}
+
+
+def _tamanho(src):
+    if src not in _dims:
+        r = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                 "-of", "csv=p=0", src])
+        try:
+            w, h = (int(x) for x in r.stdout.strip().split("\n")[0].split(",")[:2])
+            _dims[src] = (w, h)
+        except Exception:
+            _dims[src] = None
+    return _dims[src]
+
+
+def _delogo(src, marca):
+    """Apaga (borra) a logo fixa de site que veio no vídeo — caixa em fração da imagem original."""
+    d = _tamanho(src) if marca else None
+    if not d:
+        return ""
+    w, h = d
+    x, y = max(1, int(marca[0] * w)), max(1, int(marca[1] * h))
+    bw, bh = min(int(marca[2] * w), w - x - 2), min(int(marca[3] * h), h - y - 2)
+    return f"delogo=x={x}:y={y}:w={bw}:h={bh}," if bw > 4 and bh > 4 else ""
+
+
+def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False, marca=None):
     """Trecho do trailer tocando direto (sem zoom nem efeito), com mergulho no preto na troca de jogo."""
     t0 = _inicio_seguro(src, t0, dur)
     n, pad = _quadros_exatos(dur)
     c = area_util(src, t0)
-    pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    pre = _delogo(src, marca) + (f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else "")
     fx = ""
     if fade_in:
         fx += f",fade=t=in:st=0:d={FADE_CAP:.2f}"
@@ -1064,7 +1090,7 @@ def blocos_com_destaque(projeto):
     return blocos
 
 
-def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=None, total=None):
+def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=None, total=None, base=None):
     """Queima legenda, chamada do gancho e emojis sobre o vídeo limpo (o áudio é copiado).
 
     É o único passo de um ajuste "só de legenda": não refaz cenas, voz nem efeitos.
@@ -1081,7 +1107,12 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
         corte_gancho = tl[1]["inicio"] if len(tl) > 1 else total
     ass = os.path.join(pasta_trab, "legenda.ass")
     blocos, y_leg = legenda_ass(projeto, ass, corte_gancho)
-    entradas, grafo, v = ["-i", limpo], [], "[0:v]"
+    # base = (entradas, grafo, rótulo do vídeo, rótulo do áudio) do render: tudo numa passada só (YouTube),
+    # sem gravar o vídeo limpo intermediário — um encode inteiro a menos
+    if base:
+        entradas, grafo, v = list(base[0]), list(base[1]), base[2]
+    else:
+        entradas, grafo, v = ["-i", limpo], [], "[0:v]"
     grafo.append(f"{v}subtitles={ass}:fontsdir={pasta_fontes}[vs]")
     v = "[vs]"
     tit_ate = fim_titulo(projeto, corte_gancho) or 0
@@ -1163,8 +1194,9 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
         grafo.append(f"{v}[logo]overlay=x={x_logo}:y={y_logo}:shortest=1[vlg]")
         v = "[vlg]"
     grafo.append(f"{v}fade=t=in:st=0:d=0.15[v]")
-    ffmpeg(*entradas, "-filter_complex", ";".join(grafo), "-map", "[v]", "-map", "0:a", "-t", f"{total:.2f}",
-           "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-c:a", "copy", "-movflags", "+faststart", destino)
+    audio = ["-map", base[3], "-c:a", "aac", "-b:a", "192k", "-ar", 48000] if base else ["-map", "0:a", "-c:a", "copy"]
+    ffmpeg(*entradas, "-filter_complex", ";".join(grafo), "-map", "[v]", *audio, "-t", f"{total:.2f}",
+           "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-pix_fmt", "yuv420p", "-movflags", "+faststart", destino)
 
 
 FICHA_DUR = 6.0
@@ -1417,7 +1449,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     def codificar(tf):
         k, mid, m, src, d, out, fx, rep, midias = tf
         if m.get("corrido"):
-            seg_corrido(src, m.get("t", 0), d, out, m.get("fi"), m.get("fo"))
+            seg_corrido(src, m.get("t", 0), d, out, m.get("fi"), m.get("fo"), m.get("marca"))
         elif corrido and m["tipo"] == "i":
             seg_imagem(src, d, out, k, None, encaixar=True)
         elif m.get("cartao"):
@@ -1634,6 +1666,18 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     # 1) vídeo "limpo": cenas, transições, efeitos e áudio — sem legenda/chamada/emojis.
     #    Fica guardado: ajuste que só mexe na legenda reaproveita ele (render rápido, sem refazer cenas).
     limpo = os.path.join(os.path.dirname(os.path.abspath(destino)), "limpo.mp4")
+    if W > H and projeto.get("legenda_estilo") == "nenhuma":
+        # YouTube sem legenda: uma passada só (o limpo só servia para ajuste rápido de legenda, que aqui não há)
+        if os.path.exists(limpo):
+            os.remove(limpo)
+        projeto["timeline"] = usados_cena
+        legendar(projeto, None, pasta_trab, destino, pasta_fontes, corte_gancho, total,
+                 base=(entradas, grafo, "[vlimpo]", "[a]"))
+        try:
+            projeto["avisos_video"] = conferir_video(destino, total)
+        except Exception as e:
+            print(f"aviso: conferência da imagem falhou: {e}", flush=True)
+        return _fim_render(projeto, orig, diag, usados_cena, total)
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo),
            "-map", "[vlimpo]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "veryfast",
            "-crf", 17, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", limpo)
@@ -1645,6 +1689,10 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     # 2) legenda, chamada e emojis por cima
     projeto["timeline"] = usados_cena
     legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho, total)
+    return _fim_render(projeto, orig, diag, usados_cena, total)
+
+
+def _fim_render(projeto, orig, diag, usados_cena, total):
     if diag:
         projeto["diagnostico_render"] = diag
     else:

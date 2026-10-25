@@ -1184,7 +1184,7 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     return banco
 
 
-def trechos_corridos(video):
+def trechos_corridos(video, extra=None):
     """Trailer para tocar CORRIDO (YouTube): todos os planos, na ordem, menos os que não podem ir ao ar —
     logos de estúdio/classificação do começo, cartelas e telas com texto (aviso de violência, menu, anúncio,
     datas), tela preta. O fim do trailer (logo do jogo) é usado à parte pelo render, no fecho do capítulo.
@@ -1263,13 +1263,96 @@ def trechos_corridos(video):
                         bons.append({"t": round(run_ini, 2), "dur": round(fim_run - run_ini, 2)})
                     run_ini = None
         planos = range(n_planos)
+        if extra is not None:
+            try:
+                wm = marca_dagua(tmp)
+                if wm:
+                    extra["marca"] = wm
+                    print(f"marca d'água fixa em {os.path.basename(video)}: {wm}", flush=True)
+            except Exception as e:
+                print(f"aviso: checagem de marca d'água falhou: {e}", flush=True)
+            try:
+                r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                    "stream=height", "-of", "csv=p=0", video], capture_output=True, text=True)
+                extra["altura"] = int(r.stdout.strip().split()[0])
+            except Exception:
+                pass
     print(f"trailer corrido {os.path.basename(video)}: {dur:.0f}s, {len(planos)} planos, "
           f"{sum(x['dur'] for x in bons):.0f}s aproveitáveis; descartes {conta}", flush=True)
     return bons
 
 
+def marca_dagua(pasta_quadros):
+    """Logo fixa de site/canal num canto (ex.: jeuxvideo.com, IGN) a partir dos quadros do vídeo.
+
+    Logo sobreposta não se mexe: na MÉDIA de dezenas de quadros de cenas diferentes ela continua nítida
+    (com bordas), enquanto o jogo vira borrão. Só nos cantos — HUD do jogo muda de cena para cena e some.
+    Devolve [x, y, w, h] em fração da imagem, ou None."""
+    import numpy as np
+    from PIL import Image
+    arqs = sorted(f for f in os.listdir(pasta_quadros) if f.startswith("q"))
+    if len(arqs) < 30:
+        return None
+    passo = max(1, len(arqs) // 80)
+    pilha = []
+    for f in arqs[::passo]:
+        im = Image.open(os.path.join(pasta_quadros, f)).convert("L").resize((320, 180))
+        pilha.append(np.asarray(im, dtype=np.float32))
+    pilha = np.stack(pilha)
+    # só a área com imagem: a borda de tarja preta (letterbox/pillarbox) também é "fixa" e não é logo
+    mx = pilha.max(0)
+    linhas, colunas = np.nonzero(mx.max(1) > 30)[0], np.nonzero(mx.max(0) > 30)[0]
+    if len(linhas) < 60 or len(colunas) < 100:
+        return None
+    r0, r1, c0, c1 = linhas[0] + 3, linhas[-1] - 2, colunas[0] + 3, colunas[-1] - 2
+    pilha = pilha[:, r0:r1, c0:c1]
+    media, desvio = pilha.mean(0), pilha.std(0)
+    gx = np.abs(np.diff(media, axis=1, prepend=media[:, :1]))
+    gy = np.abs(np.diff(media, axis=0, prepend=media[:1, :]))
+    borda = np.maximum(gx, gy)
+    fixo = (borda > 18) & (desvio < 22)  # borda forte na média e pixel quase parado ao longo do vídeo
+    h, w = fixo.shape
+    rw, rh = int(w * 0.32), int(h * 0.26)
+    melhor = None
+    for x0, y0 in ((0, 0), (w - rw, 0), (0, h - rh), (w - rw, h - rh)):
+        ys, xs = np.nonzero(fixo[y0:y0 + rh, x0:x0 + rw])
+        if len(xs) < 25:
+            continue
+        xa, xb = np.percentile(xs, [3, 97])  # caixa do grosso dos pontos (ignora pontos soltos)
+        ya, yb = np.percentile(ys, [3, 97])
+        area = (xb - xa + 1) * (yb - ya + 1)
+        if area < 60 or area > w * h * 0.05 or len(xs) / area < 0.10:
+            continue
+        if melhor is None or len(xs) > melhor[0]:
+            melhor = (len(xs), (c0 + x0 + xa - 3) / 320, (r0 + y0 + ya - 3) / 180, (xb - xa + 7) / 320, (yb - ya + 7) / 180)
+    if not melhor:
+        return None
+    _, x, y, bw, bh = melhor
+    x, y = max(0.0, x), max(0.0, y)
+    return [round(float(v), 4) for v in (x, y, min(bw, 1 - x), min(bh, 1 - y))]
+
+
+def checar_marca(video):
+    """Marca d'água de um vídeo já baixado (projetos antigos, sem a checagem feita na análise). Cacheado."""
+    import json
+    import subprocess
+    import tempfile
+    cache = video + ".marca.json"
+    if os.path.exists(cache):
+        return json.load(open(cache)).get("marca")
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-i", video, "-vf", "fps=0.5,scale=640:-2", "-q:v", "5",
+                        os.path.join(tmp, "q%05d.jpg")], capture_output=True)
+        wm = marca_dagua(tmp)
+    json.dump({"marca": wm}, open(cache, "w"))
+    if wm:
+        print(f"marca d'água fixa em {os.path.basename(video)}: {wm}", flush=True)
+    return wm
+
+
 def _analisar_corrido(arquivo):
-    return arquivo, trechos_corridos(arquivo)
+    extra = {}
+    return arquivo, trechos_corridos(arquivo, extra), extra
 
 
 def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
@@ -1279,7 +1362,7 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     # a análise em processos vem ANTES de qualquer uso do OpenCV aqui no processo principal: processo filho
     # criado depois que a rede EAST já rodou no pai trava (foi o que segurou o teste por 5 h)
     arquivos = [t["arquivo"] for j in jogos_info for t in j["trailers"]]
-    analise = {}
+    analise, info_arq = {}, {}
     if arquivos:
         try:
             _baixar_east()  # antes dos processos: todos usam o mesmo arquivo pronto
@@ -1294,8 +1377,9 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
             try:
                 for k, f in enumerate(as_completed(futuros, timeout=240 + 90 * len(arquivos)), 1):
                     try:
-                        a, trechos = f.result()
+                        a, trechos, extra = f.result()
                         analise[a] = trechos
+                        info_arq[a] = extra
                     except Exception as e:
                         print(f"aviso: análise de trailer falhou: {e}", flush=True)
                     if progresso:
@@ -1309,11 +1393,18 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     so_telas = [dict(j, trailers=[]) for j in jogos_info]
     banco = montar_banco(so_telas, pasta_thumbs)
     for j in jogos_info:
+        # vídeo de baixa resolução (gameplay antigo 360p/4:3 de site) só entra se o jogo não tiver outro
+        n_bons = sum(1 for t in j["trailers"] if (info_arq.get(t["arquivo"]) or {}).get("altura", 720) >= 480)
         for ti, t in enumerate(j["trailers"]):
+            ex = info_arq.get(t["arquivo"]) or {}
+            if ex.get("altura", 720) < 480 and n_bons:
+                print(f"descartado (baixa resolução {ex['altura']}p): {os.path.basename(t['arquivo'])}", flush=True)
+                continue
             for c in analise.get(t["arquivo"], []):
                 banco[f"{j['chave']}_t{ti + ti0}_{int(c['t'] * 10)}"] = {
                     "tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
                     "t": c["t"], "dur": c["dur"], "corrido": True,
+                    **({"marca": ex["marca"]} if ex.get("marca") else {}),
                     **({"personagem": t["personagem"]} if t.get("personagem") else {})}
     return banco
 

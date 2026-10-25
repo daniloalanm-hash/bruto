@@ -610,6 +610,8 @@ def so_legenda(pasta, st):
     """Ajuste que só mexe na legenda/chamada/emojis: reaproveita o vídeo limpo do último render."""
     projeto = ler(os.path.join(pasta, "projeto.json"))
     limpo = os.path.join(pasta, "limpo.mp4")
+    if not os.path.exists(limpo) and projeto.get("formato") == "horizontal":
+        return rerender(pasta, st)  # YouTube renderiza numa passada só (sem limpo): ajuste refaz tudo
     if not os.path.exists(limpo):
         raise RuntimeError("Este vídeo ainda não tem a versão sem legenda guardada. Use “Aplicar ajustes” "
                            "completo uma vez (os próximos ajustes de legenda ficam rápidos).")
@@ -698,6 +700,21 @@ def garantir_material(projeto):
     for i, ln in enumerate(projeto.get("links_video") or []):
         if ln.get("chave") and ln.get("url"):
             assets.baixar_link_video(ln["url"], ln["chave"], RAW, i)  # já baixado: não faz nada
+    if projeto.get("formato") == "horizontal" and not projeto.get("marca_checada"):
+        # projeto de antes da checagem de logo de site: confere cada vídeo do banco uma vez
+        marcas = {}
+        for m in projeto["banco"].values():
+            arq = os.path.join(RAW, m.get("arquivo", ""))
+            if m["tipo"] == "v" and m.get("corrido") and os.path.exists(arq):
+                if arq not in marcas:
+                    try:
+                        marcas[arq] = assets.checar_marca(arq)
+                    except Exception as e:
+                        print(f"aviso: checagem de marca d'água falhou: {e}", flush=True)
+                        marcas[arq] = None
+                if marcas[arq]:
+                    m["marca"] = marcas[arq]
+        projeto["marca_checada"] = True
     if any(m["arquivo"].startswith("lib_") for m in falta):
         da_biblioteca(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
     for m in falta:

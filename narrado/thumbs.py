@@ -114,6 +114,27 @@ def _tem_rosto(caminho):
     return _rosto(caminho) is not None
 
 
+def arte_oficial(appid, pasta):
+    """Key art da Steam (library_hero: arte grande, nítida, sem logo) — fundo de thumb com cara profissional."""
+    if not str(appid or "").isdigit():
+        return None
+    destino = os.path.join(pasta, f"hero_{appid}.jpg")
+    if os.path.exists(destino) and os.path.getsize(destino) > 20_000:
+        return destino
+    import assets
+    for base in ("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps",
+                 "https://cdn.cloudflare.steamstatic.com/steam/apps"):
+        try:
+            dados = assets._get(f"{base}/{appid}/library_hero.jpg", timeout=30)
+            if dados and len(dados) > 20_000:
+                with open(destino, "wb") as f:
+                    f.write(dados)
+                return destino
+        except Exception:
+            continue
+    return None
+
+
 def candidatas(projeto, raw, pasta, por_jogo=8):
     """{chave_do_jogo: [(nota, caminho)]} — screenshots + quadros dos trechos de vídeo de cada jogo."""
     from PIL import Image
@@ -124,6 +145,10 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
     for j in projeto.get("jogos") or []:
         ch = j["chave"]
         cands = []
+        try:
+            hero = arte_oficial(j.get("appid"), pasta)
+        except Exception:
+            hero = None
         for mid, m in banco.items():
             if m.get("jogo") != ch or m.get("cartao"):
                 continue
@@ -143,6 +168,12 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
                 if os.path.exists(q):
                     cands.append(q)
         notas, com_texto = [], []
+        if hero:
+            try:
+                n = _nota(Image.open(hero)) + 25 + (35 if _tem_rosto(hero) else 0)  # arte oficial: vantagem
+                (com_texto if _tem_texto(hero) else notas).append((n, hero))
+            except Exception:
+                pass
         for c in cands[:40]:
             try:
                 img = Image.open(c)
