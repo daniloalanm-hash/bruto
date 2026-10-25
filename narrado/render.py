@@ -1445,6 +1445,11 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         d_q = max(1, round(acum * FPS) - ini_f) / FPS
         novas.append((*tf[:4], d_q, *tf[5:]))
     tarefas = novas
+    # mapa (início, fim, mídia) do vídeo final: a revisão automática confere se cada trecho é do jogo certo
+    mapa, ac = [], 0.0
+    for tf in tarefas:
+        mapa.append((round(ac, 2), round(ac + tf[4], 2), tf[1], bool(tf[2].get("mudo"))))
+        ac += tf[4]
 
     def codificar(tf):
         k, mid, m, src, d, out, fx, rep, midias = tf
@@ -1677,6 +1682,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
             projeto["avisos_video"] = conferir_video(destino, total)
         except Exception as e:
             print(f"aviso: conferência da imagem falhou: {e}", flush=True)
+        _revisao(projeto, destino, banco, mapa, usados_cena, total)
         return _fim_render(projeto, orig, diag, usados_cena, total)
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo),
            "-map", "[vlimpo]", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "veryfast",
@@ -1689,7 +1695,17 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     # 2) legenda, chamada e emojis por cima
     projeto["timeline"] = usados_cena
     legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho, total)
+    _revisao(projeto, destino, banco, mapa, usados_cena, total)
     return _fim_render(projeto, orig, diag, usados_cena, total)
+
+
+def _revisao(projeto, destino, banco, mapa, timeline, total):
+    try:
+        import qa
+        cauda = float(projeto.get("cauda", CAUDA_YT) or 0) if W > H else 0.0
+        projeto["qa"] = qa.revisar(projeto, destino, banco, mapa, timeline, total, cauda)
+    except Exception as e:
+        print(f"aviso: revisão automática falhou: {e}", flush=True)
 
 
 def _fim_render(projeto, orig, diag, usados_cena, total):
@@ -1698,7 +1714,7 @@ def _fim_render(projeto, orig, diag, usados_cena, total):
     else:
         projeto.pop("diagnostico_render", None)
     if projeto is not orig:  # modo corrido trabalhou numa cópia (com respiro): devolve os avisos ao projeto
-        for chave in ("avisos_video", "diagnostico_render"):
+        for chave in ("avisos_video", "diagnostico_render", "qa"):
             if chave in projeto:
                 orig[chave] = projeto[chave]
             else:

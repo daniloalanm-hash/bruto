@@ -1386,6 +1386,15 @@ async function carregarProjeto() {
       ...p.avisos_video.map((a, i) => h('a', { href: '#', onclick: (e) => { e.preventDefault(); pularPara(Math.max(0, a.t - 0.5)); } },
         `${i ? ', ' : ''}${fmtT(a.t)} (${a.tipo === 'preta' ? 'tela preta' : 'imagem parada'} ${String(a.dur).replace('.', ',')} s)`))));
   }
+  if (p.qa?.length) {
+    // revisão automática do vídeo pronto: cena repetida, buraco no som, fala repetida, jogo errado na tela
+    const ic = { repetida: '🔁', silencio: '🔇', fala_repetida: '🗣️', outro_jogo: '🎮' };
+    $('#infoVideo').append(h('div', { class: 'aviso-video qa-lista' }, h('strong', {}, `🔎 Revisão automática — confira ${p.qa.length} ponto${p.qa.length > 1 ? 's' : ''}:`),
+      ...p.qa.map((a) => h('div', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); pularPara(Math.max(0, a.t - 1)); } },
+        `${ic[a.tipo] || '•'} ${fmtT(a.t)}`), ` ${a.texto}`))));
+  } else if (p.qa) {
+    $('#infoVideo').append(h('span', { class: 'aviso-video' }, ' ✅ Revisão automática: nada suspeito.'));
+  }
   if (p.sem_video?.length) {
     $('#infoVideo').append(h('span', { class: 'aviso-video' },
       ` ⚠️ Sem vídeo nítido de ${p.sem_video.join(', ')} (usei imagens). Para ter trailer, cole o link do vídeo oficial (X, Dailymotion, Vimeo…) em "Links de vídeo" no roteiro e gere de novo.`));
