@@ -233,7 +233,7 @@ def seg_imagem(src, dur, out, k, trans, encaixar=False, pre=""):
               f"eq=brightness=-0.12[bg];[b]scale={W - L['fg'][0]}:{H - L['fg'][1]}:force_original_aspect_ratio=decrease[fg];"
               f"[bg][fg]overlay=(W-w)/2:(H-h)/2{L['fg'][2]:+d},setsar=1,fps={FPS},"
               f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H}" + _fx_transicao(trans))
-        ffmpeg("-loop", 1, "-t", f"{dur:.3f}", "-i", src, "-filter_complex", vf, "-frames:v", n,
+        ffmpeg("-loop", 1, "-t", f"{dur + 0.5:.3f}", "-i", src, "-filter_complex", vf, "-frames:v", n,
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
         return
     pans = ["x='iw/2-(iw/zoom/2)'", f"x='(iw-iw/zoom)*on/{n}'", f"x='(iw-iw/zoom)*(1-on/{n})'"]
@@ -288,6 +288,7 @@ def seg_video_proprio(src, t0, dur, out, trans):
 
 FADE_CAP = 0.35      # mergulho no preto entre um jogo e outro (cada lado)
 CORTE_FINAL = 1.7    # encerramento (depois da última fala): montagem rápida dos jogos do vídeo
+CAUDA_YT = 20.0      # tela final do YouTube: os cartões ("assista também", inscrever) cabem nos últimos 5-20 s
 CORTE_ABERTURA = 2.4  # montagem da abertura: um plano curto de cada jogo da lista
 
 
@@ -537,7 +538,7 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                 fim = final_do_trailer(jogo, min(g_resp + 1.5, dur * 0.5)) if dur > g_resp + 3 else None
             final_m = 0.0
             if fi == len(faixas) - 1 and len([j for j in ordem if vids.get(j)]) >= 1:
-                final_m = min(float(projeto.get("cauda", 10) or 0), max(dur - 2.0, 0.0))
+                final_m = min(float(projeto.get("cauda", CAUDA_YT) or 0), max(dur - 2.0, 0.0))
             corpo = dur - (fim[2] if fim else 0) - final_m
             pecas = []
             for pn in cenas[c].get("personagens") or []:  # o personagem citado aparece primeiro
@@ -639,7 +640,7 @@ def tipo_entrada(projeto, cena, ordem):
 def linha_tempo(projeto):
     """Início/fim de cada cena na timeline final, a partir das palavras mantidas, com J-cut/L-cut nas trocas."""
     mant = [w for w in projeto["palavras"] if w.get("manter") and "ns" in w and w.get("cena") is not None]
-    cauda = float(projeto.get("cauda", 10 if projeto.get("formato") == "horizontal" else 0) or 0)
+    cauda = float(projeto.get("cauda", CAUDA_YT if projeto.get("formato") == "horizontal" else 0) or 0)
     total = projeto["duracao_voz"] + 0.6 + cauda
     inicios = {}
     for w in mant:
@@ -1097,6 +1098,23 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
         grafo.append(f"{v}[{idx}:v]overlay=x=(W-w)/2:y='{y_emo}-36*max(0\\,1-(t-{a0:.3f})/0.16)':"
                      f"enable='between(t\\,{a0:.3f}\\,{a1:.3f})'[ve{i}]")
         v = f"[ve{i}]"
+    # tela final do YouTube: depois da última fala, a montagem fica desfocada e escura (os cartões do YouTube
+    # aparecem por cima, à esquerda e à direita) e a logo do canal entra pequena no alto
+    if L["W"] > L["H"]:
+        cauda_v = float(projeto.get("cauda", CAUDA_YT) or 0)
+        te = total - cauda_v + 0.4
+        if cauda_v >= 5 and te > 5:
+            grafo.append(f"{v}boxblur=10:1:enable='gte(t\\,{te:.3f})',"
+                         f"eq=brightness=-0.22:saturation=0.8:enable='gte(t\\,{te:.3f})'[vte]")
+            v = "[vte]"
+            logo_f = logo_do_canal(dict(projeto, marca_logo=True)) or ""
+            if logo_f:
+                entradas += ["-loop", "1", "-t", f"{cauda_v + 1:.2f}", "-i", logo_f]
+                idx = entradas.count("-i") - 1
+                grafo.append(f"[{idx}:v]format=rgba,scale=300:-1,fade=t=in:st=0:d=0.5:alpha=1,"
+                             f"setpts=PTS+{te + 0.2:.3f}/TB[lgf]")
+                grafo.append(f"{v}[lgf]overlay=x=(W-w)/2:y=70:eof_action=pass:enable='gte(t\\,{te + 0.2:.3f})'[vtf]")
+                v = "[vtf]"
     # logo grande do canal no centro quando a narração fala o nome dele (YouTube)
     if L["W"] > L["H"] and projeto.get("logo_anim", True):
         import cta as _cta
@@ -1248,7 +1266,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         final_m = 0.0
         if W > H and fi == len(faixas) - 1:
             # encerramento do YouTube (depois da última fala): montagem rápida dos jogos do vídeo
-            final_m = float(projeto.get("cauda", 10) or 0)
+            final_m = float(projeto.get("cauda", CAUDA_YT) or 0)
             if dur > final_m + 1.0:
                 dur -= final_m
             else:
@@ -1443,6 +1461,12 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     if dv < total - 0.2:
         # junção sem reencodar perdeu tempo (base de tempo diferente em algum segmento): junta reencodando
         print(f"aviso: junção rápida deu {dv:.2f}s para {total:.2f}s; juntando de novo reencodando", flush=True)
+        try:
+            curtos = [(os.path.basename(t[5]), t[1], round(t[4], 3), round(duracao(t[5]), 3)) for t in tarefas
+                      if abs(duracao(t[5]) - t[4]) > 0.02]
+            print(f"trechos com duração diferente: {len(curtos)} {curtos[:8]}", flush=True)
+        except Exception:
+            pass
         diag.append({"juncao_rapida": round(dv, 2), "total": round(total, 2)})
         refeito = os.path.join(pasta_trab, "visual_reencodado.mp4")
         ffmpeg("-f", "concat", "-safe", 0, "-i", lst, "-vf", f"fps={FPS},setpts=N/({FPS}*TB)", "-an",
