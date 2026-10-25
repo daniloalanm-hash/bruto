@@ -106,7 +106,7 @@ async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
   // com busca: a IA pesquisa no Google (o modo JSON não combina com a busca; o JSON é extraído do texto)
   const corpo = (buscar) => JSON.stringify(buscar
     ? { contents: [{ role: 'user', parts: [{ text: prompt }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0.7 } }
-    : { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.9 } });
+    : { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.9, maxOutputTokens: 32768 } });
   let buscar = !!opcoes.buscar;
   let payload = corpo(buscar);
   let ultimo = '';
@@ -547,7 +547,7 @@ Regras do capítulo:
 - comece emendando com o fim do trecho anterior ("${(anterior || '').slice(-200)}") — sem repetir, sem "no capítulo anterior";
 - ritmo de YouTube: arme a curiosidade, conte o detalhe, diga por que isso importa para quem joga; nada de enrolação;
 ${c.ficha ? `- capítulo de UM jogo (o trailer dele roda por baixo): abra com uma frase que vende o jogo, diga o nome dele cedo, depois premissa/história, como é jogar, "um detalhe interessante é que…" (fato pouco conhecido) e feche com um veredito curto de por que ele está nessa posição;` : ''}
-${ultimo ? `- este é o ÚLTIMO capítulo: entregue a revelação mais forte prometida no começo e feche o vídeo: uma pergunta específica para os comentários + pedido de inscrição e like + "e assiste esse outro vídeo aqui" (tela final);` : '- termine com um mini-gancho para o próximo capítulo ("e o próximo é ainda mais bizarro");'}
+${ultimo ? `- este é o ÚLTIMO capítulo: entregue a revelação mais forte prometida no começo e feche o vídeo: uma pergunta específica para os comentários + pedido de inscrição e like + "e assiste esse outro vídeo aqui" (tela final);` : '- termine puxando o assunto do próximo capítulo de forma ESPECÍFICA (o que vem, sem contar); nada de frase genérica e nunca a palavra "capítulo";'}
 ${meio ? '- no meio deste capítulo, uma frase curta e natural pedindo para se inscrever no canal (sem interromper a história);' : ''}
 
 ${VOZ_CANAL}
@@ -555,6 +555,31 @@ ${VOZ_CANAL}
 ${REGRAS_CENA}
 
 Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "imagem": null, "pausa": null, "numero": null}]}`;
+}
+
+// roteiro INTEIRO numa chamada só: a IA vê o texto todo enquanto escreve (sem repetir nem reapresentar o assunto,
+// emendas naturais). Capítulo a capítulo fica só como plano B.
+function promptRoteiroInteiro(plano, palavrasAbertura, totalPalavras) {
+  const caps = plano.capitulos.map((c, i) => `${i + 1}. "${c.titulo}" (~${c.palavras || 150} palavras) — fatos: ${(c.fatos || []).join(' • ')} — jogos na tela: ${(c.jogos || plano.jogos || []).join(', ')}${c.ficha ? ' — capítulo de UM jogo: diga o nome dele cedo, premissa, como é jogar, um detalhe pouco conhecido, veredito curto' : ''}`).join('\n');
+  return `Você escreve para o canal de YouTube "${CANAL}". Escreva o ROTEIRO COMPLETO do vídeo "${plano.titulo}" (~${totalPalavras} palavras narradas), do começo ao fim, como UM texto falado contínuo, dividido em capítulos e cenas.
+
+ESTRUTURA
+- "Introdução" (~${palavrasAbertura} palavras): gancho nos primeiros 10 s (${plano.gancho || ''}) — a 1ª frase tem até 14 palavras e diz o assunto pelo nome; quem clicou pelos títulos (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) tem que saber na hora que está no vídeo certo; sem saudação. Depois PROVOQUE 2 ou 3 coisas que vêm (sem contar) e por que ficar até o fim; feche com UMA frase natural "Aqui no ${CANAL}…" pedindo inscrição.
+- Depois, os capítulos nesta ordem:
+${caps}
+- No meio do vídeo, uma frase curta pedindo inscrição, sem quebrar a história.
+- O último capítulo entrega a revelação mais forte prometida no começo e fecha: pergunta específica para os comentários + like/inscrição + "e assiste esse outro vídeo aqui".
+
+REGRAS DE CONTEÚDO
+- Cada fato é contado UMA vez no vídeo inteiro. Nada de repetir, recontar ou reapresentar o assunto em outro capítulo.
+- NÃO INVENTE: só os fatos listados acima. Nenhum nome, número, data, recurso ou detalhe que não esteja lá. Se faltar assunto num capítulo, escreva menos — nunca encha.
+- Passagem entre capítulos: puxe o próximo assunto de forma ESPECÍFICA ("e tudo isso por um preço que pega todo mundo de surpresa"); nada de frase genérica ("o próximo é ainda mais bizarro", "mas não para por aí") e nunca a palavra "capítulo".
+
+${VOZ_CANAL}
+
+${REGRAS_CENA}
+
+Responda SOMENTE com JSON: {"capitulos": [{"titulo": "Introdução", "cenas": [{"texto": "...", "destaques": ["..."], "assunto": null, "imagem": null, "pausa": null, "numero": null}]}, {"titulo": "título do 1º capítulo", "cenas": [...]}]}`;
 }
 
 async function roteiroLongo(materia, segundos, onStatus = () => {}) {
@@ -585,6 +610,38 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
   if (!plano.capitulos.length) throw new Error('A IA não conseguiu montar os capítulos. Tente de novo ou dê mais detalhes do tema.');
   const total = Math.round(segundos * ritmo());
   const cenas = [];
+  const norm0 = (x) => roteiroDaIA({ cenas: x.cenas || [] }, materia).cenas;
+  const fichaDe = (i) => {
+    const fi = plano.capitulos[i]?.ficha;
+    return fi && typeof fi === 'object' && (fi.jogo || (plano.capitulos[i].jogos || [])[0])
+      ? { jogo: String(fi.jogo || plano.capitulos[i].jogos[0]).slice(0, 60), lancamento: String(fi.lancamento || '').slice(0, 40),
+        plataformas: String(fi.plataformas || '').slice(0, 70), dublagem: String(fi.dublagem || '').slice(0, 12), legendas: String(fi.legendas || '').slice(0, 12) } : null;
+  };
+  onStatus('Escrevendo o roteiro completo (1 a 2 min)…');
+  try {
+    const r = await gemini(promptRoteiroInteiro(plano, Math.round(Math.min(total * 0.1, 45 * ritmo())), total), onStatus, { timeout: 170000, semRepetir: true });
+    const caps = (r.capitulos || []).filter((c) => c && (c.cenas || []).length);
+    const blocos = caps.map((c, k) => {
+      const cs = norm0(c);
+      if (!cs.length) return cs;
+      if (k === 0) { cs[0].capitulo = 'Introdução'; return cs; }
+      const i = k - 1;
+      cs[0].capitulo = plano.capitulos[i]?.titulo || c.titulo;
+      const fi = fichaDe(i);
+      if (fi) cs[0].ficha = fi;
+      const jogoCap = (plano.capitulos[i]?.jogos || [])[0] || null;
+      for (const x of cs) if (!x.assunto && jogoCap) x.assunto = jogoCap;
+      return cs;
+    });
+    const todas = blocos.flat();
+    const n = todas.reduce((a, c) => a + String(c.texto || '').split(/\s+/).filter(Boolean).length, 0);
+    if (caps.length >= Math.min(3, plano.capitulos.length) && n >= total * 0.55) cenas.push(...todas);
+    else console.warn(`roteiro inteiro curto (${n} de ${total} palavras, ${caps.length} capítulos): indo capítulo a capítulo`);
+  } catch (e) { console.warn('roteiro inteiro', e); }
+  if (cenas.length) {
+    tirarRepetidas(cenas);
+    return montarRoteiroLongo(plano, materia, cenas);
+  }
   onStatus('Escrevendo a abertura…');
   // abertura curta como nos tops de sucesso (~45 s): gancho + o que vem + pedido de like
   const ab = await gemini(promptAbertura(plano, Math.round(Math.min(total * 0.1, 45 * ritmo()))), onStatus);
@@ -624,6 +681,10 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     cenas.push(...cs);
   }
   tirarRepetidas(cenas);
+  return montarRoteiroLongo(plano, materia, cenas);
+}
+
+function montarRoteiroLongo(plano, materia, cenas) {
   return {
     titulo: plano.titulo || materia.titulo || '',
     titulo_tela: String(plano.titulo_tela || '').trim(),
