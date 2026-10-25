@@ -147,8 +147,10 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
         cands = []
         try:
             hero = arte_oficial(j.get("appid"), pasta)
-        except Exception:
+        except Exception as e:
+            print(f"aviso: key art de {ch}: {e}", flush=True)
             hero = None
+        print(f"thumbs: key art de {ch}: {'ok' if hero else 'não achada'}", flush=True)
         for mid, m in banco.items():
             if m.get("jogo") != ch or m.get("cartao"):
                 continue
