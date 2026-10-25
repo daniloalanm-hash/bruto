@@ -408,6 +408,32 @@ MONTADORAS = re.compile(r"hyundai|toyota|volkswagen|\bvw\b|fiat|jeep|chevrolet|\
                         r"land rover|jaguar|ram\b|stellantis|motor1|autocar|carwow|press|media|newsroom", re.I)
 
 
+MARCAS_CARRO = {"volkswagen", "vw", "chevrolet", "gm", "fiat", "toyota", "hyundai", "jeep", "ford", "renault", "nissan",
+                "honda", "peugeot", "citroen", "byd", "gwm", "caoa", "chery", "kia", "mitsubishi", "bmw", "mercedes",
+                "benz", "audi", "volvo", "porsche", "ram", "land", "rover", "jaguar", "suzuki", "subaru", "mazda"}
+
+
+def carro_no_titulo(nome, titulo):
+    """O vídeo é DESTE modelo? Todas as palavras do modelo (fora a marca) como palavra inteira no título —
+    "Volkswagen Gol" não aceita Transporter/Multivan; "Corolla" sozinho não aceita "Corolla Cross"."""
+    import unicodedata
+    def toks(t):
+        t = unicodedata.normalize("NFD", str(t).lower())
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        return re.findall(r"[a-z0-9]+", t)
+    pedido, achado = toks(nome), toks(titulo)
+    modelo = [w for w in pedido if w not in MARCAS_CARRO] or pedido
+    if not all(w in achado for w in modelo):
+        return False
+    marcas = [w for w in pedido if w in MARCAS_CARRO]
+    if len(modelo) == 1 and len(modelo[0]) <= 3 and marcas and not any(m in achado for m in marcas + (["vw"] if "volkswagen" in marcas else [])):
+        return False  # "Gol" sozinho pode ser gol de futebol: exige a marca no título
+    # palavra a mais logo depois do modelo que muda o carro (Corolla Cross, Onix Plus? aceita; Cross não)
+    if "cross" in achado and "cross" not in pedido:
+        return False
+    return True
+
+
 def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
     """Vídeos de um modelo de carro no Dailymotion: design exterior/interior, rodando, lançamento oficial.
     Fora: crash test, brinquedo, jogo de corrida, comparativo. Apresentador na câmera sai depois, na análise."""
@@ -430,7 +456,7 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
             continue
         for k, v in enumerate(d.get("list", [])):
             t, dur = v.get("title", ""), v.get("duration") or 0
-            if v["id"] in vistos or not titulo_do_jogo(nome, t) or RUIM_CARRO.search(t) or not 20 <= dur <= 900:
+            if v["id"] in vistos or not carro_no_titulo(nome, t) or RUIM_CARRO.search(t) or not 20 <= dur <= 900:
                 continue
             vistos.add(v["id"])
             bonus = 2 if BOM_CARRO.search(t) else 0
