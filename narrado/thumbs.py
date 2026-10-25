@@ -71,10 +71,19 @@ def _rosto(caminho):
             if len(rostos):
                 x, y, w, h = max(rostos, key=lambda q: q[2] * q[3])
                 r = ((x + w / 2) / img.shape[1], (y + h / 2) / img.shape[0])
+                _AREA[caminho] = w * h / float(img.shape[0] * img.shape[1])
     except Exception:
         r = None
     _ROSTOS[caminho] = r
     return r
+
+
+_AREA = {}
+
+
+def _area_rosto(caminho):
+    """Fração da imagem ocupada pelo maior rosto (0 se não houver)."""
+    return _AREA.get(caminho, 0.0) if _rosto(caminho) else 0.0
 
 
 def _tem_rosto(caminho):
@@ -335,7 +344,9 @@ def gerar(projeto, raw, fontes, pasta):
     selo = _selo_do_titulo(projeto.get("titulo") or (projeto.get("post") or {}).get("titulo_yt") or "")
     saidas = []
     # manchete: de preferência com personagem (rosto) do jogo principal
-    melhor = next((c for n, c in cands[principal][:6] if _tem_rosto(c)), cands[principal][0][1])
+    # o rosto MAIOR vence (falso positivo do detector costuma ser pequeno, num quadro caótico)
+    com_rosto = [(_area_rosto(c), c) for n, c in cands[principal][:8] if _area_rosto(c) >= 0.012]
+    melhor = max(com_rosto)[1] if com_rosto else cands[principal][0][1]
     saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
     # épica escolhida antes: as 3 versões nunca repetem a mesma imagem
     if selo:
