@@ -50,28 +50,51 @@ def _tem_texto(caminho):
 _ROSTOS = {}
 
 
+YUNET_URL = ("https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/"
+             "face_detection_yunet/face_detection_yunet_2023mar.onnx")
+_yunet = []
+
+
+def _detector():
+    """YuNet (rede do OpenCV): acha rosto de personagem 3D bem melhor que Haar, que nem existe no OpenCV 5."""
+    if _yunet:
+        return _yunet[0]
+    det = None
+    try:
+        import cv2
+        import assets
+        caminho = os.path.expanduser("~/.cache/narrado/yunet.onnx")
+        if not os.path.exists(caminho) or os.path.getsize(caminho) < 100_000:
+            os.makedirs(os.path.dirname(caminho), exist_ok=True)
+            tmp = f"{caminho}.{os.getpid()}.tmp"
+            with open(tmp, "wb") as f:
+                f.write(assets._get(YUNET_URL, timeout=120))
+            os.replace(tmp, caminho)
+        det = cv2.FaceDetectorYN.create(caminho, "", (640, 360), 0.6)
+    except Exception as e:
+        print(f"aviso: detector de rosto indisponível ({e})")
+    _yunet.append(det)
+    return det
+
+
 def _rosto(caminho):
-    """Centro (x, y em fração) do maior rosto da imagem, ou None (Haar do OpenCV)."""
+    """Centro (x, y em fração) do maior rosto da imagem, ou None."""
     if caminho in _ROSTOS:
         return _ROSTOS[caminho]
     r = None
     try:
         import cv2
-        img = cv2.imread(caminho, cv2.IMREAD_GRAYSCALE)
-        if img is not None:
+        det = _detector()
+        img = cv2.imread(caminho)
+        if det is not None and img is not None:
             h0, w0 = img.shape[:2]
             img = cv2.resize(img, (640, int(640 * h0 / w0)))
-            rostos = []
-            for casc, viz in (("haarcascade_frontalface_default.xml", 6), ("haarcascade_frontalface_alt2.xml", 4),
-                              ("haarcascade_profileface.xml", 5)):  # arte de jogo engana o detector: tenta 3
-                det = cv2.CascadeClassifier(cv2.data.haarcascades + casc)
-                rostos = list(det.detectMultiScale(img, 1.08, viz, minSize=(50, 50)))
-                if rostos:
-                    break
-            if len(rostos):
-                x, y, w, h = max(rostos, key=lambda q: q[2] * q[3])
+            det.setInputSize((img.shape[1], img.shape[0]))
+            rostos = det.detect(img)[1]
+            if rostos is not None and len(rostos):
+                x, y, w, h = max(rostos, key=lambda q: q[2] * q[3])[:4]
                 r = ((x + w / 2) / img.shape[1], (y + h / 2) / img.shape[0])
-                _AREA[caminho] = w * h / float(img.shape[0] * img.shape[1])
+                _AREA[caminho] = float(w * h) / (img.shape[0] * img.shape[1])
     except Exception:
         r = None
     _ROSTOS[caminho] = r
