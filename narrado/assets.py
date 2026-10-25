@@ -584,6 +584,13 @@ def gameplay_longo(nome, chave, pasta, janelas=24, cada=10.0):
             t, dur = v.get("title", ""), v.get("duration") or 0
             if not titulo_do_jogo(nome, t) or RUIM_DM.search(t) or not 600 <= dur <= 4 * 3600:
                 continue
+            # só vídeo que É gameplay: review/opinião/podcast tem gente falando na câmera ("Baldur's Gate 3 avis")
+            if not re.search(r"gameplay|walkthrough|playthrough|longplay|no commentary|sem coment|partie|let'?s play|"
+                             r"part \d|parte \d|episode|cap[ií]tulo", t, re.I) or \
+                    re.search(r"\b(avis|review|an[áa]lise|critique|cr[íi]tica|podcast|rea[çc][ãa]o|reaction|react|"
+                              r"opini|debate|discuss|news|not[íi]cia|tier ?list|impress|first look|unboxing|"
+                              r"facecam|live|stream|vlog)\b", t, re.I):
+                continue
             if any(c[1] == v["id"] for c in cands):
                 continue
             bonus = (2 if re.search(r"no commentary|sem coment|nocommentary", t, re.I) else 0) + \
