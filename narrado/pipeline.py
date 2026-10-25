@@ -700,7 +700,7 @@ def garantir_material(projeto):
     for i, ln in enumerate(projeto.get("links_video") or []):
         if ln.get("chave") and ln.get("url"):
             assets.baixar_link_video(ln["url"], ln["chave"], RAW, i)  # já baixado: não faz nada
-    if projeto.get("formato") == "horizontal" and projeto.get("quadros_checados") != 3:
+    if projeto.get("formato") == "horizontal" and projeto.get("quadros_checados") != 4:
         # projeto de antes da checagem de tarja/logo de site: confere cada vídeo do banco uma vez
         infos = {}
         for m in projeto["banco"].values():
@@ -716,7 +716,7 @@ def garantir_material(projeto):
                     m.pop(k, None)
                     if infos[arq].get(k):
                         m[k] = infos[arq][k]
-        projeto["quadros_checados"] = 3
+        projeto["quadros_checados"] = 4
     if any(m["arquivo"].startswith("lib_") for m in falta):
         da_biblioteca(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
     for m in falta:

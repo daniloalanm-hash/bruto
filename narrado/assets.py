@@ -1299,8 +1299,9 @@ def analisar_quadros(pasta_quadros):
     saida = {}
     # tarja: linha/coluna acesa em menos de 15% dos quadros (um trecho em tela cheia — abertura, créditos —
     # não desfaz a tarja do resto do vídeo; ruído de compressão fica abaixo de 40)
-    acesa_col = (pilha.max(1) > 40).mean(0)
-    acesa_lin = (pilha.max(2) > 40).mean(0)
+    # (só a faixa do meio: logo de site dentro da tarja, num canto, não conta como imagem)
+    acesa_col = (pilha[:, 45:126, :].max(1) > 40).mean(0)
+    acesa_lin = (pilha[:, :, 80:241].max(2) > 40).mean(0)
     linhas, colunas = np.nonzero(acesa_lin > 0.15)[0], np.nonzero(acesa_col > 0.15)[0]
     if len(linhas) < 60 or len(colunas) < 100:
         return {}
@@ -1357,7 +1358,7 @@ def checar_marca(video):
     import json
     import subprocess
     import tempfile
-    cache = video + ".quadros2.json"
+    cache = video + ".quadros3.json"
     if os.path.exists(cache):
         return json.load(open(cache))
     with tempfile.TemporaryDirectory() as tmp:
