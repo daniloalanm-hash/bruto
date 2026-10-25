@@ -204,3 +204,12 @@ audio { width: 100%; }
 .titulos-yt { margin: 12px 0 6px; padding-left: 20px; display: grid; gap: 6px; }
 .titulos-yt li b { margin-right: 4px; }
 .qa-lista div { margin-left: 8px; color: var(--txt, inherit); } .qa-lista a { font-variant-numeric: tabular-nums; margin-right: 4px; }
+
+.pacote-yt { display: grid; gap: 10px; margin: 12px 0; }
+.pacote-campo textarea { width: 100%; font: inherit; font-size: 13px; resize: vertical; }
+.pacote-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+
+.checa-gancho { margin: 8px 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+.checa-gancho.tem-aviso { background: rgba(255, 170, 0, .12); border: 1px solid rgba(255, 170, 0, .45); }
+.checa-gancho.ok { background: rgba(60, 200, 120, .10); border: 1px solid rgba(60, 200, 120, .4); }
+.checa-gancho ul { margin: 6px 0 0 18px; padding: 0; }

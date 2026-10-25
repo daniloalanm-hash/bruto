@@ -415,10 +415,10 @@ PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, 
 
 Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
 
-Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulos" (3 opções de título para o teste A/B do YouTube, cada uma com uma estratégia: "curiosidade" (lacuna que só o vídeo responde), "busca" (o que a pessoa digita no YouTube, palavra-chave no começo) e "emoção" (urgência/choque/nostalgia, sem mentir); até 70 caracteres, 1 ou 2 palavras em MAIÚSCULAS no máximo), "thumbs" (3 textos para as 3 thumbnails do teste A/B, em MAIÚSCULAS, que COMPLETAM o título sem repetir — padrão dos vídeos de games com mais views: a 1ª e a 2ª com 2 ou 3 palavras no máximo (pergunta/choque, ex.: "BIOWARE ACABOU?", "EA FECHOU TUDO", "AUGE E QUEDA", "-400 MILHÕES"); a 3ª com UMA palavra só, de impacto (ex.: "FIM.", "ACABOU", "FALIU", "RIP"); para cada uma, "destaque" = a palavra que vai em amarelo), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários) e "tags" (10 a 15 tags).
+Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulos" (3 opções de título para o teste A/B do YouTube, cada uma com uma estratégia: "curiosidade" (lacuna que só o vídeo responde), "busca" (o que a pessoa digita no YouTube, palavra-chave no começo) e "emoção" (urgência/choque/nostalgia, sem mentir); até 70 caracteres, 1 ou 2 palavras em MAIÚSCULAS no máximo), "thumbs" (3 textos para as 3 thumbnails do teste A/B, em MAIÚSCULAS, que COMPLETAM o título sem repetir — padrão dos vídeos de games com mais views: a 1ª e a 2ª com 2 ou 3 palavras no máximo (pergunta/choque, ex.: "BIOWARE ACABOU?", "EA FECHOU TUDO", "AUGE E QUEDA", "-400 MILHÕES"); a 3ª com UMA palavra só, de impacto (ex.: "FIM.", "ACABOU", "FALIU", "RIP"); para cada uma, "destaque" = a palavra que vai em amarelo), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários), "comentario" (1º comentário para o canal fixar: uma pergunta polêmica ou de opinião sobre o tema, curta, que dá vontade de responder — ex.: "Qual jogo da BioWare marcou a sua vida? 👇") e "tags" (10 a 15 tags).
 
 Responda SOMENTE com JSON, sem texto fora dele:
-{"titulo": "...", "titulos": [{"titulo": "...", "estrategia": "curiosidade"}, {"titulo": "...", "estrategia": "busca"}, {"titulo": "...", "estrategia": "emoção"}], "thumbs": [{"texto": "...", "destaque": "..."}], "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": {"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "tags": ["..."]}
+{"titulo": "...", "titulos": [{"titulo": "...", "estrategia": "curiosidade"}, {"titulo": "...", "estrategia": "busca"}, {"titulo": "...", "estrategia": "emoção"}], "thumbs": [{"texto": "...", "destaque": "..."}], "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": {"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "comentario": "...", "tags": ["..."]}
 
 TEMA / MATÉRIA
 ${materia.titulo || ''}
@@ -436,7 +436,7 @@ const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Para cada
 
 function promptAbertura(plano, palavras) {
   return `Você escreve para o canal de YouTube "${CANAL}". Escreva a ABERTURA do vídeo "${plano.titulo}" com ~${palavras} palavras, dividida em 3 a 5 cenas:
-1. gancho nos primeiros 10 segundos (a promessa mais forte: ${plano.gancho || ''}) — a primeira frase tem no máximo 14 palavras;
+1. gancho nos primeiros 10 segundos (a promessa mais forte: ${plano.gancho || ''}) — a primeira frase tem no máximo 14 palavras, diz o ASSUNTO do título pelo nome (${(plano.jogos || []).slice(0, 1).join('') || 'o tema'}) e cumpre a promessa dos títulos/thumbs (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) — quem clicou precisa ter certeza nos primeiros segundos de que está no vídeo certo; nada de saudação ("olá", "fala galera") antes disso;
 2. o que a pessoa vai descobrir no vídeo (cite 2 ou 3 coisas dos capítulos, sem entregar o melhor) e por que ficar até o fim;
 3. UMA frase de apresentação do canal, natural: "Aqui no ${CANAL}..." + um pedido rápido de inscrição.
 
@@ -513,7 +513,7 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     jogos: (plano.jogos || []).filter(Boolean),
     cenas,
     formato: 'horizontal',
-    post: { legenda: plano.descricao || '', hashtags: (plano.tags || []).map(String), titulo_yt: plano.titulo || '',
+    post: { legenda: plano.descricao || '', hashtags: (plano.tags || []).map(String), titulo_yt: plano.titulo || '', comentario: String(plano.comentario || ''),
       titulos: (plano.titulos || []).filter((t) => t && t.titulo).slice(0, 3).map((t) => ({ titulo: String(t.titulo).slice(0, 100), estrategia: String(t.estrategia || '') })) },
     thumbs: (plano.thumbs || []).filter((t) => t && t.texto).slice(0, 3).map((t) => ({ texto: String(t.texto).slice(0, 40), destaque: String(t.destaque || '') })),
   };
@@ -781,7 +781,7 @@ function renderRoteiro() {
     if (c.assunto && !nomesJogos().includes(c.assunto)) sel.append(h('option', { value: c.assunto, selected: true }, c.assunto));
     sel.addEventListener('change', () => { c.assunto = sel.value || null; salvarRascunho(); });
     const txt = h('textarea', { rows: 2, value: c.texto, placeholder: 'O que será falado neste tópico…' });
-    txt.addEventListener('input', () => { c.texto = txt.value; estimativa(); salvarRascunho(); });
+    txt.addEventListener('input', () => { c.texto = txt.value; estimativa(); salvarRascunho(); if (i < 4) checarGancho(); });
     const dest = h('input', { type: 'text', value: (c.destaques || []).join(', '), placeholder: 'palavras em destaque, separadas por vírgula' });
     dest.addEventListener('input', () => { c.destaques = dest.value.split(',').map((s) => s.trim()).filter(Boolean); salvarRascunho(); });
     const emo = h('input', { type: 'text', value: c.emoji || '', placeholder: '—', maxlength: 4, class: 'emoji-in', title: 'Emoji que aparece sobre a legenda deste tópico (vazio = automático)' });
@@ -805,6 +805,40 @@ function renderRoteiro() {
   estimativa();
   salvarRascunho();
   renderGanchos();
+  checarGancho();
+}
+// YouTube: os primeiros 30 s decidem se a pessoa fica. Confere o roteiro ANTES de gravar.
+const PARADAS = new Set('a o as os um uma de do da dos das e é que em no na nos nas por para com sem como mais seu sua seus suas ao aos à às isso esse essa este esta o que foi vai ser ter tem pra'.split(' '));
+function checarGancho() {
+  const r = state.roteiro;
+  let el = $('#checaGancho');
+  if (!el) { el = h('div', { id: 'checaGancho', class: 'checa-gancho' }); $('#cenas').before(el); }
+  if (!r || r.formato !== 'horizontal' || !r.cenas?.length) { el.hidden = true; return; }
+  const sem = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const ini = [];
+  for (const c of r.cenas) { ini.push(...String(c.texto || '').split(/\s+/).filter(Boolean)); if (ini.length > 90) break; }
+  const p30 = sem(ini.slice(0, 75).join(' '));  // ~30 s de fala
+  const p12 = sem(ini.slice(0, 30).join(' '));  // ~12 s
+  const fonte = [r.titulo, ...(r.post?.titulos || []).map((t) => t.titulo)].join(' ');
+  const chaves = [...new Set(sem(fonte).match(/[a-z0-9]{4,}/g) || [])].filter((w) => !PARADAS.has(w));
+  const nomes = (r.jogos || []).slice(0, 2).map(sem).filter(Boolean);
+  const avisos = [];
+  if (/^(ola|oi|fala|salve|e ai|eai|bom dia|boa tarde|boa noite|bem[- ]vindo)/.test(p12.trim())) {
+    avisos.push('Começa com saudação. Troque pela promessa do título: quem chegou pela thumb quer a resposta, não o "olá".');
+  }
+  const temAssunto = chaves.some((w) => p12.includes(w)) || nomes.some((n) => p12.includes(n.split(' ')[0]));
+  if (!temAssunto) avisos.push(`O assunto do título (${(r.jogos || [])[0] || chaves.slice(0, 2).join(', ')}) não aparece nos primeiros ~12 s. Diga logo de cara, para a pessoa saber que clicou no vídeo certo.`);
+  if (!/\?|por que|porque|motivo|verdade|segredo|ninguem|descobr|revel|o que aconteceu|o que acontece|ate o final|ate o fim|vou te|voce vai|fim d|acabou|maior|pior|melhor/.test(p30)) {
+    avisos.push('Os primeiros 30 s não têm uma promessa clara (pergunta, "o verdadeiro motivo", "até o fim você vai ver…"). É ela que segura a pessoa.');
+  }
+  const primeiroCap = r.cenas.findIndex((c, i) => i > 0 && c.capitulo);
+  const palAbertura = r.cenas.slice(0, primeiroCap > 0 ? primeiroCap : 1).reduce((n, c) => n + String(c.texto || '').split(/\s+/).filter(Boolean).length, 0);
+  if (palAbertura > 130) avisos.push(`A abertura tem ~${Math.round(palAbertura / 2.5)} s antes do 1º capítulo. Os vídeos que mais retêm entram no conteúdo em até ~50 s.`);
+  el.hidden = false;
+  el.className = `checa-gancho ${avisos.length ? 'tem-aviso' : 'ok'}`;
+  el.replaceChildren(avisos.length
+    ? h('div', {}, h('strong', {}, '🎯 Gancho dos primeiros 30 s — ajuste antes de gravar:'), h('ul', {}, ...avisos.map((a) => h('li', {}, a))))
+    : h('div', {}, '🎯 Gancho dos primeiros 30 s: assunto do título logo no começo e promessa clara. ✅'));
 }
 // ficha do jogo (YouTube): aparece no canto quando o capítulo dele começa — dá para corrigir aqui
 function fichaEditor(c) {
@@ -1348,7 +1382,34 @@ function mostrarVideo(s) {
   renderThumbs();
 }
 
-// YouTube: 3 thumbnails (manchete, trio, épica) + 3 títulos com estratégias diferentes, para o "Testar e comparar"
+// YouTube: pacote de postagem — descrição com capítulos (tempo real no vídeo pronto), tags e 1º comentário
+function capitulosYt(p) {
+  const inicio = Object.fromEntries((p.timeline || []).map((t) => [t.cena, t.inicio]));
+  const caps = (p.cenas || []).map((c, i) => ({ t: inicio[i], tit: String(c.capitulo || '').trim() }))
+    .filter((x, i) => i > 0 && x.tit && x.t != null && x.t >= 10);
+  if (caps.length < 2) return '';
+  const ts = (t) => { const m = Math.floor(t / 60), sx = Math.floor(t % 60); return `${String(m).padStart(2, '0')}:${String(sx).padStart(2, '0')}`; };
+  // regras do YouTube: começa em 00:00, 3+ capítulos, cada um com 10 s ou mais
+  const lista = [{ t: 0, tit: String(p.cenas?.[0]?.capitulo || '').trim() || 'Introdução' }, ...caps]
+    .filter((x, i, a) => i === 0 || x.t - a[i - 1].t >= 10);
+  return lista.length >= 3 ? lista.map((x) => `${ts(x.t)} ${x.tit}`).join('\n') : '';
+}
+function pacoteYt(p, post) {
+  post = post || p?.post || {};
+  const hs = (post.hashtags || []).map((x) => x.replace(/^#/, '').trim()).filter(Boolean);
+  const capitulos = capitulosYt(p);
+  // hashtags: só 3 na descrição (o YouTube mostra acima do título; mais que isso vira spam)
+  const hashtags = hs.slice(0, 3).map((x) => `#${x.replace(/\s+/g, '')}`).join(' ');
+  const descricao = [post.legenda || '', capitulos ? `CAPÍTULOS\n${capitulos}` : '',
+    'Se curtiu, deixa o like, se inscreve no canal e ativa o sininho!', hashtags].filter(Boolean).join('\n\n');
+  let tags = '';
+  for (const t of hs) { if ((tags + (tags ? ', ' : '') + t).length > 480) break; tags += (tags ? ', ' : '') + t; }
+  const pergunta = (String(post.legenda || '').match(/[^.!?\n]*\?/g) || []).pop()?.trim();
+  const comentario = post.comentario || (pergunta ? `${pergunta} Conta aqui embaixo! 👇` : '');
+  return { descricao, tags, comentario, capitulos };
+}
+
+// YouTube: 3 thumbnails (manchete, trio, impacto) + 3 títulos com estratégias diferentes, para o "Testar e comparar"
 function renderThumbs() {
   const p = state.projeto;
   const ths = state.thumbs || [];
@@ -1356,13 +1417,20 @@ function renderThumbs() {
   const box = $('#boxThumbs');
   if (!box) return;
   box.hidden = !(ths.length || tits.length) || (p && p.formato !== 'horizontal');
-  const nomes = ['Manchete', 'Jogos lado a lado', 'Épica (sem texto)'];
+  const nomes = ['Manchete', 'Jogos lado a lado', 'Impacto'];
   $('#thumbsGrid').replaceChildren(...ths.map((u, i) => h('figure', { class: 'thumb-item' },
     h('a', { href: u, target: '_blank', rel: 'noopener', title: 'Abrir em tamanho real' }, h('img', { src: u, alt: `Thumbnail ${i + 1}`, loading: 'lazy' })),
     h('figcaption', { class: 'muted small' }, `${i + 1}. ${nomes[i] || ''} · `, h('a', { href: u, download: `thumb_${i + 1}.jpg` }, 'baixar')))));
   $('#titulosYt').replaceChildren(...tits.map((t) => h('li', {},
     h('b', {}, t.titulo), h('span', { class: 'muted small' }, ` · ${t.estrategia || ''} · ${t.titulo.length} caracteres `),
     h('button', { class: 'btn small', onclick: () => { navigator.clipboard.writeText(t.titulo); toast('Título copiado.'); } }, 'Copiar'))));
+  const pk = p ? pacoteYt(p) : null;
+  const campos = pk ? [['Descrição (com capítulos)', pk.descricao, 9], ['Tags', pk.tags, 3], ['1º comentário (fixe no vídeo)', pk.comentario, 2]]
+    .filter(([, v]) => v) : [];
+  $('#pacoteYt').replaceChildren(...campos.map(([nome, valor, linhas]) => h('div', { class: 'pacote-campo' },
+    h('div', { class: 'pacote-topo' }, h('b', {}, nome),
+      h('button', { class: 'btn small', onclick: () => { navigator.clipboard.writeText(valor); toast(`${nome.split(' (')[0]} copiado.`); } }, 'Copiar')),
+    h('textarea', { rows: linhas, readonly: true }, valor))));
 }
 
 async function carregarProjeto() {
@@ -1430,13 +1498,8 @@ function renderPost() {
   let texto = textoDoPost(post);
   if (p?.formato === 'horizontal') {
     // YouTube: título + descrição + capítulos com o tempo real de cada um no vídeo pronto + tags
-    const inicio = Object.fromEntries((p.timeline || []).map((t) => [t.cena, t.inicio]));
-    const caps = (p.cenas || []).map((c, i) => ({ t: inicio[i], tit: c.capitulo })).filter((x) => x.tit && x.t != null);
-    if (caps.length) caps[0].t = 0;
-    const ts = (t) => { const m = Math.floor(t / 60), sx = Math.floor(t % 60); return `${String(m).padStart(2, '0')}:${String(sx).padStart(2, '0')}`; };
-    const capitulos = caps.length >= 3 ? `CAPÍTULOS\n${caps.map((x) => `${ts(x.t)} ${x.tit}`).join('\n')}` : '';
-    const tags = (post?.hashtags || []).map((x) => x.replace(/^#/, '')).join(', ');
-    texto = [post?.titulo_yt || p.titulo || '', post?.legenda || '', capitulos, tags ? `Tags: ${tags}` : ''].filter(Boolean).join('\n\n');
+    const pk = pacoteYt(p, post);
+    texto = [post?.titulo_yt || p.titulo || '', pk.descricao, pk.tags ? `Tags: ${pk.tags}` : ''].filter(Boolean).join('\n\n');
   }
   renderThumbs();
   $('#textoPost').value = creditos.length && !texto.includes('Wikimedia') ? `${texto}\n\nFotos: ${creditos.join('; ')}` : texto;
