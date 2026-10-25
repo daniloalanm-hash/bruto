@@ -322,11 +322,15 @@ def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False, marca=None, ar
     """Trecho do trailer tocando direto (sem zoom nem efeito), com mergulho no preto na troca de jogo."""
     t0 = _inicio_seguro(src, t0, dur)
     n, pad = _quadros_exatos(dur)
-    if area:  # tarja fixa medida no vídeo inteiro (gameplay 4:3 com faixas pretas): recorta a imagem útil
+    # tarja: o trecho (cropdetect) acha plano 4:3 no meio de trailer; a medida do vídeo inteiro (area) acha a
+    # tarja que o cropdetect não vê (logo de site dentro dela). Vale a que recorta mais nas laterais.
+    c = area_util(src, t0)
+    dims = _tamanho(src)
+    larg_c = int(c[0]) / dims[0] if c and dims else 1.0
+    if area and area[2] < larg_c - 0.02:
         x, y, w, h = area
         pre = f"crop=trunc(iw*{w:.4f}/2)*2:trunc(ih*{h:.4f}/2)*2:trunc(iw*{x:.4f}):trunc(ih*{y:.4f}),"
     else:
-        c = area_util(src, t0)
         pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
     pre = _delogo(src, marca) + pre
     fx = ""
