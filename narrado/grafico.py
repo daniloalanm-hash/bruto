@@ -137,7 +137,10 @@ def gerar(numero, pasta, fontes, largura=1920):
                 comp_b = int(bw * 0.62 * (val / maior) * prog)
                 d.rounded_rectangle((x_txt, y, x_txt + max(comp_b, 6), y + int(30 * e)), int(8 * e), fill=cor)
                 d.text((x_txt + comp_b + int(14 * e), y - int(2 * e)), f"{valtxt}  {rot}", font=f_peq, fill=BRANCO)
-            if alvo_c and alvo < alvo_c and pre == pre_c and suf == suf_c and u > 0.6:  # selo do desconto/queda
+            # selo só quando é desconto/queda de verdade (não em "versão flex × versão híbrida")
+            antes = re.search(r"cheio|original|normal|antes|anterior|antigo|era|de \d|\b(19|20)\d\d\b",
+                              str(comp.get("rotulo") or "").lower())
+            if alvo_c and alvo < alvo_c and pre == pre_c and suf == suf_c and u > 0.6 and (negativo or antes):
                 queda = round((1 - alvo / alvo_c) * 100)
                 if 1 <= queda <= 99:
                     s = f"-{queda}%"

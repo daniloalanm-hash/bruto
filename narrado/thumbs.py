@@ -182,6 +182,8 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
                 if img.width < 600:
                     continue
                 n = _nota(img) + (35 if _tem_rosto(c) else 0)  # personagem na tela segura o clique
+                if projeto.get("nicho") == "carros" and os.path.basename(c).startswith("commons_"):
+                    n -= 40  # foto do Commons pode ser de outra geração do carro: quadro do vídeo oficial vem antes
                 (com_texto if _tem_texto(c) else notas).append((n, c))
             except Exception:
                 continue
