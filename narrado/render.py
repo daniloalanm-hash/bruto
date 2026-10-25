@@ -1097,10 +1097,21 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
         grafo.append(f"{v}[{idx}:v]overlay=x=(W-w)/2:y='{y_emo}-36*max(0\\,1-(t-{a0:.3f})/0.16)':"
                      f"enable='between(t\\,{a0:.3f}\\,{a1:.3f})'[ve{i}]")
         v = f"[ve{i}]"
+    # logo grande do canal no centro quando a narração fala o nome dele (YouTube)
+    if L["W"] > L["H"] and projeto.get("logo_anim", True):
+        import cta as _cta
+        for i, (t0, png) in enumerate(_cta.momentos_canal(projeto)):
+            padrao, dur_l = _cta.gerar_logo(png, os.path.join(pasta_trab, f"logo_anim{i}"), largura=W)
+            entradas += ["-framerate", str(FPS), "-i", padrao]
+            idx = entradas.count("-i") - 1
+            grafo.append(f"[{idx}:v]format=rgba,setpts=PTS+{t0:.3f}/TB[lga{i}]")
+            grafo.append(f"{v}[lga{i}]overlay=x=(W-w)/2:y=(H-h)/2:eof_action=pass:"
+                         f"enable='between(t\\,{t0:.3f}\\,{t0 + dur_l:.3f})'[vlga{i}]")
+            v = f"[vlga{i}]"
     # animação de like / inscrever-se / sininho quando a narração pede (YouTube)
     if projeto.get("cta_anim", L["W"] > L["H"]):
         import cta
-        tempos_cta = cta.momentos(projeto)
+        tempos_cta = cta.momentos_todos(projeto)
         if tempos_cta:
             padrao, dur_cta, _ = cta.gerar(os.path.join(pasta_trab, "cta"), largura=W if W > H else 1700)
             for i, t0 in enumerate(tempos_cta):
@@ -1536,9 +1547,14 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         for c, t in cortes.items():
             if f"cartao_cap_{c}" in banco:
                 eventos.append((t + 0.05, "impacto", 0.4))
+        if W > H and projeto.get("logo_anim", True):
+            import cta
+            for t0, _ in cta.momentos_canal(projeto):
+                eventos.append((t0 + 0.05, "woosh", 0.45))
+                eventos.append((t0 + 0.32, "impacto", 0.3))
         if projeto.get("cta_anim", L["W"] > L["H"]):
             import cta
-            for t0 in cta.momentos(projeto):
+            for t0 in cta.momentos_todos(projeto):
                 for dt, nome in [(0.55, "clique"), (1.35, "clique"), (2.15, "clique"), (2.2, "sino")]:
                     eventos.append((t0 + dt, nome, 0.55 if nome == "clique" else 0.35))
         if fim_tit and projeto.get("titulo_estilo", "manchete") != "simples":

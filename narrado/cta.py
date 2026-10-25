@@ -124,3 +124,67 @@ def gerar(pasta, largura=1920):
         img.save(os.path.join(pasta, f"{i:03d}.png"))
     sons = [(alvos[0][0], "clique"), (alvos[1][0], "clique"), (alvos[2][0], "clique"), (alvos[2][0] + 0.05, "sino")]
     return os.path.join(pasta, "%03d.png"), DUR, sons
+
+
+# ---------------------------------------------------------------- logo do canal quando o nome é falado
+
+CANAIS = {("jogando", "sem", "plano"): os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "jogandosemplano.png")}
+LOGO_DUR = 2.6
+
+
+def momentos_canal(projeto):
+    """[(instante, png)] em que a narração fala o nome do canal ("aqui no Jogando Sem Plano")."""
+    ws = sorted((w for w in projeto.get("palavras", []) if w.get("manter") and "ns" in w), key=lambda w: w["ns"])
+    lim = [re.sub(r"[^a-z0-9]", "", str(w.get("legenda") or w["w"]).lower()) for w in ws]
+    saida = []
+    for nome, png in CANAIS.items():
+        if not os.path.exists(png):
+            continue
+        for i in range(len(ws) - len(nome) + 1):
+            if tuple(lim[i:i + len(nome)]) == nome and (not saida or ws[i]["ns"] - saida[-1][0] > 60):
+                saida.append((max(ws[i]["ns"] - 0.15, 0.0), png))
+    return saida
+
+
+def momentos_todos(projeto):
+    """CTA (like/inscrever/sininho): quando a narração pede, e também logo depois da apresentação do canal
+    (o nome do canal na abertura vira logo + pedido de inscrição), sem repetir em menos de 45 s."""
+    tempos = list(momentos(projeto))
+    for t, _ in momentos_canal(projeto):
+        t2 = t + LOGO_DUR + 0.1
+        if all(abs(t2 - x) > 45 for x in tempos):
+            tempos.append(t2)
+    return sorted(tempos)[:4]
+
+
+def gerar_logo(png, pasta, largura=1920):
+    """Quadros (PNG com transparência) da logo grande no centro: entra crescendo com um leve giro, respira,
+    sai encolhendo e sumindo. Devolve (padrão, duração)."""
+    from PIL import Image, ImageFilter
+    os.makedirs(pasta, exist_ok=True)
+    base = Image.open(png).convert("RGBA")
+    alvo_w = int(largura * 0.30)
+    alvo = base.resize((alvo_w, int(base.height * alvo_w / base.width)), Image.LANCZOS)
+    alvo = alvo.filter(ImageFilter.UnsharpMask(radius=2, percent=60, threshold=2))
+    W, H = int(alvo_w * 1.5), int(alvo.height * 1.5)
+    n = int(LOGO_DUR * FPS)
+    for i in range(n):
+        t = i / FPS
+        if t < 0.35:  # entrada: cresce com "overshoot"
+            u = t / 0.35
+            esc = 0.4 + 0.75 * (1 - (1 - u) ** 3) - 0.15 * max(0.0, u - 0.7) / 0.3
+            alfa, ang = min(1.0, u * 1.6), -8 * (1 - u)
+        elif t > LOGO_DUR - 0.35:  # saída: encolhe e some
+            u = (LOGO_DUR - t) / 0.35
+            esc, alfa, ang = 0.75 + 0.25 * u, u, 0.0
+        else:
+            esc, alfa, ang = 1.0 + 0.03 * math.sin((t - 0.35) * 3.2), 1.0, 0.0
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        lg = alvo.resize((max(1, int(alvo.width * esc)), max(1, int(alvo.height * esc))), Image.LANCZOS)
+        if ang:
+            lg = lg.rotate(ang, resample=Image.BICUBIC, expand=True)
+        if alfa < 1:
+            lg.putalpha(lg.getchannel("A").point(lambda v: int(v * alfa)))
+        img.alpha_composite(lg, ((W - lg.width) // 2, (H - lg.height) // 2))
+        img.save(os.path.join(pasta, f"{i:03d}.png"))
+    return os.path.join(pasta, "%03d.png"), LOGO_DUR
