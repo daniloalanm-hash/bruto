@@ -371,16 +371,26 @@ def gerar(projeto, raw, fontes, pasta):
     com_rosto = [(_area_rosto(c), c) for n, c in cands[principal][:8] if _area_rosto(c) >= 0.012]
     melhor = max(com_rosto)[1] if com_rosto else cands[principal][0][1]
     saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
-    # épica escolhida antes: as 3 versões nunca repetem a mesma imagem
-    if selo:
-        todas = sorted((n, c) for ch in cands for n, c in cands[ch][:3])
-        epi = next((c for n, c in reversed(todas) if c != melhor), melhor)
-    else:
-        epi = next((c for n, c in cands[principal] if c != melhor), melhor)
-    usadas = {melhor, epi}
-    outros = [next((c for n, c in cands[ch] if c not in usadas), cands[ch][0][1]) for ch in ordem[:3]]
+    # trio: a melhor imagem de cada jogo que ainda não foi usada
+    usadas = {melhor}
+    outros = []
+    for ch in ordem[:3]:
+        c = next((c for n, c in cands[ch] if c not in usadas), cands[ch][0][1])
+        outros.append(c)
+        usadas.add(c)
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
+        usadas.update(outros)
+    # épica (sem texto): o close de personagem que sobrou; sem rosto, a imagem mais forte que sobrou
+    fonte = [ch for ch in cands] if selo else [principal] + [ch for ch in ordem if ch != principal]
+    resto = [(n, c) for ch in fonte for n, c in cands[ch][:8] if c not in usadas]
+    rostos = [(_area_rosto(c), c) for n, c in resto if _area_rosto(c) >= 0.012]
+    if rostos:
+        epi = max(rostos)[1]
+    elif resto:
+        epi = max(resto)[1] if selo else resto[0][1]
+    else:
+        epi = melhor
     saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
     saidas.append(epica(epi, fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
     return saidas
