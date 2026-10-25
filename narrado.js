@@ -425,7 +425,7 @@ PESQUISE NA INTERNET outras notícias, sites oficiais, lojas (Steam, itch.io, si
 - contexto/história que ajuda a entender (jogos e franquias de referência, cena do mercado);
 - repercussão (criadores, comunidade, críticas, elogios);
 - o que vem depois.
-Regras: só fatos verificáveis, com o site de onde veio; se as fontes divergirem, diga. Nada inventado. Datas e números exatos.
+Regras: só fatos verificáveis, com o site de onde veio; se as fontes divergirem, diga. Nada inventado. Datas e números exatos. Não traga nada sobre outros canais, youtubers, streamers ou influenciadores (quem jogou, comprou ou comentou) — o vídeo nunca cita outros criadores.
 
 Responda SOMENTE com JSON:
 {"resumo": "2 frases", "fatos": [{"fato": "...", "fonte": "nome do site", "data": "..."}], "numeros": [{"valor": "R$ 24,99", "rotulo": "2 a 5 palavras", "contexto": "...", "comparar": {"valor": "R$ 49,99", "rotulo": "preço cheio"}}], "linha_do_tempo": [{"data": "...", "evento": "..."}], "contexto": ["..."], "repercussao": ["..."], "proximos_passos": ["..."], "divergencias": ["..."], "angulos": ["ideias de capítulo que rendem"]}
@@ -456,6 +456,7 @@ function promptEstrutura(materia, segundos, tipo, extras) {
 
 TAREFA: planejar um vídeo de ~${Math.round(segundos / 60)} minutos (~${palavras} palavras narradas) sobre o tema/matéria abaixo. ${tipo === 'auto' ? 'Escolha o formato que rende mais (curiosidades, top, dicas ou lançamentos).' : `Formato: ${TIPOS_YT[tipo]}.`}
 PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, números, nomes de pessoas e estúdios, bastidores). Nada inventado: se não tiver certeza, não use.
+NUNCA cite outros canais, youtubers, streamers ou influenciadores pelo nome (nem como repercussão).
 A MATÉRIA é a referência central: o vídeo é sobre ela. A PESQUISA COMPLEMENTAR (quando houver) enriquece com contexto, números, linha do tempo e repercussão — use bastante, mas nunca contradiga a matéria (em conflito, fique com a matéria). Distribua os NÚMEROS de impacto pelos capítulos: eles viram gráficos animados na tela.
 
 Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
@@ -471,7 +472,7 @@ ${(materia.texto || '').slice(0, 12000)}
 ${extras ? `\nOUTRAS FONTES\n${extras.slice(0, 14000)}` : ''}`;
 }
 
-const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Para cada cena:
+const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Nunca cite outros canais, youtubers, streamers ou influenciadores pelo nome. Para cada cena:
 - "texto": o que será falado — português do Brasil falado, natural e animado, como quem conta para um amigo gamer; frases curtas; números em algarismos; sem emojis, sem aspas, sem "neste vídeo";
 - "destaques": 1 a 3 expressões copiadas do texto que merecem destaque na legenda;
 - "assunto": o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null;
