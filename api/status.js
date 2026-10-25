@@ -65,5 +65,6 @@ module.exports = (req, res) => responder(res, async () => {
     temProjeto: !!asset('projeto.json'),
     temPrevia: !!asset('voz_previa.mp3'),
     temLimpo: !!asset('limpo.mp4'),
+    thumbs: ['thumb_1.jpg', 'thumb_2.jpg', 'thumb_3.jpg'].map(link).filter(Boolean),
   };
 });

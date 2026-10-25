@@ -1,1 +1,52 @@
-{"id": "2026-10-24-bg3-sem-review", "remover_arquivos": ["baldursgate3_g_*"]}
+{
+ "id": "2026-10-24-thumbs-titulos",
+ "projeto": {
+  "post": {
+   "legenda": "A Electronic Arts confirmou o fechamento definitivo da BioWare após 31 anos de história, cancelando o próximo Mass Effect e cortando centenas de empregos. Ao mesmo tempo, uma reestruturação bilionária coloca a Respawn e a DICE juntas no desenvolvimento de um aguardado novo Star Wars: Battlefront.\n\nNeste vídeo, analisamos todo o histórico da BioWare, os motivos que levaram ao cancelamento do novo Mass Effect e o que podemos esperar desse novo capítulo nos games de Star Wars. Você sente mais falta de um novo Mass Effect ou prefere ver a chegada de Star Wars Battlefront 3?",
+   "hashtags": [
+    "bioware",
+    "mass effect",
+    "star wars battlefront 3",
+    "electronic arts",
+    "ea games",
+    "mass effect 5",
+    "respawn entertainment",
+    "dice",
+    "dragon age",
+    "kotor",
+    "jogando sem plano",
+    "noticias games",
+    "cancelamento mass effect"
+   ],
+   "titulo_yt": "O Fim da BioWare e a Reviravolta em Mass Effect e Star Wars",
+   "titulos": [
+    {
+     "titulo": "O VERDADEIRO motivo da EA ter acabado com a BioWare",
+     "estrategia": "curiosidade"
+    },
+    {
+     "titulo": "BioWare FECHOU: o que acontece com Mass Effect e Star Wars?",
+     "estrategia": "busca"
+    },
+    {
+     "titulo": "É o FIM da BioWare: 31 anos de RPGs que marcaram gerações",
+     "estrategia": "emoção"
+    }
+   ]
+  },
+  "thumbs": [
+   {
+    "texto": "BIOWARE ACABOU?",
+    "destaque": "ACABOU"
+   },
+   {
+    "texto": "A EA FECHOU TUDO",
+    "destaque": "FECHOU"
+   },
+   {
+    "texto": "",
+    "destaque": ""
+   }
+  ]
+ }
+}

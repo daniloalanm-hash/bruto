@@ -415,10 +415,10 @@ PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, 
 
 Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
 
-Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários) e "tags" (10 a 15 tags).
+Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulos" (3 opções de título para o teste A/B do YouTube, cada uma com uma estratégia: "curiosidade" (lacuna que só o vídeo responde), "busca" (o que a pessoa digita no YouTube, palavra-chave no começo) e "emoção" (urgência/choque/nostalgia, sem mentir); até 70 caracteres, 1 ou 2 palavras em MAIÚSCULAS no máximo), "thumbs" (3 frases para a thumbnail, 2 a 4 palavras em MAIÚSCULAS, de impacto, que COMPLETAM o título sem repetir — ex.: "BIOWARE ACABOU DE VEZ", "A EA FECHOU TUDO"; para cada uma, "destaque" = a palavra que vai em amarelo), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários) e "tags" (10 a 15 tags).
 
 Responda SOMENTE com JSON, sem texto fora dele:
-{"titulo": "...", "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": {"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "tags": ["..."]}
+{"titulo": "...", "titulos": [{"titulo": "...", "estrategia": "curiosidade"}, {"titulo": "...", "estrategia": "busca"}, {"titulo": "...", "estrategia": "emoção"}], "thumbs": [{"texto": "...", "destaque": "..."}], "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": {"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "tags": ["..."]}
 
 TEMA / MATÉRIA
 ${materia.titulo || ''}
@@ -513,7 +513,9 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     jogos: (plano.jogos || []).filter(Boolean),
     cenas,
     formato: 'horizontal',
-    post: { legenda: plano.descricao || '', hashtags: (plano.tags || []).map(String), titulo_yt: plano.titulo || '' },
+    post: { legenda: plano.descricao || '', hashtags: (plano.tags || []).map(String), titulo_yt: plano.titulo || '',
+      titulos: (plano.titulos || []).filter((t) => t && t.titulo).slice(0, 3).map((t) => ({ titulo: String(t.titulo).slice(0, 100), estrategia: String(t.estrategia || '') })) },
+    thumbs: (plano.thumbs || []).filter((t) => t && t.texto).slice(0, 3).map((t) => ({ texto: String(t.texto).slice(0, 40), destaque: String(t.destaque || '') })),
   };
 }
 
@@ -1093,6 +1095,7 @@ function montarJob() {
     jogos: r.jogos,
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
+    ...(r.thumbs?.length ? { thumbs: r.thumbs } : {}),
     imagens_materia: state.materia?.imagens || [],
     materia: state.materia ? { titulo: state.materia.titulo || '', url: state.materia.url || '', site: state.materia.site || '',
       steam: state.materia.steam || steamIds(state.materia.texto) } : null,
@@ -1341,6 +1344,25 @@ function mostrarVideo(s) {
   state.cenasImg = s.cenas;
   state.temPrevia = !!s.temPrevia;
   state.temLimpo = !!s.temLimpo;
+  state.thumbs = s.thumbs || [];
+  renderThumbs();
+}
+
+// YouTube: 3 thumbnails (manchete, trio, épica) + 3 títulos com estratégias diferentes, para o "Testar e comparar"
+function renderThumbs() {
+  const p = state.projeto;
+  const ths = state.thumbs || [];
+  const tits = (p?.post?.titulos || []).filter((t) => t && t.titulo);
+  const box = $('#boxThumbs');
+  if (!box) return;
+  box.hidden = !(ths.length || tits.length) || (p && p.formato !== 'horizontal');
+  const nomes = ['Manchete', 'Jogos lado a lado', 'Épica (sem texto)'];
+  $('#thumbsGrid').replaceChildren(...ths.map((u, i) => h('figure', { class: 'thumb-item' },
+    h('a', { href: u, target: '_blank', rel: 'noopener', title: 'Abrir em tamanho real' }, h('img', { src: u, alt: `Thumbnail ${i + 1}`, loading: 'lazy' })),
+    h('figcaption', { class: 'muted small' }, `${i + 1}. ${nomes[i] || ''} · `, h('a', { href: u, download: `thumb_${i + 1}.jpg` }, 'baixar')))));
+  $('#titulosYt').replaceChildren(...tits.map((t) => h('li', {},
+    h('b', {}, t.titulo), h('span', { class: 'muted small' }, ` · ${t.estrategia || ''} · ${t.titulo.length} caracteres `),
+    h('button', { class: 'btn small', onclick: () => { navigator.clipboard.writeText(t.titulo); toast('Título copiado.'); } }, 'Copiar'))));
 }
 
 async function carregarProjeto() {
@@ -1407,6 +1429,7 @@ function renderPost() {
     const tags = (post?.hashtags || []).map((x) => x.replace(/^#/, '')).join(', ');
     texto = [post?.titulo_yt || p.titulo || '', post?.legenda || '', capitulos, tags ? `Tags: ${tags}` : ''].filter(Boolean).join('\n\n');
   }
+  renderThumbs();
   $('#textoPost').value = creditos.length && !texto.includes('Wikimedia') ? `${texto}\n\nFotos: ${creditos.join('; ')}` : texto;
   $('#boxPost').hidden = false;
 }

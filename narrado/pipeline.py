@@ -577,6 +577,7 @@ def preparar(pasta, st):
         # aparência (a tela permite mudar e re-renderizar)
         "titulo_tela": (job.get("titulo_tela") or "").strip(), "titulo_gancho": bool(job.get("titulo_tela")),
         "post": job.get("post") or {},
+        "thumbs": job.get("thumbs") or [],
         **{k: job[k] for k in ESTILO_PADRAO if k in job},
     }
     if projeto["formato"] == "horizontal":
@@ -656,10 +657,34 @@ def aplicar_ajustes(projeto):
     print(f"ajustes aplicados: {aj}", flush=True)
 
 
+def so_thumbs(pasta, st):
+    """Só as thumbnails (rápido): refaz as 3 a partir do material do vídeo e publica com o projeto."""
+    projeto = ler(os.path.join(pasta, "projeto.json"))
+    aplicar_ajustes(projeto)
+    st.etapa("Preparando o material", 5)
+    garantir_material(projeto)
+    st.etapa("Gerando as thumbnails", 50)
+    import thumbs
+    arqs = thumbs.gerar(projeto, RAW, FONTES, pasta)
+    projeto["thumbs_arquivos"] = [os.path.basename(x) for x in arqs]
+    gravar(os.path.join(pasta, "projeto.json"), projeto)
+    pub = publicador()
+    if pub and arqs:
+        pub(os.path.join(pasta, "projeto.json"), *arqs)
+    st.pronto({"versao": projeto.get("versao"), "duracao": projeto.get("duracao")})
+
+
 def rerender(pasta, st):
     projeto = ler(os.path.join(pasta, "projeto.json"))
     aplicar_ajustes(projeto)
     st.etapa("Preparando o material", 5)
+    garantir_material(projeto)
+    projeto["versao"] = int(projeto.get("versao", 1)) + 1
+    finalizar(pasta, projeto, os.path.join(pasta, projeto["voz"]["arquivo"]), st, 20)
+
+
+def garantir_material(projeto):
+    """Material do banco que não está no cache do servidor: baixa de novo (Steam, links, biblioteca, Commons)."""
     falta = [m for m in projeto["banco"].values() if not os.path.exists(os.path.join(RAW, m["arquivo"]))]
     # YouTube usa o som do trailer (pausa com o jogo, modo corrido): trailer antigo do cache veio sem som
     sem_som = projeto.get("formato") == "horizontal" and any(
@@ -684,8 +709,6 @@ def rerender(pasta, st):
     urls = [m["url"] for m in falta if m.get("jogo") == "materia" and m.get("url")]
     if urls:
         assets.baixar_imagens_materia(urls, RAW)
-    projeto["versao"] = int(projeto.get("versao", 1)) + 1
-    finalizar(pasta, projeto, os.path.join(pasta, projeto["voz"]["arquivo"]), st, 20)
 
 
 def integrar_proprias(pasta, projeto):
@@ -760,6 +783,15 @@ def finalizar(pasta, projeto, audio, st, p0):
                                       FONTES, prog)
     projeto["timeline"] = usados
     projeto["duracao"] = round(total, 2)
+    thumbs_arq = []
+    if projeto.get("formato") == "horizontal":
+        st.etapa("Gerando as thumbnails", 96)
+        try:
+            import thumbs
+            thumbs_arq = thumbs.gerar(projeto, RAW, FONTES, pasta)
+            projeto["thumbs_arquivos"] = [os.path.basename(x) for x in thumbs_arq]
+        except Exception as e:
+            print(f"aviso: thumbnails não geradas: {e}", flush=True)
     gravar(os.path.join(pasta, "projeto.json"), projeto)
     pub = publicador()
     if pub:
@@ -770,7 +802,7 @@ def finalizar(pasta, projeto, audio, st, p0):
             print(f"aviso: prévia de voz não gerada: {e}")
         arquivos = [os.path.join(pasta, x) for x in ("final.mp4", "projeto.json", "cenas.jpg", "voz_ia.mp3",
                                                      "voz_previa.mp3", "limpo.mp4")
-                    if os.path.exists(os.path.join(pasta, x))]
+                    if os.path.exists(os.path.join(pasta, x))] + thumbs_arq
         pub(*arquivos)
     st.pronto({"versao": projeto["versao"], "duracao": projeto["duracao"]})
 
@@ -1008,7 +1040,7 @@ def main():
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])

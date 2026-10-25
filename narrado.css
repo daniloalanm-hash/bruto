@@ -198,3 +198,8 @@ audio { width: 100%; }
 .video-grid.horizontal { grid-template-columns: minmax(0, 1fr); }
 .video-grid.horizontal .tela-video { position: static; }
 .video-grid.horizontal .moldura { aspect-ratio: 16 / 9; }
+.thumbs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.thumb-item { margin: 0; }
+.thumb-item img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; display: block; }
+.titulos-yt { margin: 12px 0 6px; padding-left: 20px; display: grid; gap: 6px; }
+.titulos-yt li b { margin-right: 4px; }
