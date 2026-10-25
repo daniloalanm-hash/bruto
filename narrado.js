@@ -472,7 +472,7 @@ PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, 
 NUNCA cite outros canais, youtubers, streamers ou influenciadores pelo nome (nem como repercussão).
 A MATÉRIA é a referência central: o vídeo é sobre ela. A PESQUISA COMPLEMENTAR (quando houver) enriquece com contexto, números, linha do tempo e repercussão — use bastante, mas nunca contradiga a matéria (em conflito, fique com a matéria). Distribua os NÚMEROS de impacto pelos capítulos: eles viram gráficos animados na tela.
 
-Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
+Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados — cada fato em UM capítulo só: nada se repete entre capítulos, e cada capítulo tem um assunto que os outros não têm), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
 
 Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulos" (3 opções de título para o teste A/B do YouTube, cada uma com uma estratégia: "curiosidade" (lacuna que só o vídeo responde), "busca" (o que a pessoa digita no YouTube, palavra-chave no começo) e "emoção" (urgência/choque/nostalgia, sem mentir); até 70 caracteres, 1 ou 2 palavras em MAIÚSCULAS no máximo), "thumbs" (3 textos para as 3 thumbnails do teste A/B, em MAIÚSCULAS, que COMPLETAM o título sem repetir — padrão dos vídeos de games com mais views: a 1ª e a 2ª com 2 ou 3 palavras no máximo (pergunta/choque, ex.: "BIOWARE ACABOU?", "EA FECHOU TUDO", "AUGE E QUEDA", "-400 MILHÕES"); a 3ª com UMA palavra só, de impacto (ex.: "FIM.", "ACABOU", "FALIU", "RIP"); para cada uma, "destaque" = a palavra que vai em amarelo), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários), "comentario" (1º comentário para o canal fixar: uma pergunta polêmica ou de opinião sobre o tema, curta, que dá vontade de responder — ex.: "Qual jogo da BioWare marcou a sua vida? 👇") e "tags" (10 a 15 tags).
 
@@ -496,11 +496,11 @@ const VOZ_CANAL = `COMO O CANAL FALA (o mais importante):
 - Use só os fatos que rendem história — não precisa encaixar todos. Melhor 3 fatos bem contados que 8 empilhados.
 - Escreva o capítulo como um texto falado CONTÍNUO e só depois divida em cenas: cada cena continua a conversa da anterior.
 
-EXEMPLO DO TOM (outro vídeo, não copie o conteúdo):
-"O GTA 6 só chega em novembro. Mas um brasileiro não quis esperar: ele fez o próprio GTA. E ele se passa em Santa Catarina."
-"O jogo se passa em São Catarino, um estado fictício inspirado em Santa Catarina. E aqui vem a sacada: a ilha é gerada do zero a cada partida."
-"E o humor é muito brasileiro: são mais de 50 lojas, com nomes como Analanche, Espetinho de Gato e Farma Aura. O ônibus? É da Transpobre."
-"Mas, se a CLT apertar, tem a dark web: lá aparecem trabalhos de agiota e de matador de aluguel. A pergunta é qual caminho você vai seguir."`;
+MOLDES DE FRASE (só o jeito de falar — os [colchetes] são preenchidos com fatos DESTE vídeo, nunca invente):
+"[Fato que todo mundo conhece]. Mas [virada]: [o fato surpreendente]."
+"E aqui vem a sacada: [o detalhe que muda tudo]."
+"E o [aspecto] é muito [característica]: [2 ou 3 exemplos concretos]. O [outro exemplo]? [punchline curta]."
+"Mas, se [situação], tem [alternativa]: [o que acontece]. A pergunta é [pergunta para quem assiste]."`;
 
 const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Nunca cite outros canais, youtubers, streamers ou influenciadores pelo nome. Para cada cena:
 - "texto": o que será falado — português do Brasil falado, natural e animado, como quem conta para um amigo gamer; frases curtas; números em algarismos; sem emojis, sem aspas, sem "neste vídeo";
@@ -513,7 +513,8 @@ const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Nunca cit
 function promptAbertura(plano, palavras) {
   return `Você escreve para o canal de YouTube "${CANAL}". Escreva a ABERTURA do vídeo "${plano.titulo}" com ~${palavras} palavras, dividida em 3 a 5 cenas:
 1. gancho nos primeiros 10 segundos (a promessa mais forte: ${plano.gancho || ''}) — a primeira frase tem no máximo 14 palavras, diz o ASSUNTO do título pelo nome (${(plano.jogos || []).slice(0, 1).join('') || 'o tema'}) e cumpre a promessa dos títulos/thumbs (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) — quem clicou precisa ter certeza nos primeiros segundos de que está no vídeo certo; nada de saudação ("olá", "fala galera") antes disso;
-2. o que a pessoa vai descobrir no vídeo (cite 2 ou 3 coisas dos capítulos, sem entregar o melhor) e por que ficar até o fim;
+2. o que a pessoa vai descobrir no vídeo (PROVOQUE 2 ou 3 coisas dos capítulos sem contar os detalhes — eles serão contados nos capítulos; nada de adiantar números e nomes) e por que ficar até o fim;
+Só fatos que estão no plano abaixo — não invente nada.
 3. UMA frase de apresentação do canal, natural: "Aqui no ${CANAL}..." + um pedido rápido de inscrição.
 
 Capítulos do vídeo: ${plano.capitulos.map((c) => c.titulo).join(' | ')}
@@ -527,11 +528,19 @@ Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "as
 
 function promptCapitulo(plano, i, anterior) {
   const c = plano.capitulos[i];
+  // os capítulos são escritos ao mesmo tempo: cada um sabe o que os outros contam, para não repetir
+  const outros = plano.capitulos.map((x, k) => (k === i ? null : `- "${x.titulo}": ${(x.fatos || []).slice(0, 6).join(' • ')}`))
+    .filter(Boolean).join('\n');
   const ultimo = i === plano.capitulos.length - 1;
   const meio = i === Math.floor(plano.capitulos.length / 2);
   return `Você escreve para o canal de YouTube "${CANAL}". Vídeo: "${plano.titulo}".
 Escreva o CAPÍTULO ${i + 1} de ${plano.capitulos.length}: "${c.titulo}", com ~${c.palavras || 150} palavras, dividido em cenas.
-Fatos disponíveis (escolha os que rendem história; números e nomes exatos): ${(c.fatos || []).join(' • ')}
+Fatos DESTE capítulo (escolha os que rendem história; números e nomes exatos): ${(c.fatos || []).join(' • ')}
+
+O QUE OS OUTROS CAPÍTULOS JÁ CONTAM (NÃO repita nem reconte; no máximo uma referência de 3 palavras):
+${outros}
+A abertura já apresentou o assunto: não reapresente o jogo/tema do zero (nada de "o X é um jogo de…" se ele já foi apresentado).
+NÃO INVENTE: só fatos que estão na lista DESTE capítulo. Nenhum nome, número, data, recurso ou detalhe que não esteja lá. Se faltar assunto, escreva menos palavras — nunca encha.
 Jogos deste capítulo: ${(c.jogos || plano.jogos || []).join(', ')}
 
 Regras do capítulo:
@@ -614,6 +623,7 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     for (const c of cs) if (!c.assunto && jogoCap) c.assunto = jogoCap;
     cenas.push(...cs);
   }
+  tirarRepetidas(cenas);
   return {
     titulo: plano.titulo || materia.titulo || '',
     titulo_tela: String(plano.titulo_tela || '').trim(),
@@ -625,6 +635,34 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
       titulos: (plano.titulos || []).filter((t) => t && t.titulo).slice(0, 3).map((t) => ({ titulo: String(t.titulo).slice(0, 100), estrategia: String(t.estrategia || '') })) },
     thumbs: (plano.thumbs || []).filter((t) => t && t.texto).slice(0, 3).map((t) => ({ texto: String(t.texto).slice(0, 40), destaque: String(t.destaque || '') })),
   };
+}
+
+// rede de segurança contra repetição: frase que diz quase o mesmo que outra já dita sai do roteiro
+// (comparação por trincas de palavras; começo de capítulo nunca sai, só perde a frase repetida)
+function tirarRepetidas(cenas) {
+  const sem = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ');
+  const trincas = (t) => { const w = sem(t).split(/\s+/).filter((x) => x.length > 2); const r = new Set(); for (let i = 0; i + 2 < w.length; i++) r.add(w.slice(i, i + 3).join(' ')); return r; };
+  const vistas = [];
+  const parecida = (fr) => {
+    const a = trincas(fr);
+    if (a.size < 3) return false;
+    return vistas.some((b) => { let n = 0; for (const x of a) if (b.has(x)) n++; return n / a.size >= 0.5; });
+  };
+  let tiradas = 0;
+  for (let k = 0; k < cenas.length; k++) {
+    const frases = String(cenas[k].texto || '').match(/[^.!?]+[.!?]*/g) || [];
+    const ficam = frases.filter((fr) => { if (parecida(fr)) { tiradas++; return false; } vistas.push(trincas(fr)); return true; });
+    if (ficam.length !== frases.length) cenas[k].texto = ficam.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  for (let k = cenas.length - 1; k >= 0; k--) {
+    if (!cenas[k].texto && !cenas[k].capitulo && !cenas[k].ficha) cenas.splice(k, 1);
+    else if (!cenas[k].texto && k + 1 < cenas.length && !cenas[k + 1].capitulo) {  // começo de capítulo vazio: herda a próxima cena
+      Object.assign(cenas[k], { texto: cenas[k + 1].texto, destaques: cenas[k + 1].destaques, numero: cenas[k + 1].numero });
+      cenas.splice(k + 1, 1);
+    }
+  }
+  if (tiradas) console.info(`roteiro: ${tiradas} frase(s) repetida(s) removida(s)`);
+  return tiradas;
 }
 
 // fontes do vídeo (descrição do YouTube): a matéria central primeiro + os sites que a pesquisa leu
