@@ -395,6 +395,107 @@ def _info_dm(vid):
 TENTADOS_DM = {}  # chave do jogo -> ids do Dailymotion já baixados (a 2ª rodada pega outros)
 
 
+# ---------------------------------------------------------------- nicho carros
+NICHO = os.environ.get("NARRADO_NICHO", "games")  # "carros": material de montadora, sem som original, sem gente
+RUIM_CARRO = re.compile(r"crash|acidente|accident|batida|toy|brinquedo|hot ?wheels|lego|miniatur|kids|crian|"
+                        r"\bgta\b|forza|gran turismo|need for speed|assetto|beamng|game|jogo|mod\b|unboxing|"
+                        r"compara|\bvs\.?\b|podcast|live|reac|react|parte \d|part \d|leil[aã]o|auction|"
+                        r"rc\b|controle remoto|drift|tuning|tunado|rebaixad|som automotivo|paredão", re.I)
+BOM_CARRO = re.compile(r"exterior|interior|design|driving|on the road|official|oficial|footage|b-?roll|"
+                       r"walkaround|reveal|world premiere|lan[cç]amento|apresenta|first look|4k|uhd", re.I)
+MONTADORAS = re.compile(r"hyundai|toyota|volkswagen|\bvw\b|fiat|jeep|chevrolet|\bgm\b|ford|renault|nissan|honda|"
+                        r"peugeot|citro[eë]n|byd|gwm|caoa|chery|kia|mitsubishi|bmw|mercedes|audi|volvo|porsche|"
+                        r"land rover|jaguar|ram\b|stellantis|motor1|autocar|carwow|press|media|newsroom", re.I)
+
+
+def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
+    """Vídeos de um modelo de carro no Dailymotion: design exterior/interior, rodando, lançamento oficial.
+    Fora: crash test, brinquedo, jogo de corrida, comparativo. Apresentador na câmera sai depois, na análise."""
+    import subprocess
+    import shutil
+    if not shutil.which("yt-dlp"):
+        return []
+    tentados = TENTADOS_DM.setdefault(chave, set())
+    vistos, cands = set(tentados), []
+    termos = ((f"{nome} exterior design", 3), (f"{nome} interior design", 3), (f"{nome} driving", 2),
+              (f"{nome} official", 2), (nome, 1))
+    if extra:
+        termos = ((f"{nome} footage", 3), (f"{nome} on the road", 2), (f"{nome} review", 1), (f"{nome} test drive", 1))
+    for termo, peso in termos:
+        try:
+            d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
+                {"search": termo, "fields": "id,title,duration", "limit": 15, "sort": "relevance"})))
+        except Exception as e:
+            print(f"aviso: busca no Dailymotion falhou ({termo}): {e}")
+            continue
+        for k, v in enumerate(d.get("list", [])):
+            t, dur = v.get("title", ""), v.get("duration") or 0
+            if v["id"] in vistos or not titulo_do_jogo(nome, t) or RUIM_CARRO.search(t) or not 20 <= dur <= 900:
+                continue
+            vistos.add(v["id"])
+            bonus = 2 if BOM_CARRO.search(t) else 0
+            cands.append((-(peso + bonus) + k * 0.1, v["id"], t))
+    cands.sort()
+    avaliados = []
+    for ordem, vid, titulo in cands[:12 if extra else 10]:
+        alt, canal = _info_dm(vid)
+        oficial = bool(MONTADORAS.search(f"{canal}"))
+        nota = (2 if alt >= 1080 else 1.5 if alt >= 720 else 0.3 if alt >= 480 else -1) + (1.5 if oficial else 0) - ordem * 0.2
+        avaliados.append((-nota, alt, vid, titulo))
+        print(f"Dailymotion candidato: {titulo[:60]} | {alt}p | {canal}", flush=True)
+    avaliados.sort()
+    if any(a >= 720 for _, a, _, _ in avaliados):
+        avaliados = [x for x in avaliados if x[1] >= 720]
+    saida = []
+    for _, _alt, vid, titulo in avaliados[: n + 3]:
+        if len(saida) >= n:
+            break
+        tentados.add(vid)
+        i = len(saida) + (10 if extra else 0)
+        p = os.path.join(pasta, f"{chave}_c{i}_{vid}.mp4")
+        if os.path.exists(p):
+            saida.append({"arquivo": p, "nome": titulo})
+            continue
+        tmp = os.path.join(pasta, f"{chave}_c{i}_{vid}.tmp")
+        try:
+            r = subprocess.run(["yt-dlp", f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
+                                "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]",
+                                "--download-sections", f"*0-{TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
+                               capture_output=True, text=True, timeout=240)
+            baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))),
+                           None)
+            if r.returncode != 0 or not baixado:
+                print(f"aviso: Dailymotion não baixou {titulo}: {(r.stderr or '').strip()[-160:]}")
+                continue
+            # carro: o som original nunca vai ao ar (música de comercial dá reivindicação no YouTube)
+            ffmpeg("-i", baixado, "-t", TRECHO_MAX, "-an", "-vf", "scale=-2:'min(1080,ih)'",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
+            os.remove(baixado)
+            print(f"Dailymotion (carro): {titulo} ({int(duracao(p))}s baixados)", flush=True)
+            saida.append({"arquivo": p, "nome": titulo})
+        except Exception as e:
+            print(f"aviso: Dailymotion falhou para {titulo}: {e}")
+    return saida
+
+
+def baixar_carro(nome, pasta, max_videos=3):
+    """Material de um modelo de carro: vídeos (Dailymotion) + fotos de licença livre (Wikimedia Commons)."""
+    os.makedirs(pasta, exist_ok=True)
+    chave = slug(nome)
+    info = {"chave": chave, "nome": nome, "appid": None, "fonte": "Dailymotion", "screens": [], "trailers": []}
+    info["trailers"] = _dailymotion_carro(nome, chave, pasta, n=max(2, min(4, max_videos)))
+    try:
+        for f in imagens_commons(nome, pasta, n=4):
+            info["screens"].append(os.path.join(pasta, f["arquivo"]))
+    except Exception as e:
+        print(f"aviso: fotos do Commons de '{nome}': {e}", flush=True)
+    if not info["screens"] and not info["trailers"]:
+        print(f"aviso: nenhum material encontrado para '{nome}'")
+        return None
+    print(f"{nome} (carro): {len(info['screens'])} fotos, {len(info['trailers'])} vídeos", flush=True)
+    return info
+
+
 def _dailymotion(nome, chave, pasta, n=2, extra=False):
     """Trailer/gameplay no Dailymotion (busca pública + yt-dlp): funciona no servidor de render, onde o YouTube
     bloqueia. Bom para jogo de console e jogo antigo que não estão na Steam."""
@@ -1234,6 +1335,8 @@ def trechos_corridos(video, extra=None):
                 return "texto" if fortes >= 2 or grandes >= 1 else None
             if _fracao_texto_east(q) >= 0.0022:
                 return "texto"
+            if os.environ.get("NARRADO_NICHO") == "carros" and _tem_pessoa(q):
+                return "pessoa"  # apresentador/review na câmera: o canal mostra só o carro
             return None
 
         # logos de estúdio/distribuidora (20th Century Fox, SEGA…) costumam vir nos 10 primeiros segundos
@@ -1279,6 +1382,42 @@ def trechos_corridos(video, extra=None):
     print(f"trailer corrido {os.path.basename(video)}: {dur:.0f}s, {len(planos)} planos, "
           f"{sum(x['dur'] for x in bons):.0f}s aproveitáveis; descartes {conta}", flush=True)
     return bons
+
+
+_yunet_assets = []
+
+
+def _tem_pessoa(png):
+    """Rosto de gente ocupando parte visível do quadro (YuNet). Modelo baixado antes dos processos."""
+    try:
+        import cv2
+        if not _yunet_assets:
+            caminho = os.path.expanduser("~/.cache/narrado/yunet.onnx")
+            _yunet_assets.append(cv2.FaceDetectorYN.create(caminho, "", (640, 360), 0.7) if os.path.exists(caminho) else None)
+        det = _yunet_assets[0]
+        if det is None:
+            return False
+        img = cv2.imread(png)
+        if img is None:
+            return False
+        h, w = img.shape[:2]
+        det.setInputSize((w, h))
+        r = det.detect(img)[1]
+        return r is not None and any(f[2] * f[3] >= 0.006 * w * h for f in r)
+    except Exception:
+        return False
+
+
+def baixar_yunet():
+    caminho = os.path.expanduser("~/.cache/narrado/yunet.onnx")
+    if not os.path.exists(caminho) or os.path.getsize(caminho) < 100_000:
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        tmp = f"{caminho}.{os.getpid()}.tmp"
+        with open(tmp, "wb") as f:
+            f.write(_get("https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/"
+                         "face_detection_yunet/face_detection_yunet_2023mar.onnx", timeout=120))
+        os.replace(tmp, caminho)
+    return caminho
 
 
 def analisar_quadros(pasta_quadros):
@@ -1389,6 +1528,11 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
             _baixar_east()  # antes dos processos: todos usam o mesmo arquivo pronto
         except Exception as e:
             print(f"aviso: modelo EAST não baixou: {e}", flush=True)
+        if os.environ.get("NARRADO_NICHO") == "carros":
+            try:
+                baixar_yunet()
+            except Exception as e:
+                print(f"aviso: detector de rosto não baixou: {e}", flush=True)
         nucleos = os.cpu_count() or 2
         import multiprocessing
         # "spawn": processo novo e limpo (fork depois do OpenCV/ONNX carregado no pai pode travar para sempre)

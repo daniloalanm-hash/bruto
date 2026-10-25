@@ -34,7 +34,8 @@ const fmtT = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart
 const K = {
   gemini: 'bruto:gemini:key', modelo: 'bruto:gemini:model', senha: 'bruto:narrado:senha', rasc: 'bruto:narrado:rascunho',
   estilo: 'bruto:narrado:estilo', lote: 'bruto:narrado:lote', post: 'bruto:narrado:post:', fila: 'bruto:narrado:fila',
-  duracao: 'bruto:narrado:duracao', ritmo: 'bruto:narrado:ritmo',
+  duracao: 'bruto:narrado:duracao', ritmo: 'bruto:narrado:ritmo', canalCarros: 'bruto:narrado:canal-carros',
+  nicho: 'bruto:narrado:nicho',
 };
 // aparência escolhida na aba Cenas vira o padrão dos próximos vídeos
 const CHAVES_ESTILO = ['jl_quadros', 'transicao_gancho', 'titulo_estilo', 'legenda_estilo', 'legenda_cor', 'legenda_altura', 'sfx', 'zoom_enfase', 'emoji',
@@ -410,8 +411,19 @@ function atualizaFormato() {
   try { localStorage.setItem('bruto:narrado:formato', f); } catch { /* sem armazenamento */ }
 }
 $('#formato').addEventListener('change', atualizaFormato);
+// canal do vídeo longo (games ou carros) + nome do canal de carros
+(() => {
+  const sel = $('#nichoYt'), nome = $('#canalCarros');
+  if (!sel) return;
+  sel.value = ls.get(K.nicho) === 'carros' ? 'carros' : 'games';
+  nome.value = ls.get(K.canalCarros) || '';
+  const mostra = () => { $('#campoCanalCarros').hidden = sel.value !== 'carros'; };
+  sel.addEventListener('change', () => { ls.set(K.nicho, sel.value); mostra(); });
+  nome.addEventListener('input', () => ls.set(K.canalCarros, nome.value.trim()));
+  mostra();
+})();
 
-const CANAL = 'Jogando Sem Plano';
+
 // fórmula dos tops de sucesso do YouTube: ~70 s por jogo com o trailer dele rodando por baixo e ~4 s de respiro
 const nItensTop = (segundos) => Math.min(20, Math.max(5, Math.round((segundos - 45) / 72)));
 const palavrasPorItem = (segundos) => Math.round(((segundos - 45) / nItensTop(segundos) - 4) * ritmo());
@@ -426,16 +438,49 @@ const TIPOS_YT = {
   dicas: 'dicas/guia: cada capítulo é uma dica prática, do básico ao avançado, com exemplo concreto',
   lancamentos: 'lançamentos: cada capítulo é um jogo, com data, plataformas, preço e por que vale a atenção',
 };
+// nicho do canal do vídeo longo: games (Jogando Sem Plano) ou carros (canal novo, nome na tela)
+const NICHOS = {
+  games: {
+    canal: 'Jogando Sem Plano', tema: 'games', item: 'jogo', itens: 'jogos', cenas: 'cenas dos jogos (trailers e gameplay)',
+    lojas: 'lojas (Steam, itch.io, site do estúdio)', contexto: 'jogos e franquias de referência, cena do mercado',
+    ficha: '"ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null)',
+    fichaJson: '{"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}',
+    assunto: 'o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null',
+    umItem: 'capítulo de UM jogo (o trailer dele roda por baixo): abra com uma frase que vende o jogo, diga o nome dele cedo, depois premissa/história, como é jogar, "um detalhe interessante é que…" (fato pouco conhecido) e feche com um veredito curto de por que ele está nessa posição',
+    pausa: '"pausa": SÓ no YouTube, quando o trecho fala de algo que vale VER E OUVIR no jogo (uma música, o som/grito de uma criatura, uma cena marcante): segundos (8 a 12) em que a narração para e o jogo aparece com o som dele; senão null. No máximo 1 a cada 2 minutos;',
+    tipos: TIPOS_YT,
+  },
+  carros: {
+    canal: '', tema: 'carros', item: 'carro', itens: 'carros', cenas: 'vídeos oficiais dos carros (exterior, interior, rodando na estrada), sem som original',
+    lojas: 'sites das montadoras, imprensa automotiva, tabela FIPE, consumo do Inmetro, recalls', contexto: 'concorrentes, gerações anteriores, mercado brasileiro',
+    ficha: '"ficha" (SÓ quando o capítulo é sobre UM carro: {"carro": "marca e modelo", "ano": "ano/modelo", "motor": "ex.: 1.0 turbo", "potencia": "ex.: 130 cv", "consumo": "ex.: 12,5 km/l (cidade)", "preco": "ex.: R$ 120 mil (FIPE)"} — pesquise, não chute; campo sem dado confiável fica vazio; senão null)',
+    fichaJson: '{"carro": "...", "ano": "...", "motor": "...", "potencia": "...", "consumo": "...", "preco": "..."}',
+    assunto: 'o modelo de carro que aparece na tela durante esse trecho (marca + modelo, ex.: "Hyundai i30", "Jeep Compass") ou null',
+    umItem: 'capítulo de UM carro (o vídeo dele roda por baixo): diga o nome dele cedo, o que ele entrega (motor, espaço, itens, consumo), um detalhe que pouca gente sabe e um veredito curto (para quem vale e por que está na lista)',
+    pausa: '"pausa": null (canal de carros não para a narração);',
+    tipos: {
+      curiosidades: 'curiosidades/história: cada capítulo é um bloco de curiosidades ou uma fase da história do modelo/marca',
+      top: 'top lista em contagem regressiva (do último ao 1º): cada capítulo é um carro, com o porquê da posição',
+      dicas: 'dicas/guia de compra: cada capítulo é uma dica prática, com exemplo de carro real',
+      lancamentos: 'lançamentos: cada capítulo é um carro, com preço, motor, itens e para quem ele faz sentido',
+    },
+  },
+};
+function nichoYt() { return ($('#nichoYt') && $('#nichoYt').value) === 'carros' ? 'carros' : 'games'; }
+function N(nicho) {
+  const n = NICHOS[nicho || nichoGerando || state.roteiro?.nicho || nichoYt()] || NICHOS.games;
+  return n.tema === 'carros' ? { ...n, canal: (ls.get(K.canalCarros) || '').trim() || 'nosso canal' } : n;
+}
 
 // pesquisa ANTES do roteiro: a matéria do Danilo é a referência central; a IA busca outras notícias e fontes
 // sobre o mesmo assunto para dar contexto, números, linha do tempo e repercussão (roteiro mais robusto)
 function promptPesquisa(materia, extras) {
-  return `Você é o pesquisador do canal de YouTube "${CANAL}" (games). A MATÉRIA CENTRAL abaixo é o assunto do próximo vídeo.
-PESQUISE NA INTERNET outras notícias, sites oficiais, lojas (Steam, itch.io, site do estúdio), entrevistas e repercussão sobre ESTE MESMO assunto, e monte um dossiê para um vídeo de ~10 minutos, com:
+  return `Você é o pesquisador do canal de YouTube "${N().canal}" (${N().tema}). A MATÉRIA CENTRAL abaixo é o assunto do próximo vídeo.
+PESQUISE NA INTERNET outras notícias, sites oficiais, ${N().lojas}, entrevistas e repercussão sobre ESTE MESMO assunto, e monte um dossiê para um vídeo de ~10 minutos, com:
 - fatos novos que a matéria não traz (quem fez, história do projeto, preço, plataformas, versão, números, planos);
 - números de impacto (preço, desconto, tamanho, vendas, jogadores, tempo de desenvolvimento, orçamento, comparações) — cada um com contexto e, quando fizer sentido, um segundo número para comparar;
 - linha do tempo (datas);
-- contexto/história que ajuda a entender (jogos e franquias de referência, cena do mercado);
+- contexto/história que ajuda a entender (${N().contexto});
 - repercussão (criadores, comunidade, críticas, elogios);
 - o que vem depois.
 Regras: só fatos verificáveis, com o site de onde veio; se as fontes divergirem, diga. Nada inventado. Datas e números exatos. Não traga nada sobre outros canais, youtubers, streamers ou influenciadores (quem jogou, comprou ou comentou) — o vídeo nunca cita outros criadores.
@@ -465,19 +510,19 @@ function textoDossie(d) {
 function promptEstrutura(materia, segundos, tipo, extras) {
   // o respiro de ~4 s antes de cada capítulo não tem narração
   const palavras = Math.round((segundos - 4 * nItensTop(segundos)) * ritmo());
-  return `Você é roteirista-chefe do canal de YouTube "${CANAL}" (games, em português do Brasil). Os vídeos são narrados (sem rosto), com cenas dos jogos, e o canal se destaca por vídeos RECHEADOS de informação — curiosidades, histórias de bastidor, top listas, dicas e lançamentos.
+  return `Você é roteirista-chefe do canal de YouTube "${N().canal}" (${N().tema}, em português do Brasil). Os vídeos são narrados (sem rosto), com ${N().cenas}, e o canal se destaca por vídeos RECHEADOS de informação — curiosidades, histórias de bastidor, top listas, dicas e lançamentos.
 
-TAREFA: planejar um vídeo de ~${Math.round(segundos / 60)} minutos (~${palavras} palavras narradas) sobre o tema/matéria abaixo. ${tipo === 'auto' ? 'Escolha o formato que rende mais (curiosidades, top, dicas ou lançamentos).' : `Formato: ${TIPOS_YT[tipo]}.`}
+TAREFA: planejar um vídeo de ~${Math.round(segundos / 60)} minutos (~${palavras} palavras narradas) sobre o tema/matéria abaixo. ${tipo === 'auto' ? 'Escolha o formato que rende mais (curiosidades, top, dicas ou lançamentos).' : `Formato: ${N().tipos[tipo]}.`}
 PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, números, nomes de pessoas e estúdios, bastidores). Nada inventado: se não tiver certeza, não use.
 NUNCA cite outros canais, youtubers, streamers ou influenciadores pelo nome (nem como repercussão).
 A MATÉRIA é a referência central: o vídeo é sobre ela. A PESQUISA COMPLEMENTAR (quando houver) enriquece com contexto, números, linha do tempo e repercussão — use bastante, mas nunca contradiga a matéria (em conflito, fique com a matéria). Distribua os NÚMEROS de impacto pelos capítulos: eles viram gráficos animados na tela.
 
-Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados — cada fato em UM capítulo só: nada se repete entre capítulos, e cada capítulo tem um assunto que os outros não têm), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
+Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), ${N().ficha}, "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados — cada fato em UM capítulo só: nada se repete entre capítulos, e cada capítulo tem um assunto que os outros não têm), "jogos" (${N().itens} que aparecem na tela nesse capítulo — ${N().item === 'carro' ? 'marca + modelo' : 'nome como na Steam'}) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
 
 Também: "titulo" do vídeo (para SEO no YouTube, até 70 caracteres, com o nome do jogo/tema e um gancho), "titulos" (3 opções de título para o teste A/B do YouTube, cada uma com uma estratégia: "curiosidade" (lacuna que só o vídeo responde), "busca" (o que a pessoa digita no YouTube, palavra-chave no começo) e "emoção" (urgência/choque/nostalgia, sem mentir); até 70 caracteres, 1 ou 2 palavras em MAIÚSCULAS no máximo), "thumbs" (3 textos para as 3 thumbnails do teste A/B, em MAIÚSCULAS, que COMPLETAM o título sem repetir — padrão dos vídeos de games com mais views: a 1ª e a 2ª com 2 ou 3 palavras no máximo (pergunta/choque, ex.: "BIOWARE ACABOU?", "EA FECHOU TUDO", "AUGE E QUEDA", "-400 MILHÕES"); a 3ª com UMA palavra só, de impacto (ex.: "FIM.", "ACABOU", "FALIU", "RIP"); para cada uma, "destaque" = a palavra que vai em amarelo), "titulo_tela" (3 a 6 palavras em MAIÚSCULAS para os primeiros segundos), "jogos" (todos os jogos do vídeo, o principal primeiro), "gancho" (a ideia de abertura: a promessa mais forte do vídeo), "descricao" (descrição do YouTube: 2 parágrafos curtos com as palavras-chave + pergunta para os comentários), "comentario" (1º comentário para o canal fixar: uma pergunta polêmica ou de opinião sobre o tema, curta, que dá vontade de responder — ex.: "Qual jogo da BioWare marcou a sua vida? 👇") e "tags" (10 a 15 tags).
 
 Responda SOMENTE com JSON, sem texto fora dele:
-{"titulo": "...", "titulos": [{"titulo": "...", "estrategia": "curiosidade"}, {"titulo": "...", "estrategia": "busca"}, {"titulo": "...", "estrategia": "emoção"}], "thumbs": [{"texto": "...", "destaque": "..."}], "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": {"jogo": "...", "lancamento": "...", "plataformas": "...", "dublagem": "Sim", "legendas": "Sim"}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "comentario": "...", "tags": ["..."]}
+{"titulo": "...", "titulos": [{"titulo": "...", "estrategia": "curiosidade"}, {"titulo": "...", "estrategia": "busca"}, {"titulo": "...", "estrategia": "emoção"}], "thumbs": [{"texto": "...", "destaque": "..."}], "titulo_tela": "...", "jogos": ["..."], "gancho": "...", "capitulos": [{"titulo": "...", "ficha": ${N().fichaJson}, "fatos": ["..."], "jogos": ["..."], "palavras": ${palavrasPorItem(segundos)}}], "descricao": "...", "comentario": "...", "tags": ["..."]}
 
 TEMA / MATÉRIA
 ${materia.titulo || ''}
@@ -502,26 +547,26 @@ MOLDES DE FRASE (só o jeito de falar — os [colchetes] são preenchidos com fa
 "E o [aspecto] é muito [característica]: [2 ou 3 exemplos concretos]. O [outro exemplo]? [punchline curta]."
 "Mas, se [situação], tem [alternativa]: [o que acontece]. A pergunta é [pergunta para quem assiste]."`;
 
-const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Nunca cite outros canais, youtubers, streamers ou influenciadores pelo nome. Para cada cena:
+const regrasCena = () => `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Nunca cite outros canais, youtubers, streamers ou influenciadores pelo nome. Para cada cena:
 - "texto": o que será falado — português do Brasil falado, natural e animado, como quem conta para um amigo gamer; frases curtas; números em algarismos; sem emojis, sem aspas, sem "neste vídeo";
 - "destaques": 1 a 3 expressões copiadas do texto que merecem destaque na legenda;
-- "assunto": o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null;
+- "assunto": ${N().assunto};
 - "imagem": SÓ quando o trecho cita pelo nome um console/aparelho ou uma pessoa real (ex.: "PlayStation 1", "Steam Deck", "Hideo Kojima", "Ridley Scott") — o nome exato para buscar foto real. Empresa, estúdio, publisher, filme ou objeto genérico: null (vira foto aleatória). Na dúvida, null;
-- "pausa": SÓ no YouTube, quando o trecho fala de algo que vale VER E OUVIR no jogo (uma música, o som/grito de uma criatura, uma cena marcante): segundos (8 a 12) em que a narração para e o jogo aparece com o som dele; senão null. No máximo 1 a cada 2 minutos;
+- ${N().pausa}
 - "numero": se houver UM número de impacto (dinheiro, %, quantidade grande, tamanho, placar), {"valor": "como está no texto", "rotulo": "2 a 5 palavras", "comparar": {"valor": "...", "rotulo": "..."} ou null (um 2º número falado no mesmo trecho para comparar: preço cheio × promoção, antes × depois, custo × faturamento)}; senão null. Esses números viram gráfico animado na tela: no YouTube, procure ter pelo menos 1 por capítulo quando houver dado real.`;
 
 function promptAbertura(plano, palavras) {
-  return `Você escreve para o canal de YouTube "${CANAL}". Escreva a ABERTURA do vídeo "${plano.titulo}" com ~${palavras} palavras, dividida em 3 a 5 cenas:
+  return `Você escreve para o canal de YouTube "${N().canal}". Escreva a ABERTURA do vídeo "${plano.titulo}" com ~${palavras} palavras, dividida em 3 a 5 cenas:
 1. gancho nos primeiros 10 segundos (a promessa mais forte: ${plano.gancho || ''}) — a primeira frase tem no máximo 14 palavras, diz o ASSUNTO do título pelo nome (${(plano.jogos || []).slice(0, 1).join('') || 'o tema'}) e cumpre a promessa dos títulos/thumbs (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) — quem clicou precisa ter certeza nos primeiros segundos de que está no vídeo certo; nada de saudação ("olá", "fala galera") antes disso;
 2. o que a pessoa vai descobrir no vídeo (PROVOQUE 2 ou 3 coisas dos capítulos sem contar os detalhes — eles serão contados nos capítulos; nada de adiantar números e nomes) e por que ficar até o fim;
 Só fatos que estão no plano abaixo — não invente nada.
-3. UMA frase de apresentação do canal, natural: "Aqui no ${CANAL}..." + um pedido rápido de inscrição.
+3. UMA frase de apresentação do canal, natural: "Aqui no ${N().canal}..." + um pedido rápido de inscrição.
 
 Capítulos do vídeo: ${plano.capitulos.map((c) => c.titulo).join(' | ')}
 
 ${VOZ_CANAL}
 
-${REGRAS_CENA}
+${regrasCena()}
 
 Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": null, "imagem": null, "numero": null}]}`;
 }
@@ -533,7 +578,7 @@ function promptCapitulo(plano, i, anterior) {
     .filter(Boolean).join('\n');
   const ultimo = i === plano.capitulos.length - 1;
   const meio = i === Math.floor(plano.capitulos.length / 2);
-  return `Você escreve para o canal de YouTube "${CANAL}". Vídeo: "${plano.titulo}".
+  return `Você escreve para o canal de YouTube "${N().canal}". Vídeo: "${plano.titulo}".
 Escreva o CAPÍTULO ${i + 1} de ${plano.capitulos.length}: "${c.titulo}", com ~${c.palavras || 150} palavras, dividido em cenas.
 Fatos DESTE capítulo (escolha os que rendem história; números e nomes exatos): ${(c.fatos || []).join(' • ')}
 
@@ -546,13 +591,13 @@ Jogos deste capítulo: ${(c.jogos || plano.jogos || []).join(', ')}
 Regras do capítulo:
 - comece emendando com o fim do trecho anterior ("${(anterior || '').slice(-200)}") — sem repetir, sem "no capítulo anterior";
 - ritmo de YouTube: arme a curiosidade, conte o detalhe, diga por que isso importa para quem joga; nada de enrolação;
-${c.ficha ? `- capítulo de UM jogo (o trailer dele roda por baixo): abra com uma frase que vende o jogo, diga o nome dele cedo, depois premissa/história, como é jogar, "um detalhe interessante é que…" (fato pouco conhecido) e feche com um veredito curto de por que ele está nessa posição;` : ''}
+${c.ficha ? `- ${N().umItem};` : ''}
 ${ultimo ? `- este é o ÚLTIMO capítulo: entregue a revelação mais forte prometida no começo e feche o vídeo: uma pergunta específica para os comentários + pedido de inscrição e like + "e assiste esse outro vídeo aqui" (tela final);` : '- termine puxando o assunto do próximo capítulo de forma ESPECÍFICA (o que vem, sem contar); nada de frase genérica e nunca a palavra "capítulo";'}
 ${meio ? '- no meio deste capítulo, uma frase curta e natural pedindo para se inscrever no canal (sem interromper a história);' : ''}
 
 ${VOZ_CANAL}
 
-${REGRAS_CENA}
+${regrasCena()}
 
 Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "assunto": "...", "imagem": null, "pausa": null, "numero": null}]}`;
 }
@@ -560,11 +605,11 @@ Responda SOMENTE com JSON: {"cenas": [{"texto": "...", "destaques": ["..."], "as
 // roteiro INTEIRO numa chamada só: a IA vê o texto todo enquanto escreve (sem repetir nem reapresentar o assunto,
 // emendas naturais). Capítulo a capítulo fica só como plano B.
 function promptRoteiroInteiro(plano, palavrasAbertura, totalPalavras) {
-  const caps = plano.capitulos.map((c, i) => `${i + 1}. "${c.titulo}" (~${c.palavras || 150} palavras) — fatos: ${(c.fatos || []).join(' • ')} — jogos na tela: ${(c.jogos || plano.jogos || []).join(', ')}${c.ficha ? ' — capítulo de UM jogo: diga o nome dele cedo, premissa, como é jogar, um detalhe pouco conhecido, veredito curto' : ''}`).join('\n');
-  return `Você escreve para o canal de YouTube "${CANAL}". Escreva o ROTEIRO COMPLETO do vídeo "${plano.titulo}" (~${totalPalavras} palavras narradas), do começo ao fim, como UM texto falado contínuo, dividido em capítulos e cenas.
+  const caps = plano.capitulos.map((c, i) => `${i + 1}. "${c.titulo}" (~${c.palavras || 150} palavras) — fatos: ${(c.fatos || []).join(' • ')} — jogos na tela: ${(c.jogos || plano.jogos || []).join(', ')}${c.ficha ? ` — ${N().umItem}` : ''}`).join('\n');
+  return `Você escreve para o canal de YouTube "${N().canal}". Escreva o ROTEIRO COMPLETO do vídeo "${plano.titulo}" (~${totalPalavras} palavras narradas), do começo ao fim, como UM texto falado contínuo, dividido em capítulos e cenas.
 
 ESTRUTURA
-- "Introdução" (~${palavrasAbertura} palavras): gancho nos primeiros 10 s (${plano.gancho || ''}) — a 1ª frase tem até 14 palavras e diz o assunto pelo nome; quem clicou pelos títulos (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) tem que saber na hora que está no vídeo certo; sem saudação. Depois PROVOQUE 2 ou 3 coisas que vêm (sem contar) e por que ficar até o fim; feche com UMA frase natural "Aqui no ${CANAL}…" pedindo inscrição.
+- "Introdução" (~${palavrasAbertura} palavras): gancho nos primeiros 10 s (${plano.gancho || ''}) — a 1ª frase tem até 14 palavras e diz o assunto pelo nome; quem clicou pelos títulos (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) tem que saber na hora que está no vídeo certo; sem saudação. Depois PROVOQUE 2 ou 3 coisas que vêm (sem contar) e por que ficar até o fim; feche com UMA frase natural "Aqui no ${N().canal}…" pedindo inscrição.
 - Depois, os capítulos nesta ordem:
 ${caps}
 - No meio do vídeo, uma frase curta pedindo inscrição, sem quebrar a história.
@@ -577,12 +622,31 @@ REGRAS DE CONTEÚDO
 
 ${VOZ_CANAL}
 
-${REGRAS_CENA}
+${regrasCena()}
 
 Responda SOMENTE com JSON: {"capitulos": [{"titulo": "Introdução", "cenas": [{"texto": "...", "destaques": ["..."], "assunto": null, "imagem": null, "pausa": null, "numero": null}]}, {"titulo": "título do 1º capítulo", "cenas": [...]}]}`;
 }
 
+// ficha do capítulo: jogo (lançamento, plataformas, dublagem) ou carro (ano, motor, potência, consumo, preço)
+function normFicha(fi, cap) {
+  if (!fi || typeof fi !== 'object') return null;
+  const corta = (v, n) => String(v || '').slice(0, n);
+  if (fi.carro || fi.motor || fi.preco) {
+    const nome = fi.carro || (cap?.jogos || [])[0];
+    return nome ? { carro: corta(nome, 60), ano: corta(fi.ano, 20), motor: corta(fi.motor, 40), potencia: corta(fi.potencia, 30),
+      consumo: corta(fi.consumo, 40), preco: corta(fi.preco, 40) } : null;
+  }
+  const nome = fi.jogo || (cap?.jogos || [])[0];
+  return nome ? { jogo: corta(nome, 60), lancamento: corta(fi.lancamento, 40), plataformas: corta(fi.plataformas, 70),
+    dublagem: corta(fi.dublagem, 12), legendas: corta(fi.legendas, 12) } : null;
+}
+
+let nichoGerando = null;  // durante a geração vale o canal escolhido agora (não o do roteiro anterior)
 async function roteiroLongo(materia, segundos, onStatus = () => {}) {
+  nichoGerando = nichoYt();
+  try { return { ...(await roteiroLongo0(materia, segundos, onStatus)), nicho: nichoGerando }; } finally { nichoGerando = null; }
+}
+async function roteiroLongo0(materia, segundos, onStatus = () => {}) {
   const tipo = $('#tipoYt').value || 'auto';
   // fontes extras: cada link vira texto (o navegador lê pelo /api/artigo)
   const links = [...new Set($('#fontesExtras').value.split(/\s+/).filter((x) => /^https?:\/\//.test(x)))].slice(0, 6);
@@ -611,12 +675,7 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
   const total = Math.round(segundos * ritmo());
   const cenas = [];
   const norm0 = (x) => roteiroDaIA({ cenas: x.cenas || [] }, materia).cenas;
-  const fichaDe = (i) => {
-    const fi = plano.capitulos[i]?.ficha;
-    return fi && typeof fi === 'object' && (fi.jogo || (plano.capitulos[i].jogos || [])[0])
-      ? { jogo: String(fi.jogo || plano.capitulos[i].jogos[0]).slice(0, 60), lancamento: String(fi.lancamento || '').slice(0, 40),
-        plataformas: String(fi.plataformas || '').slice(0, 70), dublagem: String(fi.dublagem || '').slice(0, 12), legendas: String(fi.legendas || '').slice(0, 12) } : null;
-  };
+  const fichaDe = (i) => normFicha(plano.capitulos[i]?.ficha, plano.capitulos[i]);
   onStatus('Escrevendo o roteiro completo (1 a 2 min)…');
   try {
     const r = await gemini(promptRoteiroInteiro(plano, Math.round(Math.min(total * 0.1, 45 * ritmo())), total), onStatus, { timeout: 170000, semRepetir: true });
@@ -670,11 +729,8 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     const r = prontos[i];
     const cs = norm(r);
     if (cs[0]) cs[0].capitulo = plano.capitulos[i].titulo;
-    const fi = plano.capitulos[i].ficha;
-    if (cs[0] && fi && typeof fi === 'object' && (fi.jogo || (plano.capitulos[i].jogos || [])[0])) {
-      cs[0].ficha = { jogo: String(fi.jogo || plano.capitulos[i].jogos[0]).slice(0, 60), lancamento: String(fi.lancamento || '').slice(0, 40),
-        plataformas: String(fi.plataformas || '').slice(0, 70), dublagem: String(fi.dublagem || '').slice(0, 12), legendas: String(fi.legendas || '').slice(0, 12) };
-    }
+    const fi = normFicha(plano.capitulos[i].ficha, plano.capitulos[i]);
+    if (cs[0] && fi) cs[0].ficha = fi;
     // tópico sem jogo marcado fica no jogo do capítulo (senão aparece o jogo principal no meio de outro item)
     const jogoCap = (plano.capitulos[i].jogos || [])[0] || null;
     for (const c of cs) if (!c.assunto && jogoCap) c.assunto = jogoCap;
@@ -1068,8 +1124,11 @@ function fichaEditor(c) {
   };
   return h('div', { class: 'linha2 ficha-ed' },
     h('span', { class: 'muted small', style: { alignSelf: 'center' } }, `🏷️ Ficha · ${c.capitulo || ''}`),
-    campo('jogo', 'Jogo', 'nome'), campo('lancamento', 'Lançamento', '2026'), campo('plataformas', 'Plataforma', 'PS5, PC…'),
-    campo('dublagem', 'Dublagem PT-BR', 'Sim'), campo('legendas', 'Legendas PT-BR', 'Sim'),
+    ...('carro' in c.ficha
+      ? [campo('carro', 'Carro', 'marca e modelo'), campo('ano', 'Ano', '2024/2025'), campo('motor', 'Motor', '1.0 turbo'),
+        campo('potencia', 'Potência', '130 cv'), campo('consumo', 'Consumo', '12 km/l'), campo('preco', 'Preço', 'R$ 120 mil')]
+      : [campo('jogo', 'Jogo', 'nome'), campo('lancamento', 'Lançamento', '2026'), campo('plataformas', 'Plataforma', 'PS5, PC…'),
+        campo('dublagem', 'Dublagem PT-BR', 'Sim'), campo('legendas', 'Legendas PT-BR', 'Sim')]),
     h('button', { class: 'btn small icon danger', title: 'Tirar a ficha', onclick: () => { delete c.ficha; renderRoteiro(); } }, '✕'));
 }
 /* ---------------- ganchos alternativos ---------------- */
@@ -1346,6 +1405,8 @@ function montarJob() {
       ? { edicao: 'corrido', legenda_estilo: 'nenhuma', musica: false, zoom_enfase: false }
       : (estiloSalvo().legenda_estilo === 'nenhuma' ? { legenda_estilo: 'palavra' } : {})),
     jogos: r.jogos,
+    ...(r.formato === 'horizontal' && r.nicho === 'carros'
+      ? { nicho: 'carros', canal: N('carros').canal, marca_dagua: '', cama_clima: 'suave' } : {}),
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
     ...(r.thumbs?.length ? { thumbs: r.thumbs } : {}),

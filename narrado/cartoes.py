@@ -706,7 +706,7 @@ def titulo_da_ficha(cena, ficha):
     cap = str(cena.get("capitulo") or "")
     # posição só quando é posição de verdade: "12º", "#12", "12." — "31 Anos de História" não é o 31º lugar
     m = re.match(r"\s*(?:top\s*)?(?:#\s*(\d{1,2})|(\d{1,2})\s*[º°ª]|(\d{1,2})\.)(?=\s|[-—:]|$)", cap, re.I)
-    nome = str(ficha.get("jogo") or "").strip() or re.sub(r"^\s*#?\d{1,2}\s*[º°o.]?\s*[-—:]?\s*", "", cap).strip()
+    nome = str(ficha.get("jogo") or ficha.get("carro") or "").strip() or re.sub(r"^\s*#?\d{1,2}\s*[º°o.]?\s*[-—:]?\s*", "", cap).strip()
     return f"{next(g for g in m.groups() if g)}º — {nome}" if m else nome
 
 
@@ -739,5 +739,8 @@ def ficha(titulo, linhas, fontes, destino, escala=1.0):
 
 
 def linhas_da_ficha(f):
+    if any(f.get(k) for k in ("motor", "preco", "potencia", "consumo")):  # ficha de carro
+        rot = [("ano", "Ano"), ("motor", "Motor"), ("potencia", "Potência"), ("consumo", "Consumo"), ("preco", "Preço")]
+        return [f"{r}: {str(f[k]).strip()}" for k, r in rot if str(f.get(k) or "").strip()]
     rot = [("lancamento", "Lançamento"), ("plataformas", "Plataforma"), ("dublagem", "Dublagem PT-BR"), ("legendas", "Legendas PT-BR")]
     return [f"{r}: {str(f[k]).strip()}" for k, r in rot if str(f.get(k) or "").strip()]

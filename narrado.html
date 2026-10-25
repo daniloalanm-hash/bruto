@@ -51,6 +51,17 @@
         <div id="previaMateria" class="previa" hidden></div>
         <div id="boxYoutube" class="box" hidden>
           <p class="small"><b>Vídeo longo para o YouTube.</b> Funciona melhor com curiosidades, top listas, dicas e lançamentos. Pode ser só o tema (ex.: <i>"15 curiosidades de The Witcher 3"</i>) no campo de texto acima — a IA pesquisa na internet e monta capítulos.</p>
+          <div class="row">
+            <label class="field curto"><span>Canal</span>
+              <select id="nichoYt">
+                <option value="games" selected>Jogando Sem Plano (games)</option>
+                <option value="carros">Canal de carros</option>
+              </select>
+            </label>
+            <label class="field" id="campoCanalCarros" hidden><span>Nome do canal de carros</span>
+              <input id="canalCarros" type="text" placeholder="ex.: Garagem Sem Plano">
+            </label>
+          </div>
           <label class="field"><span>Mais fontes (opcional) — links, um por linha</span>
             <textarea id="fontesExtras" rows="3" placeholder="https://…"></textarea>
           </label>

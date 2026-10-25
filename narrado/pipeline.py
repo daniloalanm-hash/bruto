@@ -227,6 +227,8 @@ def garantir_assets(nomes, permitir_vazio=False, trailers=None, steam_ids=()):
         try:
             # links da Steam da matéria: valem para o jogo principal (o 1º) ou quando há um só
             dicas = list(steam_ids) if (steam_ids and (nome == nomes[0] or len(steam_ids) == 1)) else []
+            if os.environ.get("NARRADO_NICHO") == "carros":
+                return assets.baixar_carro(nome, RAW, trailers.get(nome, 3))
             return assets.baixar_jogo(nome, RAW, trailers.get(nome, assets.MAX_TRAILERS), dicas)
         except Exception as e:
             print(f"aviso: falhou ao buscar '{nome}': {e}", flush=True)
@@ -435,8 +437,15 @@ def _banco_cortes(jogos, cenas, nomes, job, pasta, st, prog):
     return banco
 
 
+def definir_nicho(nicho):
+    """Games (padrão) ou carros: muda de onde vem o material e o que a análise descarta."""
+    os.environ["NARRADO_NICHO"] = "carros" if nicho == "carros" else "games"
+    assets.NICHO = os.environ["NARRADO_NICHO"]
+
+
 def preparar(pasta, st):
     job = ler(os.path.join(pasta, "job.json"))
+    definir_nicho(job.get("nicho"))
     cenas = [{"texto": c["texto"].strip(), "destaques": c.get("destaques", []), "assunto": c.get("assunto"),
               **({"emoji": c["emoji"]} if c.get("emoji") else {}),
               # "numero" presente (mesmo null) = a IA já decidiu; ausente (roteiro antigo) = detecta no texto
@@ -496,7 +505,14 @@ def preparar(pasta, st):
                 continue
             if not n_pal and tem > 0:
                 continue
-            st.etapa(f"Buscando gameplay de {j['nome']} (tinha {tem:.0f}s de {precisa:.0f}s)", 26)
+            st.etapa(f"Buscando mais vídeo de {j['nome']} (tinha {tem:.0f}s de {precisa:.0f}s)", 26)
+            if job.get("nicho") == "carros":
+                extras_c = assets._dailymotion_carro(j["nome"], j["chave"], RAW, n=2, extra=True)
+                if extras_c:
+                    banco.update(assets.banco_corrido([dict(j, screens=[], trailers=extras_c)], os.path.join(pasta, "thumbs"),
+                                                      ti0=len(j["trailers"])))
+                    j["trailers"] += extras_c
+                continue
             g = assets.gameplay_longo(j["nome"], j["chave"], RAW)
             if g:
                 banco.update(assets.banco_corrido([dict(j, screens=[], trailers=[g])], os.path.join(pasta, "thumbs"),
@@ -579,6 +595,8 @@ def preparar(pasta, st):
         "post": job.get("post") or {},
         "thumbs": job.get("thumbs") or [],
         **{k: job[k] for k in ESTILO_PADRAO if k in job},
+        **({"nicho": "carros", "som_original": False, "cama_clima": job.get("cama_clima") or "suave",
+            "canal": job.get("canal") or ""} if job.get("nicho") == "carros" else {}),
     }
     if projeto["formato"] == "horizontal":
         # YouTube: sem legenda queimada por padrão (legenda na tela em português pode limitar a entrega fora
@@ -678,6 +696,7 @@ def so_thumbs(pasta, st):
 
 def rerender(pasta, st):
     projeto = ler(os.path.join(pasta, "projeto.json"))
+    definir_nicho(projeto.get("nicho"))
     aplicar_ajustes(projeto)
     st.etapa("Preparando o material", 5)
     garantir_material(projeto)
@@ -1057,13 +1076,48 @@ def teste_steam(pasta, st):
         pub(destino)
 
 
+def teste_carros(pasta, st):
+    """Diagnóstico do nicho carros: baixa material de alguns modelos, roda a análise (sem gente, sem texto) e
+    publica uma folha com um quadro de cada trecho aproveitado (carros_teste.jpg) + o resumo (carros_teste.json)."""
+    from PIL import Image
+    definir_nicho("carros")
+    modelos = ["Hyundai i30", "Jeep Compass", "Toyota Corolla Cross"]
+    infos = garantir_assets(modelos, permitir_vazio=True, trailers={m: 3 for m in modelos})
+    banco = assets.banco_corrido(infos, os.path.join(pasta, "thumbs"))
+    resumo = {j["nome"]: {"videos": [os.path.basename(t["arquivo"]) for t in j["trailers"]], "fotos": len(j["screens"]),
+                          "segundos_bons": round(assets.segundos_de_video(banco, j["chave"]), 1)} for j in infos}
+    quadros = []
+    for k, m in list(banco.items())[:60]:
+        src = os.path.join(RAW, m["arquivo"])
+        q = os.path.join(pasta, f"tc_{len(quadros):03d}.jpg")
+        try:
+            if m["tipo"] == "v":
+                ffmpeg("-ss", f"{m['t'] + m['dur'] / 2:.2f}", "-i", src, "-frames:v", 1, "-vf", "scale=320:180", q)
+            else:
+                ffmpeg("-i", src, "-frames:v", 1, "-vf", "scale=320:180", q)
+            quadros.append(q)
+        except Exception:
+            pass
+    if quadros:
+        cols = 6
+        folha = Image.new("RGB", (cols * 320, ((len(quadros) + cols - 1) // cols) * 180))
+        for i, q in enumerate(quadros):
+            folha.paste(Image.open(q).convert("RGB").resize((320, 180)), ((i % cols) * 320, (i // cols) * 180))
+        folha.save(os.path.join(pasta, "carros_teste.jpg"), quality=85)
+    gravar(os.path.join(pasta, "carros_teste.json"), resumo)
+    print(f"teste carros: {resumo}", flush=True)
+    pub = publicador()
+    if pub:
+        pub(*[os.path.join(pasta, x) for x in ("carros_teste.jpg", "carros_teste.json") if os.path.exists(os.path.join(pasta, x))])
+
+
 def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "teste_carros": teste_carros, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])

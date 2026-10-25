@@ -208,6 +208,8 @@ CLIMAS = {
     "tenso": {"acordes": [("A", True), ("F", False), ("D", True), ("E", False)], "vento": 0.35, "bpm": 0, "brilho": 0.35},
     "neutro": {"acordes": [("C", False), ("A", True), ("F", False), ("G", False)], "vento": 0.08, "bpm": 0, "brilho": 0.6},
     "energia": {"acordes": [("E", True), ("C", False), ("G", False), ("D", False)], "vento": 0.0, "bpm": 90, "brilho": 0.75},
+    # carros: bem macio, sem pulso nem vento (referência: canais de carro narrados)
+    "suave": {"acordes": [("F", False), ("A", True), ("D", True), ("C", False)], "vento": 0.0, "bpm": 0, "brilho": 0.25},
 }
 
 

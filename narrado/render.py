@@ -1574,7 +1574,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", completo)
         visual = completo
 
-    tem_som = corrido or any(t[2].get("som") for t in tarefas)
+    tem_som = (corrido or any(t[2].get("som") for t in tarefas)) and projeto.get("som_original", True) is not False
     som_jogo = audio_corrido(tarefas, pasta_raw, pasta_trab) if tem_som else None
     corte_gancho = faixas[1][1] if len(faixas) > 1 else total
     blocos = blocos_com_destaque(projeto)
