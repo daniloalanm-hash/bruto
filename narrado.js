@@ -120,7 +120,15 @@ async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
       if (res.ok) {
         const txt = (body.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
         const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
-        if (a >= 0 && b > a) return JSON.parse(txt.slice(a, b + 1));
+        if (a >= 0 && b > a) {
+          const obj = JSON.parse(txt.slice(a, b + 1));
+          // pesquisa no Google: guarda as páginas que a IA leu (vão para as fontes da descrição)
+          const chunks = body.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+          if (chunks.length && obj && typeof obj === 'object') {
+            obj._fontes = chunks.map((c) => c.web).filter((w) => w && w.uri).map((w) => ({ titulo: w.title || '', url: w.uri }));
+          }
+          return obj;
+        }
         ultimo = 'A IA não devolveu um roteiro válido.';
         continue;
       }
@@ -349,7 +357,8 @@ function roteiroDaIA(r, materia) {
       ...(+c.pausa > 0 ? { pausa: Math.min(15, Math.max(4, Math.round(+c.pausa))) } : {}),
       numero: c.numero && c.numero.valor && String(c.texto).includes(String(c.numero.valor).split(' ')[0])
         ? { valor: String(c.numero.valor), rotulo: String(c.numero.rotulo || ''),
-          ...(Array.isArray(c.numero.times) && c.numero.times.length === 2 ? { times: c.numero.times.map(String) } : {}) } : null,
+          ...(Array.isArray(c.numero.times) && c.numero.times.length === 2 ? { times: c.numero.times.map(String) } : {}),
+          ...(c.numero.comparar && c.numero.comparar.valor ? { comparar: { valor: String(c.numero.comparar.valor), rotulo: String(c.numero.comparar.rotulo || '') } } : {}) } : null,
     })),
     post: r.post && typeof r.post === 'object' ? { legenda: r.post.legenda || '', hashtags: r.post.hashtags || [] } : null,
   };
@@ -405,6 +414,41 @@ const TIPOS_YT = {
   lancamentos: 'lançamentos: cada capítulo é um jogo, com data, plataformas, preço e por que vale a atenção',
 };
 
+// pesquisa ANTES do roteiro: a matéria do Danilo é a referência central; a IA busca outras notícias e fontes
+// sobre o mesmo assunto para dar contexto, números, linha do tempo e repercussão (roteiro mais robusto)
+function promptPesquisa(materia, extras) {
+  return `Você é o pesquisador do canal de YouTube "${CANAL}" (games). A MATÉRIA CENTRAL abaixo é o assunto do próximo vídeo.
+PESQUISE NA INTERNET outras notícias, sites oficiais, lojas (Steam, itch.io, site do estúdio), entrevistas e repercussão sobre ESTE MESMO assunto, e monte um dossiê para um vídeo de ~10 minutos, com:
+- fatos novos que a matéria não traz (quem fez, história do projeto, preço, plataformas, versão, números, planos);
+- números de impacto (preço, desconto, tamanho, vendas, jogadores, tempo de desenvolvimento, orçamento, comparações) — cada um com contexto e, quando fizer sentido, um segundo número para comparar;
+- linha do tempo (datas);
+- contexto/história que ajuda a entender (jogos e franquias de referência, cena do mercado);
+- repercussão (criadores, comunidade, críticas, elogios);
+- o que vem depois.
+Regras: só fatos verificáveis, com o site de onde veio; se as fontes divergirem, diga. Nada inventado. Datas e números exatos.
+
+Responda SOMENTE com JSON:
+{"resumo": "2 frases", "fatos": [{"fato": "...", "fonte": "nome do site", "data": "..."}], "numeros": [{"valor": "R$ 24,99", "rotulo": "2 a 5 palavras", "contexto": "...", "comparar": {"valor": "R$ 49,99", "rotulo": "preço cheio"}}], "linha_do_tempo": [{"data": "...", "evento": "..."}], "contexto": ["..."], "repercussao": ["..."], "proximos_passos": ["..."], "divergencias": ["..."], "angulos": ["ideias de capítulo que rendem"]}
+
+MATÉRIA CENTRAL
+${materia.titulo || ''}
+${materia.url || ''}
+${(materia.texto || '').slice(0, 9000)}
+${extras ? `\nFONTES QUE O DANILO JÁ MANDOU\n${extras.slice(0, 8000)}` : ''}`;
+}
+
+function textoDossie(d) {
+  if (!d || typeof d !== 'object') return '';
+  const lista = (t, xs, f) => (xs?.length ? `${t}:\n${xs.map((x) => `- ${f(x)}`).join('\n')}` : '');
+  return [d.resumo ? `Resumo: ${d.resumo}` : '',
+    lista('Fatos', d.fatos, (x) => (typeof x === 'string' ? x : `${x.fato}${x.fonte ? ` (${x.fonte}${x.data ? `, ${x.data}` : ''})` : ''}`)),
+    lista('Números', d.numeros, (x) => `${x.valor} — ${x.rotulo || ''}${x.contexto ? `: ${x.contexto}` : ''}${x.comparar?.valor ? ` (comparar: ${x.comparar.valor} ${x.comparar.rotulo || ''})` : ''}`),
+    lista('Linha do tempo', d.linha_do_tempo, (x) => `${x.data}: ${x.evento}`),
+    lista('Contexto', d.contexto, String), lista('Repercussão', d.repercussao, String),
+    lista('O que vem depois', d.proximos_passos, String), lista('Divergências entre fontes', d.divergencias, String),
+    lista('Ângulos', d.angulos, String)].filter(Boolean).join('\n\n');
+}
+
 function promptEstrutura(materia, segundos, tipo, extras) {
   // o respiro de ~4 s antes de cada capítulo não tem narração
   const palavras = Math.round((segundos - 4 * nItensTop(segundos)) * ritmo());
@@ -412,6 +456,7 @@ function promptEstrutura(materia, segundos, tipo, extras) {
 
 TAREFA: planejar um vídeo de ~${Math.round(segundos / 60)} minutos (~${palavras} palavras narradas) sobre o tema/matéria abaixo. ${tipo === 'auto' ? 'Escolha o formato que rende mais (curiosidades, top, dicas ou lançamentos).' : `Formato: ${TIPOS_YT[tipo]}.`}
 PESQUISE na internet para ter fatos reais, específicos e verificáveis (datas, números, nomes de pessoas e estúdios, bastidores). Nada inventado: se não tiver certeza, não use.
+A MATÉRIA é a referência central: o vídeo é sobre ela. A PESQUISA COMPLEMENTAR (quando houver) enriquece com contexto, números, linha do tempo e repercussão — use bastante, mas nunca contradiga a matéria (em conflito, fique com a matéria). Distribua os NÚMEROS de impacto pelos capítulos: eles viram gráficos animados na tela.
 
 Monte ${itensTop(segundos, tipo)}. Para cada capítulo: "titulo" (curto, para os capítulos do YouTube; top lista: "20º Nome do Jogo"), "ficha" (SÓ quando o capítulo é sobre UM jogo: {"jogo": "nome oficial", "lancamento": "ano ou data", "plataformas": "PS5, Xbox Series X|S, PC…", "dublagem": "Sim" ou "Não" (dublagem em português do Brasil), "legendas": "Sim" ou "Não" (legendas em PT-BR)} — pesquise, não chute; senão null), "fatos" (5 a 10 fatos concretos com números/nomes que serão narrados), "jogos" (jogos que aparecem na tela nesse capítulo, nome como na Steam) e "palavras" (quantas palavras de narração; a soma dos capítulos ≈ ${Math.round(palavras * 0.9)}).
 
@@ -432,7 +477,7 @@ const REGRAS_CENA = `Cada tópico (cena) é UMA ideia de 1 a 3 frases. Para cada
 - "assunto": o jogo que aparece na tela durante esse trecho (nome como na Steam) ou null;
 - "imagem": SÓ quando o trecho cita pelo nome um console/aparelho ou uma pessoa real (ex.: "PlayStation 1", "Steam Deck", "Hideo Kojima", "Ridley Scott") — o nome exato para buscar foto real. Empresa, estúdio, publisher, filme ou objeto genérico: null (vira foto aleatória). Na dúvida, null;
 - "pausa": SÓ no YouTube, quando o trecho fala de algo que vale VER E OUVIR no jogo (uma música, o som/grito de uma criatura, uma cena marcante): segundos (8 a 12) em que a narração para e o jogo aparece com o som dele; senão null. No máximo 1 a cada 2 minutos;
-- "numero": se houver UM número de impacto (dinheiro, %, quantidade grande, placar), {"valor": "como está no texto", "rotulo": "2 a 5 palavras"}; senão null.`;
+- "numero": se houver UM número de impacto (dinheiro, %, quantidade grande, tamanho, placar), {"valor": "como está no texto", "rotulo": "2 a 5 palavras", "comparar": {"valor": "...", "rotulo": "..."} ou null (um 2º número falado no mesmo trecho para comparar: preço cheio × promoção, antes × depois, custo × faturamento)}; senão null. Esses números viram gráfico animado na tela: no YouTube, procure ter pelo menos 1 por capítulo quando houver dado real.`;
 
 function promptAbertura(plano, palavras) {
   return `Você escreve para o canal de YouTube "${CANAL}". Escreva a ABERTURA do vídeo "${plano.titulo}" com ~${palavras} palavras, dividida em 3 a 5 cenas:
@@ -478,8 +523,16 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     const m = await buscarMateria(u).catch(() => null);
     if (m) extras += `\n\n### ${m.titulo}\n${(m.texto || '').slice(0, 5000)}`;
   }
-  onStatus('A IA está pesquisando e montando os capítulos…');
-  const plano = await gemini(promptEstrutura(materia, segundos, tipo, extras), onStatus, { buscar: true });
+  // 1) pesquisa: a matéria é a âncora; a IA busca outras notícias/fontes do mesmo assunto
+  onStatus('Pesquisando outras notícias e fontes sobre o assunto…');
+  let dossie = null;
+  try { dossie = await gemini(promptPesquisa(materia, extras), onStatus, { buscar: true }); } catch (e) { console.warn('pesquisa', e); }
+  const pesquisa = textoDossie(dossie);
+  // 2) estrutura dos capítulos com a matéria + o dossiê
+  onStatus('A IA está montando os capítulos…');
+  const plano = await gemini(promptEstrutura(materia, segundos, tipo,
+    [extras, pesquisa ? `\n### PESQUISA COMPLEMENTAR (dossiê)\n${pesquisa}` : ''].filter(Boolean).join('\n')), onStatus, { buscar: true });
+  plano._dossie = dossie;
   plano.capitulos = (plano.capitulos || []).filter((c) => c && c.titulo).slice(0, 25);
   if (!plano.capitulos.length) throw new Error('A IA não conseguiu montar os capítulos. Tente de novo ou dê mais detalhes do tema.');
   const total = Math.round(segundos * ritmo());
@@ -514,9 +567,22 @@ async function roteiroLongo(materia, segundos, onStatus = () => {}) {
     cenas,
     formato: 'horizontal',
     post: { legenda: plano.descricao || '', hashtags: (plano.tags || []).map(String), titulo_yt: plano.titulo || '', comentario: String(plano.comentario || ''),
+      fontes: fontesDoRoteiro(materia, plano),
       titulos: (plano.titulos || []).filter((t) => t && t.titulo).slice(0, 3).map((t) => ({ titulo: String(t.titulo).slice(0, 100), estrategia: String(t.estrategia || '') })) },
     thumbs: (plano.thumbs || []).filter((t) => t && t.texto).slice(0, 3).map((t) => ({ texto: String(t.texto).slice(0, 40), destaque: String(t.destaque || '') })),
   };
+}
+
+// fontes do vídeo (descrição do YouTube): a matéria central primeiro + os sites que a pesquisa leu
+function fontesDoRoteiro(materia, plano) {
+  const site = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+  const nomes = [];
+  if (materia?.url) nomes.push(site(materia.url));
+  for (const f of [...(plano._dossie?._fontes || []), ...(plano._fontes || [])]) {
+    const n = (f.titulo && /\./.test(f.titulo) ? f.titulo : site(f.url)).replace(/^www\./, '');
+    if (n && !/vertexaisearch|googleapis|google\.com/.test(n)) nomes.push(n);
+  }
+  return [...new Set(nomes.filter(Boolean))].slice(0, 10);
 }
 
 async function escreverRoteiro() {
@@ -1400,7 +1466,8 @@ function pacoteYt(p, post) {
   const capitulos = capitulosYt(p);
   // hashtags: só 3 na descrição (o YouTube mostra acima do título; mais que isso vira spam)
   const hashtags = hs.slice(0, 3).map((x) => `#${x.replace(/\s+/g, '')}`).join(' ');
-  const descricao = [post.legenda || '', capitulos ? `CAPÍTULOS\n${capitulos}` : '',
+  const fontes = (post.fontes || []).length ? `FONTES\n${post.fontes.join('\n')}` : '';
+  const descricao = [post.legenda || '', capitulos ? `CAPÍTULOS\n${capitulos}` : '', fontes,
     'Se curtiu, deixa o like, se inscreve no canal e ativa o sininho!', hashtags].filter(Boolean).join('\n\n');
   let tags = '';
   for (const t of hs) { if ((tags + (tags ? ', ' : '') + t).length > 480) break; tags += (tags ? ', ' : '') + t; }
