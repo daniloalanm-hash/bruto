@@ -371,8 +371,22 @@ def gerar(projeto, raw, fontes, pasta):
     com_rosto = [(_area_rosto(c), c) for n, c in cands[principal][:8] if _area_rosto(c) >= 0.012]
     melhor = max(com_rosto)[1] if com_rosto else cands[principal][0][1]
     saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
-    # trio: a melhor imagem de cada jogo que ainda não foi usada
+    # épica (sem texto): close de personagem, de preferência de OUTRO jogo do vídeo (variedade no teste A/B);
+    # só jogos com tempo de tela relevante — nunca um jogo citado de passagem
     usadas = {melhor}
+    relevantes = [ch for ch in ordem if tempo.get(ch, 0) >= max(2, tempo.get(principal, 0) * 0.15)][:4] or [principal]
+    epi = None
+    for grupo in ([ch for ch in relevantes if ch != principal], [principal]):
+        rostos = [(_area_rosto(c), c) for ch in grupo for n, c in cands.get(ch, [])[:8]
+                  if c not in usadas and _area_rosto(c) >= 0.012]
+        if rostos:
+            epi = max(rostos)[1]
+            break
+    if epi is None:
+        resto = [(n, c) for ch in relevantes for n, c in cands[ch][:3] if c not in usadas]
+        epi = max(resto)[1] if resto else melhor
+    usadas.add(epi)
+    # trio: a melhor imagem de cada jogo que ainda não foi usada
     outros = []
     for ch in ordem[:3]:
         c = next((c for n, c in cands[ch] if c not in usadas), cands[ch][0][1])
@@ -380,17 +394,6 @@ def gerar(projeto, raw, fontes, pasta):
         usadas.add(c)
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
-        usadas.update(outros)
-    # épica (sem texto): o close de personagem que sobrou; sem rosto, a imagem mais forte que sobrou
-    fonte = [ch for ch in cands] if selo else [principal] + [ch for ch in ordem if ch != principal]
-    resto = [(n, c) for ch in fonte for n, c in cands[ch][:8] if c not in usadas]
-    rostos = [(_area_rosto(c), c) for n, c in resto if _area_rosto(c) >= 0.012]
-    if rostos:
-        epi = max(rostos)[1]
-    elif resto:
-        epi = max(resto)[1] if selo else resto[0][1]
-    else:
-        epi = melhor
     saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
     saidas.append(epica(epi, fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
     return saidas
