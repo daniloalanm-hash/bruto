@@ -318,12 +318,17 @@ def _delogo(src, marca):
     return f"delogo=x={x}:y={y}:w={bw}:h={bh}," if bw > 4 and bh > 4 else ""
 
 
-def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False, marca=None):
+def seg_corrido(src, t0, dur, out, fade_in=False, fade_out=False, marca=None, area=None):
     """Trecho do trailer tocando direto (sem zoom nem efeito), com mergulho no preto na troca de jogo."""
     t0 = _inicio_seguro(src, t0, dur)
     n, pad = _quadros_exatos(dur)
-    c = area_util(src, t0)
-    pre = _delogo(src, marca) + (f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else "")
+    if area:  # tarja fixa medida no vídeo inteiro (gameplay 4:3 com faixas pretas): recorta a imagem útil
+        x, y, w, h = area
+        pre = f"crop=trunc(iw*{w:.4f}/2)*2:trunc(ih*{h:.4f}/2)*2:trunc(iw*{x:.4f}):trunc(ih*{y:.4f}),"
+    else:
+        c = area_util(src, t0)
+        pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    pre = _delogo(src, marca) + pre
     fx = ""
     if fade_in:
         fx += f",fade=t=in:st=0:d={FADE_CAP:.2f}"
@@ -1196,7 +1201,8 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
     grafo.append(f"{v}fade=t=in:st=0:d=0.15[v]")
     audio = ["-map", base[3], "-c:a", "aac", "-b:a", "192k", "-ar", 48000] if base else ["-map", "0:a", "-c:a", "copy"]
     ffmpeg(*entradas, "-filter_complex", ";".join(grafo), "-map", "[v]", *audio, "-t", f"{total:.2f}",
-           "-c:v", "libx264", "-preset", "faster", "-crf", 20, "-pix_fmt", "yuv420p", "-movflags", "+faststart", destino)
+           "-c:v", "libx264", "-preset", "veryfast" if base else "faster", "-crf", 19 if base else 20,
+           "-pix_fmt", "yuv420p", "-movflags", "+faststart", destino)
 
 
 FICHA_DUR = 6.0
@@ -1454,7 +1460,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
     def codificar(tf):
         k, mid, m, src, d, out, fx, rep, midias = tf
         if m.get("corrido"):
-            seg_corrido(src, m.get("t", 0), d, out, m.get("fi"), m.get("fo"), m.get("marca"))
+            seg_corrido(src, m.get("t", 0), d, out, m.get("fi"), m.get("fo"), m.get("marca"), m.get("area"))
         elif corrido and m["tipo"] == "i":
             seg_imagem(src, d, out, k, None, encaixar=True)
         elif m.get("cartao"):

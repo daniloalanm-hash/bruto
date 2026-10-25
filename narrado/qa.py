@@ -86,6 +86,9 @@ def falas_repetidas(palavras):
 def midia_de_outro_jogo(projeto, mapa, banco, timeline):
     """Imagem de um jogo aparecendo enquanto a narração fala de outro (fora a abertura e a montagem final)."""
     cenas = projeto.get("cenas") or []
+    # a abertura (até o 1º capítulo) é montagem de vários jogos de propósito
+    caps = [k for k, c in enumerate(cenas) if k > 0 and str(c.get("capitulo") or "").strip()]
+    inicio_conteudo = caps[0] if caps else 1
     avisos, ult = [], -99.0
     for t0, t1, mid, mudo in mapa:
         m = banco.get(mid) or {}
@@ -94,7 +97,7 @@ def midia_de_outro_jogo(projeto, mapa, banco, timeline):
             continue
         meio = (t0 + t1) / 2
         tl = next((x for x in timeline if x["inicio"] <= meio < x["fim"]), None)
-        if not tl or tl["cena"] == 0 or tl["cena"] >= len(cenas):
+        if not tl or tl["cena"] < inicio_conteudo or tl["cena"] >= len(cenas):
             continue
         c = cenas[tl["cena"]]
         do_topico = {c.get("jogo")} | set(c.get("jogos") or [])

@@ -1265,10 +1265,9 @@ def trechos_corridos(video, extra=None):
         planos = range(n_planos)
         if extra is not None:
             try:
-                wm = marca_dagua(tmp)
-                if wm:
-                    extra["marca"] = wm
-                    print(f"marca d'água fixa em {os.path.basename(video)}: {wm}", flush=True)
+                extra.update(analisar_quadros(tmp))
+                if extra:
+                    print(f"quadros de {os.path.basename(video)}: {extra}", flush=True)
             except Exception as e:
                 print(f"aviso: checagem de marca d'água falhou: {e}", flush=True)
             try:
@@ -1282,72 +1281,91 @@ def trechos_corridos(video, extra=None):
     return bons
 
 
-def marca_dagua(pasta_quadros):
-    """Logo fixa de site/canal num canto (ex.: jeuxvideo.com, IGN) a partir dos quadros do vídeo.
+def analisar_quadros(pasta_quadros):
+    """Olha o vídeo inteiro de uma vez (os quadros a 2/s da análise) e devolve:
+    - "area": a parte com imagem quando há tarja preta fixa (gameplay 4:3 dentro de 16:9) — [x, y, w, h] em fração;
+    - "marca": logo/texto fixo de site num canto (jeuxvideo.com, "Alpha Gameplay", IGN) — [x, y, w, h] em fração.
 
-    Logo sobreposta não se mexe: na MÉDIA de dezenas de quadros de cenas diferentes ela continua nítida
-    (com bordas), enquanto o jogo vira borrão. Só nos cantos — HUD do jogo muda de cena para cena e some.
-    Devolve [x, y, w, h] em fração da imagem, ou None."""
+    Logo sobreposta não se mexe: na MÉDIA de dezenas de quadros ela continua nítida, o jogo vira borrão. Mas HUD
+    de gameplay também é fixo — por isso só conta como logo o que o EAST lê como TEXTO na imagem média."""
     import numpy as np
     from PIL import Image
     arqs = sorted(f for f in os.listdir(pasta_quadros) if f.startswith("q"))
     if len(arqs) < 30:
-        return None
+        return {}
     passo = max(1, len(arqs) // 80)
-    pilha = []
-    for f in arqs[::passo]:
-        im = Image.open(os.path.join(pasta_quadros, f)).convert("L").resize((320, 180))
-        pilha.append(np.asarray(im, dtype=np.float32))
-    pilha = np.stack(pilha)
-    # só a área com imagem: a borda de tarja preta (letterbox/pillarbox) também é "fixa" e não é logo
-    mx = pilha.max(0)
-    linhas, colunas = np.nonzero(mx.max(1) > 30)[0], np.nonzero(mx.max(0) > 30)[0]
+    pilha = np.stack([np.asarray(Image.open(os.path.join(pasta_quadros, f)).convert("L").resize((320, 180)),
+                                 dtype=np.float32) for f in arqs[::passo]])
+    saida = {}
+    # tarja: linha/coluna que quase nunca acende (p97 no tempo; ruído de compressão fica abaixo de 40)
+    acende = np.percentile(pilha, 97, axis=0)
+    linhas, colunas = np.nonzero(acende.max(1) > 40)[0], np.nonzero(acende.max(0) > 40)[0]
     if len(linhas) < 60 or len(colunas) < 100:
-        return None
-    r0, r1, c0, c1 = linhas[0] + 3, linhas[-1] - 2, colunas[0] + 3, colunas[-1] - 2
-    pilha = pilha[:, r0:r1, c0:c1]
-    media, desvio = pilha.mean(0), pilha.std(0)
-    gx = np.abs(np.diff(media, axis=1, prepend=media[:, :1]))
-    gy = np.abs(np.diff(media, axis=0, prepend=media[:1, :]))
-    borda = np.maximum(gx, gy)
-    fixo = (borda > 18) & (desvio < 22)  # borda forte na média e pixel quase parado ao longo do vídeo
+        return {}
+    r0, r1, c0, c1 = int(linhas[0]), int(linhas[-1]) + 1, int(colunas[0]), int(colunas[-1]) + 1
+    if (c1 - c0) < 312 or (r1 - r0) < 174:
+        saida["area"] = [round(c0 / 320, 4), round(r0 / 180, 4), round((c1 - c0) / 320, 4), round((r1 - r0) / 180, 4)]
+    a0, a1, b0, b1 = r0 + 3, r1 - 3, c0 + 3, c1 - 3
+    sub = pilha[:, a0:a1, b0:b1]
+    media, desvio = sub.mean(0), sub.std(0)
+    borda = np.maximum(np.abs(np.diff(media, axis=1, prepend=media[:, :1])),
+                       np.abs(np.diff(media, axis=0, prepend=media[:1, :])))
+    fixo = (borda > 18) & (desvio < 22)
     h, w = fixo.shape
-    rw, rh = int(w * 0.32), int(h * 0.26)
-    melhor = None
+    rw, rh = int(w * 0.34), int(h * 0.28)
+    cands = []
     for x0, y0 in ((0, 0), (w - rw, 0), (0, h - rh), (w - rw, h - rh)):
         ys, xs = np.nonzero(fixo[y0:y0 + rh, x0:x0 + rw])
         if len(xs) < 25:
             continue
-        xa, xb = np.percentile(xs, [3, 97])  # caixa do grosso dos pontos (ignora pontos soltos)
+        xa, xb = np.percentile(xs, [3, 97])
         ya, yb = np.percentile(ys, [3, 97])
         area = (xb - xa + 1) * (yb - ya + 1)
         if area < 60 or area > w * h * 0.05 or len(xs) / area < 0.10:
             continue
-        if melhor is None or len(xs) > melhor[0]:
-            melhor = (len(xs), (c0 + x0 + xa - 3) / 320, (r0 + y0 + ya - 3) / 180, (xb - xa + 7) / 320, (yb - ya + 7) / 180)
-    if not melhor:
-        return None
-    _, x, y, bw, bh = melhor
-    x, y = max(0.0, x), max(0.0, y)
-    return [round(float(v), 4) for v in (x, y, min(bw, 1 - x), min(bh, 1 - y))]
+        cands.append((len(xs), x0 + xa - 3, y0 + ya - 3, xb - xa + 7, yb - ya + 7))
+    if not cands:
+        return saida
+    # confirma com o EAST na imagem média em alta (média dos quadros grandes só na caixa)
+    import tempfile
+    for _, x, y, bw, bh in sorted(cands, reverse=True):
+        X, Y = (b0 + max(0.0, x)) / 320, (a0 + max(0.0, y)) / 180
+        W_, H_ = min(bw / 320, 1 - X), min(bh / 180, 1 - Y)
+        try:
+            grandes = [Image.open(os.path.join(pasta_quadros, f)).convert("RGB") for f in arqs[::passo][:60]]
+            gw, gh = grandes[0].size
+            caixa = (int(X * gw), int(Y * gh), int((X + W_) * gw), int((Y + H_) * gh))
+            m = np.mean([np.asarray(g.crop(caixa), dtype=np.float32) for g in grandes], axis=0).astype("uint8")
+            img = Image.fromarray(m)
+            img = img.resize((max(320, img.width * 3), max(96, img.height * 3)))
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                img.save(tf.name)
+                frac = _fracao_texto_east(tf.name)
+            os.remove(tf.name)
+        except Exception:
+            frac = 0.0
+        if frac >= 0.03:
+            saida["marca"] = [round(float(v), 4) for v in (X, Y, W_, H_)]
+            break
+    return saida
 
 
 def checar_marca(video):
-    """Marca d'água de um vídeo já baixado (projetos antigos, sem a checagem feita na análise). Cacheado."""
+    """Área útil + marca d'água de um vídeo já baixado (projetos antigos, sem a checagem na análise). Cacheado."""
     import json
     import subprocess
     import tempfile
-    cache = video + ".marca.json"
+    cache = video + ".quadros.json"
     if os.path.exists(cache):
-        return json.load(open(cache)).get("marca")
+        return json.load(open(cache))
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-i", video, "-vf", "fps=0.5,scale=640:-2", "-q:v", "5",
                         os.path.join(tmp, "q%05d.jpg")], capture_output=True)
-        wm = marca_dagua(tmp)
-    json.dump({"marca": wm}, open(cache, "w"))
-    if wm:
-        print(f"marca d'água fixa em {os.path.basename(video)}: {wm}", flush=True)
-    return wm
+        info = analisar_quadros(tmp)
+    json.dump(info, open(cache, "w"))
+    if info:
+        print(f"quadros de {os.path.basename(video)}: {info}", flush=True)
+    return info
 
 
 def _analisar_corrido(arquivo):
@@ -1405,6 +1423,7 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
                     "tipo": "v", "jogo": j["chave"], "arquivo": os.path.basename(t["arquivo"]),
                     "t": c["t"], "dur": c["dur"], "corrido": True,
                     **({"marca": ex["marca"]} if ex.get("marca") else {}),
+                    **({"area": ex["area"]} if ex.get("area") else {}),
                     **({"personagem": t["personagem"]} if t.get("personagem") else {})}
     return banco
 

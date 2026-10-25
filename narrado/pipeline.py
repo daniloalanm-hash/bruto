@@ -700,21 +700,23 @@ def garantir_material(projeto):
     for i, ln in enumerate(projeto.get("links_video") or []):
         if ln.get("chave") and ln.get("url"):
             assets.baixar_link_video(ln["url"], ln["chave"], RAW, i)  # já baixado: não faz nada
-    if projeto.get("formato") == "horizontal" and not projeto.get("marca_checada"):
-        # projeto de antes da checagem de logo de site: confere cada vídeo do banco uma vez
-        marcas = {}
+    if projeto.get("formato") == "horizontal" and projeto.get("quadros_checados") != 2:
+        # projeto de antes da checagem de tarja/logo de site: confere cada vídeo do banco uma vez
+        infos = {}
         for m in projeto["banco"].values():
             arq = os.path.join(RAW, m.get("arquivo", ""))
             if m["tipo"] == "v" and m.get("corrido") and os.path.exists(arq):
-                if arq not in marcas:
+                if arq not in infos:
                     try:
-                        marcas[arq] = assets.checar_marca(arq)
+                        infos[arq] = assets.checar_marca(arq) or {}
                     except Exception as e:
-                        print(f"aviso: checagem de marca d'água falhou: {e}", flush=True)
-                        marcas[arq] = None
-                if marcas[arq]:
-                    m["marca"] = marcas[arq]
-        projeto["marca_checada"] = True
+                        print(f"aviso: checagem dos quadros falhou: {e}", flush=True)
+                        infos[arq] = {}
+                for k in ("marca", "area"):
+                    m.pop(k, None)
+                    if infos[arq].get(k):
+                        m[k] = infos[arq][k]
+        projeto["quadros_checados"] = 2
     if any(m["arquivo"].startswith("lib_") for m in falta):
         da_biblioteca(projeto.get("nomes_busca") or [j["nome"] for j in projeto["jogos"]])
     for m in falta:
@@ -821,6 +823,10 @@ def finalizar(pasta, projeto, audio, st, p0):
                                                      "voz_previa.mp3", "limpo.mp4")
                     if os.path.exists(os.path.join(pasta, x))] + thumbs_arq
         pub(*arquivos)
+        if not os.path.exists(os.path.join(pasta, "limpo.mp4")) and os.environ.get("NARRADO_TAG"):
+            # render numa passada (YouTube): o limpo antigo da release ficaria velho para o ajuste de legenda
+            subprocess.run(["gh", "release", "delete-asset", os.environ["NARRADO_TAG"], "limpo.mp4", "-y"],
+                           capture_output=True)
     st.pronto({"versao": projeto["versao"], "duracao": projeto["duracao"]})
 
 
