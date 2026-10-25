@@ -1143,6 +1143,9 @@ def main():
     fase, pasta = sys.argv[1], os.path.abspath(sys.argv[2])
     pub = publicador()
     st = Status(pasta, fase, (lambda p: pub(p)) if pub and not fase.startswith("teste") else None)
+    if fase.startswith("teste_job_"):  # teste_job_<nome>: roda narrado/testes/<nome>.json
+        os.environ["NARRADO_TESTE"] = fase[len("teste_job_"):]
+        fase = "teste_job"
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
          "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "teste_carros": teste_carros, "teste_job": teste_job, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)

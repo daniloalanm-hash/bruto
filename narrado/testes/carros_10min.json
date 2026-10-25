@@ -1,0 +1,411 @@
+{
+ "id": "teste-carros-10min",
+ "titulo": "6 carros que REINARAM no Brasil (e o que aconteceu com cada um)",
+ "titulo_tela": "6 CARROS QUE REINARAM NO BRASIL",
+ "formato": "horizontal",
+ "edicao": "corrido",
+ "legenda_estilo": "nenhuma",
+ "musica": false,
+ "zoom_enfase": false,
+ "nicho": "carros",
+ "canal": "Canal Teste",
+ "marca_dagua": "",
+ "cama_clima": "suave",
+ "jogos": [
+  "Volkswagen Gol",
+  "Chevrolet Onix",
+  "Toyota Corolla",
+  "Hyundai i30",
+  "Jeep Compass",
+  "Fiat Strada",
+  "Toyota Corolla Cross"
+ ],
+ "voz": {
+  "modo": "ia",
+  "voz_ia": "pt-BR-AntonioNeural"
+ },
+ "post": {
+  "legenda": "Gol, Onix, Corolla, Compass e Strada: a história dos carros que dominaram o Brasil. Qual deles já foi seu?",
+  "hashtags": [
+   "carros",
+   "gol",
+   "onix",
+   "strada",
+   "corolla",
+   "compass"
+  ],
+  "titulo_yt": "5 carros que reinaram no Brasil",
+  "comentario": "Qual desses 6 já passou pela sua garagem? 👇"
+ },
+ "thumbs": [
+  {
+   "texto": "O FIM DO REI?",
+   "destaque": "REI"
+  },
+  {
+   "texto": "6 REIS DO BRASIL",
+   "destaque": "REIS"
+  },
+  {
+   "texto": "DESTRONADO.",
+   "destaque": ""
+  }
+ ],
+ "cenas": [
+  {
+   "capitulo": "Introdução",
+   "texto": "Um carro liderou as vendas no Brasil por 27 anos seguidos. Outro tirou ele do trono. E hoje, quem manda no país não é um carro de passeio. É uma picape.",
+   "assunto": "Volkswagen Gol",
+   "destaques": [
+    "27 anos seguidos"
+   ]
+  },
+  {
+   "texto": "Neste vídeo você vai conhecer seis carros que reinaram no Brasil. Cada um no seu tempo, cada um do seu jeito. E um deles teve o reinado mais curto que você vai ver.",
+   "assunto": "Chevrolet Onix"
+  },
+  {
+   "texto": "Tem fábrica que fechou as portas este ano. Tem SUV feito no Nordeste que virou fenômeno. E tem uma disputa de vendas decidida por menos de cinco mil unidades.",
+   "assunto": "Toyota Corolla"
+  },
+  {
+   "texto": "Fica até o fim, porque o último rei é o que menos gente esperava ver no topo.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "Aqui no canal a gente conta a história por trás dos carros. Se você curte esse tipo de vídeo, já se inscreve e ativa o sininho.",
+   "assunto": "Jeep Compass"
+  },
+  {
+   "capitulo": "Volkswagen Gol: o rei de 27 anos",
+   "ficha": {
+    "carro": "Volkswagen Gol",
+    "ano": "1980 a 2022",
+    "motor": "do 1.3 a ar ao 1.0 três cilindros",
+    "potencia": "de 42 a 120 cv"
+   },
+   "texto": "1980. Em Taubaté, no interior de São Paulo, a Volkswagen começa a fabricar o Gol.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "O desenho era moderno e o espaço interno agradava. Mas o motor era motivo de piada: um 1.3 refrigerado a ar, de 42 cavalos, herdado do Fusca.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "A Volkswagen ouviu as críticas. Em 1985, o Gol ganhou motor 1.6 refrigerado a água, com 81 cavalos. E no fim dos anos 80 veio o mais desejado de todos: o GTi.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "O Gol GTi tinha motor 2.0 de 120 cavalos e injeção eletrônica. Foi o primeiro carro brasileiro com essa tecnologia, apresentada no Salão do Automóvel de 1988.",
+   "assunto": "Volkswagen Gol",
+   "numero": {
+    "valor": "120 cv",
+    "rotulo": "motor 2.0 do Gol GTi"
+   }
+  },
+  {
+   "texto": "Em 1994 chegou a segunda geração, que todo mundo conhece como Gol Bolinha. As linhas quadradas deram lugar a um desenho arredondado, e a versão de quatro portas veio em 1998.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "E aqui vem um detalhe que pouca gente lembra: em 2003, o Gol 1.6 Total Flex foi o primeiro carro flex do Brasil. Aquele motor que aceita álcool e gasolina no mesmo tanque, e que hoje está em quase todo carro do país, estreou num Gol.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "Em 2008 veio a quinta geração, com motor transversal e plataforma compartilhada com o Polo e o Fox. E em 2014 uma lei tornou airbag duplo e freio ABS obrigatórios, e o Gol se adaptou.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "Com tudo isso, o Gol virou sinônimo de carro no Brasil. Foram 27 anos seguidos na liderança de vendas.",
+   "assunto": "Volkswagen Gol",
+   "numero": {
+    "valor": "27 anos",
+    "rotulo": "seguidos na liderança"
+   }
+  },
+  {
+   "texto": "Ao todo, mais de 8 milhões de unidades vendidas, e 42 anos de produção sem parar em Taubaté.",
+   "assunto": "Volkswagen Gol",
+   "numero": {
+    "valor": "8 milhões",
+    "rotulo": "de unidades vendidas"
+   }
+  },
+  {
+   "texto": "A despedida foi em 2022, com a série Last Edition: só mil unidades, todas vermelhas, por 95 mil e 990 reais. Esgotaram rápido.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "texto": "Mesmo fora de linha, ele continua em todo lugar. Só no primeiro semestre de 2025, mais de 372 mil Gol usados trocaram de dono, segundo a Fenauto.",
+   "assunto": "Volkswagen Gol",
+   "numero": {
+    "valor": "372 mil",
+    "rotulo": "Gol usados vendidos em 6 meses"
+   }
+  },
+  {
+   "texto": "Mas o reinado do Gol já tinha acabado antes disso. E quem derrubou o rei veio com uma gravata dourada.",
+   "assunto": "Volkswagen Gol"
+  },
+  {
+   "capitulo": "Chevrolet Onix: o carro que derrubou o Gol",
+   "ficha": {
+    "carro": "Chevrolet Onix",
+    "ano": "2012 em diante",
+    "motor": "1.0 aspirado / 1.0 turbo (2ª geração)",
+    "potencia": "até 116 cv"
+   },
+   "texto": "O Chevrolet Onix chegou em 2012 para brigar no segmento mais disputado do país: o dos hatches compactos.",
+   "assunto": "Chevrolet Onix"
+  },
+  {
+   "texto": "Em 2015 ele fez o que parecia impossível. Liderou as vendas mês a mês a partir de agosto e fechou o ano como o carro mais vendido do Brasil.",
+   "assunto": "Chevrolet Onix"
+  },
+  {
+   "texto": "Foram 125 mil e 931 unidades naquele ano. E o Gol? Caiu para a sexta posição, com 82 mil e 746.",
+   "assunto": "Chevrolet Onix",
+   "numero": {
+    "valor": "125.931",
+    "rotulo": "Onix vendidos em 2015",
+    "comparar": {
+     "valor": "82.746",
+     "rotulo": "Gol em 2015"
+    }
+   }
+  },
+  {
+   "texto": "E não foi sorte de um ano só. O Onix ficou seis anos seguidos no topo, de 2015 a 2020.",
+   "assunto": "Chevrolet Onix",
+   "numero": {
+    "valor": "6 anos",
+    "rotulo": "seguidos como o mais vendido"
+   }
+  },
+  {
+   "texto": "Em 2019 veio a segunda geração. O sedã Onix Plus chegou em setembro, e o hatch em novembro, com preço de entrada de 48 mil e 490 reais.",
+   "assunto": "Chevrolet Onix"
+  },
+  {
+   "texto": "A grande novidade era o motor 1.0 turbo de 116 cavalos. O sedã ia de zero a cem em 9,7 segundos, e com gasolina fazia 13,7 quilômetros por litro na cidade.",
+   "assunto": "Chevrolet Onix",
+   "numero": {
+    "valor": "116 cv",
+    "rotulo": "motor 1.0 turbo do novo Onix"
+   }
+  },
+  {
+   "texto": "Teve até Wi-Fi 4G de fábrica, seis airbags de série e nota máxima, cinco estrelas, no teste de colisão do Latin NCAP.",
+   "assunto": "Chevrolet Onix"
+  },
+  {
+   "texto": "Enquanto os hatches brigavam entre si, um sedã japonês construía outro tipo de reinado. Mais silencioso, e bem mais longo.",
+   "assunto": "Chevrolet Onix"
+  },
+  {
+   "capitulo": "Toyota Corolla: o fim de uma fábrica",
+   "ficha": {
+    "carro": "Toyota Corolla",
+    "ano": "no Brasil desde 1994",
+    "motor": "2.0 flex / híbrido flex"
+   },
+   "texto": "O Toyota Corolla é simplesmente o carro mais vendido da história do mundo. Em 2021, ele passou de 50 milhões de unidades emplacadas, em 55 anos de mercado.",
+   "assunto": "Toyota Corolla",
+   "numero": {
+    "valor": "50 milhões",
+    "rotulo": "Corollas vendidos no mundo"
+   }
+  },
+  {
+   "texto": "No Brasil, ele é vendido desde 1994. E em 1998, a Toyota começou a fabricar o Corolla aqui, em Indaiatuba, no interior de São Paulo.",
+   "assunto": "Toyota Corolla"
+  },
+  {
+   "texto": "Foi ali que o sedã virou o símbolo do carro que não dá dor de cabeça. O Corolla chegou a ter mais da metade do mercado de sedãs médios e apareceu várias vezes entre os dez carros mais vendidos do país.",
+   "assunto": "Toyota Corolla"
+  },
+  {
+   "texto": "Em 2019, a fábrica de Indaiatuba fez história: começou a produzir o primeiro híbrido flex do mundo vendido em série. Um Corolla que combina motor elétrico com um motor que aceita etanol.",
+   "assunto": "Toyota Corolla"
+  },
+  {
+   "texto": "Em quase três décadas, mais de um milhão de veículos saíram daquela fábrica.",
+   "assunto": "Toyota Corolla",
+   "numero": {
+    "valor": "1 milhão",
+    "rotulo": "de veículos feitos em Indaiatuba"
+   }
+  },
+  {
+   "texto": "Só que no dia 20 de junho de 2026, o último Corolla deixou a linha de Indaiatuba. Um Corolla Altis Premium híbrido.",
+   "assunto": "Toyota Corolla"
+  },
+  {
+   "texto": "A produção foi para Sorocaba, onde a Toyota já fabrica o Corolla Cross. A mudança faz parte de um investimento de 11 bilhões de reais no Brasil até 2030.",
+   "assunto": "Toyota Corolla",
+   "numero": {
+    "valor": "R$ 11 bilhões",
+    "rotulo": "investimento da Toyota até 2030"
+   }
+  },
+  {
+   "texto": "E o Corolla Cross, o SUV que já saía de Sorocaba desde março de 2021, levou a tecnologia adiante: uma versão híbrida que também roda com etanol. No lançamento, a versão flex começava em 139 mil e 990 reais, e a híbrida em 179 mil e 990.",
+   "assunto": "Toyota Corolla Cross",
+   "numero": {
+    "valor": "R$ 139.990",
+    "rotulo": "Corolla Cross flex no lançamento",
+    "comparar": {
+     "valor": "R$ 179.990",
+     "rotulo": "versão híbrida"
+    }
+   }
+  },
+  {
+   "texto": "E a fábrica antiga? Ainda não tem destino oficial. Fala-se em interesse de montadoras chinesas, mas nada confirmado.",
+   "assunto": "Toyota Corolla"
+  },
+  {
+   "texto": "Enquanto o Corolla construía um reinado de décadas, um hatch coreano teve o reinado mais rápido de todos. Subiu ao topo em dois anos, e caiu quase na mesma velocidade.",
+   "assunto": "Hyundai i30"
+  },
+  {
+   "capitulo": "Hyundai i30: o reinado mais curto",
+   "ficha": {
+    "carro": "Hyundai i30",
+    "ano": "2009 a 2016",
+    "motor": "2.0 16V (1ª geração)",
+    "potencia": "145 cv"
+   },
+   "texto": "Março de 2009. Chega da Coreia do Sul o Hyundai i30, um hatch médio importado com motor 2.0 de 145 cavalos.",
+   "assunto": "Hyundai i30"
+  },
+  {
+   "texto": "Ele virou febre. Fazia de zero a cem em 10,5 segundos e tinha um visual que parecia de carro mais caro.",
+   "assunto": "Hyundai i30"
+  },
+  {
+   "texto": "Em 2010 e 2011, o i30 foi o hatch médio mais licenciado do Brasil, com mais de 35 mil unidades por ano.",
+   "assunto": "Hyundai i30",
+   "numero": {
+    "valor": "35 mil",
+    "rotulo": "i30 por ano no auge"
+   }
+  },
+  {
+   "texto": "Só que em 2013 veio a segunda geração, com um motor 1.6 de até 128 cavalos, menos potente que o anterior. E as vendas despencaram: de 35 mil em 2012 para 6 mil em 2013.",
+   "assunto": "Hyundai i30",
+   "numero": {
+    "valor": "6 mil",
+    "rotulo": "vendas em 2013, queda",
+    "comparar": {
+     "valor": "35 mil",
+     "rotulo": "vendas em 2012"
+    }
+   }
+  },
+  {
+   "texto": "A Hyundai tentou reagir em 2015, com um motor 1.8 de 150 cavalos e câmbio automático de seis marchas. Não adiantou: foram menos de 3 mil unidades naquele ano, e menos de 2 mil em 2016.",
+   "assunto": "Hyundai i30"
+  },
+  {
+   "texto": "Em 2016, o i30 saiu de linha no Brasil, depois de mais de 120 mil unidades vendidas. Um reinado de dois anos que muita gente ainda lembra.",
+   "assunto": "Hyundai i30"
+  },
+  {
+   "texto": "E enquanto os hatches médios perdiam espaço, o brasileiro descobria outro tipo de carro. A moda dos SUVs. E um deles nasceu longe do eixo Rio-São Paulo.",
+   "assunto": "Hyundai i30"
+  },
+  {
+   "capitulo": "Jeep Compass: o fenômeno de Pernambuco",
+   "ficha": {
+    "carro": "Jeep Compass",
+    "ano": "2016 em diante",
+    "motor": "1.3 turbo / 2.0 diesel"
+   },
+   "texto": "Setembro de 2016. A Jeep lança o Compass, feito em Goiana, Pernambuco.",
+   "assunto": "Jeep Compass"
+  },
+  {
+   "texto": "Era uma aposta ousada: um SUV médio, mais caro que a maioria dos carros do mercado, saindo de uma fábrica no Nordeste.",
+   "assunto": "Jeep Compass"
+  },
+  {
+   "texto": "E a aposta deu certo. O Compass chegou a liderar a categoria de SUVs e apareceu várias vezes no top 10 dos carros mais vendidos do país, brigando com hatches que custavam bem menos.",
+   "assunto": "Jeep Compass"
+  },
+  {
+   "texto": "Em menos de dez anos, ele passou de meio milhão de unidades vendidas no Brasil.",
+   "assunto": "Jeep Compass",
+   "numero": {
+    "valor": "500 mil",
+    "rotulo": "Compass vendidos no Brasil"
+   }
+  },
+  {
+   "texto": "E ele não ficou só por aqui. O Compass feito em Pernambuco é vendido em vários países da América Latina, e uma nova geração já está a caminho.",
+   "assunto": "Jeep Compass"
+  },
+  {
+   "texto": "O Compass provou que o brasileiro topa pagar mais por um SUV. Mas o rei atual do país não é um SUV. É uma caçamba.",
+   "assunto": "Jeep Compass"
+  },
+  {
+   "capitulo": "Fiat Strada: o rei que ninguém esperava",
+   "ficha": {
+    "carro": "Fiat Strada",
+    "ano": "1998 em diante (2ª geração em 2020)",
+    "motor": "1.3 / 1.0 turbo"
+   },
+   "texto": "A Fiat Strada nasceu em 1998, em Betim, Minas Gerais, para substituir a Fiorino. Uma picape pequena, pensada para o trabalho.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "Só que a Fiat nunca parou de mexer nela. Em 1999 veio a cabine estendida. Em 2002, a versão Adventure, a primeira picape compacta com visual aventureiro.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "Em 2009, a cabine dupla. E em 2013, uma solução curiosa: uma terceira porta, só do lado direito, que abria ao contrário da porta da frente.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "Em 2020 chegou a segunda geração, maior, com cabine dupla de quatro portas de verdade. Depois vieram o câmbio automático CVT, em 2022, e o motor 1.0 turbo, em 2024.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "E aí a Strada saiu do canteiro de obras e foi parar na garagem de todo tipo de gente. Desde 2021, ela é o veículo mais vendido do Brasil. Não a picape mais vendida. O veículo mais vendido, de qualquer tipo.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "Em 2024 foram 144 mil e 684 unidades. E a briga foi apertada: o Volkswagen Polo terminou logo atrás, com 140 mil e 177.",
+   "assunto": "Fiat Strada",
+   "numero": {
+    "valor": "144.684",
+    "rotulo": "Strada vendidas em 2024",
+    "comparar": {
+     "valor": "140.177",
+     "rotulo": "Polo em 2024"
+    }
+   }
+  },
+  {
+   "texto": "O Onix, aquele que derrubou o Gol, ficou em terceiro, com 97 mil e 503.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "E no último dia de outubro de 2024, a Strada bateu a marca de 2 milhões de unidades vendidas.",
+   "assunto": "Fiat Strada",
+   "numero": {
+    "valor": "2 milhões",
+    "rotulo": "de Strada vendidas"
+   }
+  },
+  {
+   "texto": "Do Gol de 42 cavalos à picape que manda no país, o reinado no Brasil mudou muito. E você, qual desses seis já passou pela sua garagem? Comenta aí.",
+   "assunto": "Fiat Strada"
+  },
+  {
+   "texto": "Se curtiu, deixa o like, se inscreve no canal e assiste esse outro vídeo aqui, que você vai gostar.",
+   "assunto": "Fiat Strada"
+  }
+ ]
+}
