@@ -124,3 +124,11 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 - Cada trecho passa pelo CLIP: o que não é o carro (gente, mão no volante, desenho do designer, paisagem,
   cena de filme, legenda) sai do banco; o resto ganha a vista (interior, painel, rodas…) que a fala pede.
 - Na abertura, fala com preço de um carro mostra esse carro.
+
+## Lições do 2º teste
+- O CLIP olhando só o quadro do meio deixava passar apresentador, mão no volante e igreja no fim do plano.
+  Agora confere **1 quadro por segundo** de cada trecho, com uma segunda pergunta só de 3 grupos (gente /
+  sem carro / carro). Quadro reprovado corta o trecho (fica o maior pedaço limpo, com 0,3 s de folga).
+- Fotos do Commons também passam pela geração: ano do modelo no nome ou nas categorias (datas da foto
+  como "2019 in Paris" não contam). Sem foto da geração certa, fica sem foto.
+- Teste com voz de IA publica `<nome>_vistas_debug.jpg/.json` (nota de cada quadro) para calibrar.

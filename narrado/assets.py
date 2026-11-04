@@ -550,11 +550,19 @@ def baixar_carro(nome, pasta, max_videos=3):
     chave = slug(nome)
     info = {"chave": chave, "nome": nome, "appid": None, "fonte": "Dailymotion", "screens": [], "trailers": []}
     info["trailers"] = _dailymotion_carro(nome, chave, pasta, n=max(2, min(4, max_videos)))
-    try:
-        for f in imagens_commons(nome, pasta, n=4):
-            info["screens"].append(os.path.join(pasta, f["arquivo"]))
-    except Exception as e:
-        print(f"aviso: fotos do Commons de '{nome}': {e}", flush=True)
+    faixa = ANOS_CARRO.get(nome)
+    # geração definida: busca pelos anos dela e só aceita foto com o ano do modelo no nome/categorias
+    termos = [f"{nome} {a}" for a in range(faixa[0], faixa[1] + 1)] + [nome] if faixa else [nome]
+    for termo in termos:
+        if len(info["screens"]) >= 4:
+            break
+        try:
+            for f in imagens_commons(termo, pasta, n=4 - len(info["screens"]), geracao=nome if faixa else None):
+                arq = os.path.join(pasta, f["arquivo"])
+                if arq not in info["screens"]:
+                    info["screens"].append(arq)
+        except Exception as e:
+            print(f"aviso: fotos do Commons de '{termo}': {e}", flush=True)
     if not info["screens"] and not info["trailers"]:
         print(f"aviso: nenhum material encontrado para '{nome}'")
         return None
@@ -1439,13 +1447,23 @@ def trechos_corridos(video, extra=None):
                     if fim_run - run_ini >= 1.0:
                         bons.append({"t": round(run_ini, 2), "dur": round(fim_run - run_ini, 2)})
                         if os.environ.get("NARRADO_NICHO") == "carros":
-                            q = quadro((run_ini + fim_run) / 2)
-                            if q:
-                                pasta_v = video + ".vistas"
-                                os.makedirs(pasta_v, exist_ok=True)
-                                destino_q = os.path.join(pasta_v, f"{int(run_ini * 10)}.jpg")
-                                shutil.copyfile(q, destino_q)
-                                bons[-1]["quadro"] = destino_q
+                            # um quadro por segundo do trecho: o CLIP confere cada um (gente/paisagem no meio
+                            # do plano corta o trecho, não passa por ter o quadro do meio bom)
+                            pasta_v = video + ".vistas"
+                            os.makedirs(pasta_v, exist_ok=True)
+                            dur_r = fim_run - run_ini
+                            n_q = max(1, int(round(dur_r)))
+                            qs = []
+                            for iq in range(n_q):
+                                tq = run_ini + dur_r * (iq + 0.5) / n_q
+                                q = quadro(tq)
+                                if q:
+                                    destino_q = os.path.join(pasta_v, f"{int(run_ini * 10)}_{int(tq * 10)}.jpg")
+                                    shutil.copyfile(q, destino_q)
+                                    qs.append([round(tq, 2), destino_q])
+                            if qs:
+                                bons[-1]["quadros"] = qs
+                                bons[-1]["quadro"] = qs[len(qs) // 2][1]
                     run_ini = None
         planos = range(n_planos)
         if extra is not None:
@@ -1654,6 +1672,7 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
                     **({"marca": ex["marca"]} if ex.get("marca") else {}),
                     **({"area": ex["area"]} if ex.get("area") else {}),
                     **({"quadro": c["quadro"]} if c.get("quadro") else {}),
+                    **({"quadros": c["quadros"]} if c.get("quadros") else {}),
                     **({"personagem": t["personagem"]} if t.get("personagem") else {})}
     if os.environ.get("NARRADO_NICHO") == "carros":
         classificar_vistas(banco)
@@ -1682,6 +1701,22 @@ VISTAS = {
              "an aerial view of a forest", "a wildfire with smoke", "a movie scene with subtitles",
              "text on a screen", "a logo on a plain background", "a black screen", "an animal"],
 }
+# segunda conferência, só 3 grupos (mais firme que a "fora" diluída entre 30 frases): tem gente? tem carro?
+CONFERE = {
+    "gente": ["a photo of a person", "a close-up of a person's face", "a man sitting in the driver's seat of a car",
+              "a person's hands on a steering wheel", "a person talking to the camera",
+              "people standing next to a car", "a woman sitting inside a car", "a person's arm and hand"],
+    "sem_carro": ["a landscape with no car", "a building with no car in front of it", "an empty road with no car",
+                  "the sky and trees", "an old church", "a city skyline", "a black screen",
+                  "a blurry abstract image of lights", "a stone wall"],
+    "carro": ["a photo of a car", "a car interior with nobody inside", "an empty car dashboard",
+              "the empty seats of a car", "a car driving on a road", "a close-up of a car body panel",
+              "the open trunk of a car", "a car wheel", "a car headlight", "a car parked in front of a building",
+              "a car on a road in the countryside"],
+}
+CONFERE_LIMITE = 0.5   # quadro sai se gente ou sem_carro passar disso
+DEBUG_DIR = None       # teste: grava vistas_debug.json/.jpg com a nota de cada quadro
+_DEBUG_ACUM = []
 _clip = []
 
 
@@ -1711,10 +1746,17 @@ def _carregar_clip():
             for f in fs:
                 nomes.append(v)
                 frases.append(f)
+        nomes_g, frases_g = [], []
+        for g, fs in CONFERE.items():
+            for f in fs:
+                nomes_g.append(g)
+                frases_g.append(f)
         with torch.no_grad():
             t = modelo.encode_text(tok(frases))
             t = t / t.norm(dim=-1, keepdim=True)
-        _clip.append((modelo.eval(), prep, t, nomes, torch))
+            tg = modelo.encode_text(tok(frases_g))
+            tg = tg / tg.norm(dim=-1, keepdim=True)
+        _clip.append((modelo.eval(), prep, t, nomes, torch, tg, nomes_g))
     except Exception as e:
         print(f"aviso: CLIP não carregou ({e}); trechos de carro sem classificação de vista", flush=True)
         _clip.append(None)
@@ -1723,30 +1765,36 @@ def _carregar_clip():
 
 def classificar_vistas(banco):
     """Põe em cada trecho de vídeo de carro a "vista" (interior, painel, rodas, frente, traseira, porta_malas,
-    motor, estrada, exterior) e a confiança. Cacheado ao lado do quadro."""
+    motor, estrada, exterior) e confere quadro a quadro (1 por segundo) que só tem carro: quadro com gente, mão,
+    paisagem/prédio sem carro ou tela preta corta o trecho (fica o maior pedaço limpo). Cacheado ao lado do quadro."""
     from PIL import Image
     pend = [m for m in banco.values() if m.get("tipo") == "v" and m.get("quadro") and "vista" not in m]
     if not pend:
         return
+    for m in pend:
+        if not m.get("quadros"):
+            m["quadros"] = [[round(m["t"] + m["dur"] / 2, 2), m["quadro"]]]
     faltam = []
     for m in pend:
-        cache = m["quadro"] + ".vista.json"
+        cache = m["quadro"] + ".vista2.json"
         if os.path.exists(cache):
             try:
-                m.update(json.load(open(cache)))
+                m["_notas"] = json.load(open(cache))
                 continue
             except Exception:
                 pass
         faltam.append(m)
     clip = _carregar_clip() if faltam else None
     if clip:
-        modelo, prep, txt, nomes, torch = clip
-        for i in range(0, len(faltam), 32):
-            lote = faltam[i:i + 32]
+        modelo, prep, txt, nomes, torch, txt_g, nomes_g = clip
+        itens = [(m, i) for m in faltam for i in range(len(m["quadros"]))]
+        notas = {id(m): [None] * len(m["quadros"]) for m in faltam}
+        for i in range(0, len(itens), 32):
+            lote = itens[i:i + 32]
             imgs = []
-            for m in lote:
+            for m, k in lote:
                 try:
-                    imgs.append(prep(Image.open(m["quadro"]).convert("RGB")))
+                    imgs.append(prep(Image.open(m["quadros"][k][1]).convert("RGB")))
                 except Exception:
                     imgs.append(None)
             ok = [k for k, x in enumerate(imgs) if x is not None]
@@ -1756,32 +1804,131 @@ def classificar_vistas(banco):
                 f = modelo.encode_image(torch.stack([imgs[k] for k in ok]))
                 f = f / f.norm(dim=-1, keepdim=True)
                 prob = (100.0 * f @ txt.T).softmax(dim=-1)
-            for k, pr in zip(ok, prob):
-                por_vista = {}
+                prob_g = (100.0 * f @ txt_g.T).softmax(dim=-1)
+            for k, pr, pg in zip(ok, prob, prob_g):
+                por_vista, grupo = {}, {}
                 for v, pv in zip(nomes, pr.tolist()):
                     por_vista[v] = por_vista.get(v, 0.0) + pv
-                fora = por_vista.pop("fora", 0.0)
-                v, pv = max(por_vista.items(), key=lambda x: x[1])
-                r = {"vista": v if pv >= 0.45 else "exterior", "vista_p": round(pv, 2), "fora_p": round(fora, 2)}
-                if fora >= 0.5:
-                    r["vista"] = "fora"
-                lote[k].update(r)
-                try:
-                    json.dump(r, open(lote[k]["quadro"] + ".vista.json", "w"))
-                except Exception:
-                    pass
+                for g, pv in zip(nomes_g, pg.tolist()):
+                    grupo[g] = grupo.get(g, 0.0) + pv
+                m, iq = lote[k]
+                notas[id(m)][iq] = {"v": {v: round(p, 3) for v, p in por_vista.items()},
+                                    "g": {g: round(p, 3) for g, p in grupo.items()}}
+        for m in faltam:
+            m["_notas"] = notas[id(m)]
+            try:
+                json.dump(m["_notas"], open(m["quadro"] + ".vista2.json", "w"))
+            except Exception:
+                pass
+    debug = []
+    for k_b, m in list(banco.items()):
+        if m.get("tipo") != "v" or "_notas" not in m:
+            continue
+        ns = m.pop("_notas")
+        qs = m["quadros"]
+        bons = []
+        for (tq, arq), n in zip(qs, ns):
+            if not n:
+                bons.append(None)  # quadro que não abriu: não decide
+                continue
+            ruim = None
+            if n["g"].get("gente", 0) >= CONFERE_LIMITE:
+                ruim = "gente"
+            elif n["g"].get("sem_carro", 0) >= CONFERE_LIMITE:
+                ruim = "sem_carro"
+            elif n["v"].get("fora", 0) >= 0.5:
+                ruim = "fora"
+            bons.append(ruim)
+        if DEBUG_DIR:
+            debug.append({"id": k_b, "arquivo": m["arquivo"], "t": m["t"], "dur": m["dur"],
+                          "quadros": [{"t": tq, "arq": arq, "ruim": r, **(n or {})} for (tq, arq), n, r in zip(qs, ns, bons)]})
+        # maior sequência de quadros limpos; cada quadro cobre o pedaço dele do trecho
+        passo = m["dur"] / max(1, len(qs))
+        melhor, ini = (0, -1, -1), None
+        for i, r in enumerate(bons + ["fim"]):
+            if r is None and i < len(bons):
+                ini = i if ini is None else ini
+                continue
+            if ini is not None and i - ini > melhor[0]:
+                melhor = (i - ini, ini, i)
+            ini = None
+        n_ok, a_i, b_i = melhor
+        motivos = sorted({r for r in bons if r})
+        # folga de 0,3 s do lado que encosta num quadro reprovado (a pessoa entra em quadro antes do segundo cheio)
+        folga_a = 0.3 if 0 < a_i else 0.0
+        folga_b = 0.3 if 0 <= b_i < len(bons) else 0.0
+        if n_ok == 0 or n_ok * passo - folga_a - folga_b < 1.0:
+            print(f"trecho fora (não é só o carro: {motivos}): {m['arquivo']} t={m['t']:.1f}", flush=True)
+            del banco[k_b]
+            continue
+        if n_ok < len(bons):
+            novo_t = m["t"] + a_i * passo + folga_a
+            novo_d = n_ok * passo - folga_a - folga_b
+            print(f"trecho cortado ({motivos}): {m['arquivo']} {m['t']:.1f}+{m['dur']:.1f}s -> "
+                  f"{novo_t:.1f}+{novo_d:.1f}s", flush=True)
+            m["t"], m["dur"] = round(novo_t, 2), round(novo_d, 2)
+            qs = qs[a_i:b_i]
+            ns = ns[a_i:b_i]
+            m["quadros"] = qs
+            m["quadro"] = qs[len(qs) // 2][1]
+        media = {}
+        val = [n for n in ns if n]
+        for n in val:
+            for v, p in n["v"].items():
+                if v != "fora":
+                    media[v] = media.get(v, 0.0) + p / len(val)
+        if media:
+            v, pv = max(media.items(), key=lambda x: x[1])
+            m["vista"] = v if pv >= 0.45 else "exterior"
+            m["vista_p"] = round(pv, 2)
+            m["fora_p"] = round(max(n["v"].get("fora", 0) for n in val), 2)
+            m["gente_p"] = round(max(n["g"].get("gente", 0) for n in val), 2)
+            m["sem_carro_p"] = round(max(n["g"].get("sem_carro", 0) for n in val), 2)
     cont = {}
+    vivos = {id(m) for m in banco.values()}
     for m in pend:
-        cont[m.get("vista", "?")] = cont.get(m.get("vista", "?"), 0) + 1
+        v = m.get("vista", "?") if id(m) in vivos else "removido"
+        cont[v] = cont.get(v, 0) + 1
     print(f"vistas dos trechos de carro: {cont}", flush=True)
-    # gente, mão no volante, desenho, paisagem, cena de filme: não vai ao ar
-    tirar = [k for k, m in banco.items() if m.get("vista") == "fora"]
-    for k in tirar:
-        print(f"trecho fora (não é o carro): {banco[k]['arquivo']} t={banco[k]['t']:.1f} p={banco[k].get('fora_p')}",
-              flush=True)
-        del banco[k]
+    if DEBUG_DIR and debug:
+        _DEBUG_ACUM.extend(debug)  # 2ª rodada (busca de mais vídeo) soma à 1ª
+        try:
+            _folha_debug(_DEBUG_ACUM, DEBUG_DIR)
+        except Exception as e:
+            print(f"aviso: folha de debug das vistas: {e}", flush=True)
     if clip is None and faltam:
         print("ALERTA: sem CLIP, nada garante que fala de interior/rodas mostra interior/rodas", flush=True)
+
+
+def _folha_debug(debug, pasta):
+    """Teste: vistas_debug.json (nota de cada quadro) + vistas_debug.jpg (quadros reprovados em vermelho)."""
+    from PIL import Image, ImageDraw
+    json.dump(debug, open(os.path.join(pasta, "vistas_debug.json"), "w"), ensure_ascii=False)
+    quadros = []
+    for d in debug:  # reprovados + o do meio de cada trecho (a folha inteira ficaria enorme)
+        qs = [q for q in d["quadros"] if q.get("g")]
+        for i, q in enumerate(qs):
+            if q.get("ruim") or i == len(qs) // 2:
+                quadros.append((d["id"], q))
+    quadros = quadros[:1600]
+    tw, th, col = 192, 108, 16
+    linhas = (len(quadros) + col - 1) // col
+    folha = Image.new("RGB", (col * tw, max(1, linhas) * th), (0, 0, 0))
+    for i, (ident, q) in enumerate(quadros):
+        try:
+            im = Image.open(q["arq"]).convert("RGB").resize((tw, th))
+        except Exception:
+            continue
+        dr = ImageDraw.Draw(im)
+        v = max(((k, p) for k, p in q["v"].items() if k != "fora"), key=lambda x: x[1])[0]
+        txt = f"{ident[:14]} {q['t']:.0f}s {v[:6]}"
+        txt2 = f"g{q['g'].get('gente', 0):.2f} s{q['g'].get('sem_carro', 0):.2f} f{q['v'].get('fora', 0):.2f}"
+        cor = (220, 30, 30) if q.get("ruim") else (0, 0, 0)
+        dr.rectangle([0, 0, tw, 24], fill=cor)
+        dr.text((2, 1), txt, fill="white")
+        dr.text((2, 12), txt2, fill="yellow")
+        folha.paste(im, ((i % col) * tw, (i // col) * th))
+    folha.save(os.path.join(pasta, "vistas_debug.jpg"), quality=70)
 
 
 def segundos_de_video(banco, chave):
@@ -1904,7 +2051,21 @@ def _commons_por_titulo(titulos, pasta, largura=1600):
     return [pags[t] for t in titulos if t in pags]
 
 
-def imagens_commons(termo, pasta, n=3, largura=1600, texto=""):
+def _sem_datas(sobre):
+    """Texto do Commons sem as datas da FOTO ("2019 in France", "taken on 2019-05-03"): o ano que sobra é o
+    do modelo ("2018 Citroën C4 Cactus", "Ford Territory (2018–2022)")."""
+    t = re.sub(r"<[^>]+>", " ", str(sobre))
+    t = re.sub(r"\b(19|20)\d\d[-/.]\d{1,2}([-/.]\d{1,2})?\b", " ", t)
+    t = re.sub(r"\b\d{1,2}[-/.]\d{1,2}[-/.](19|20)\d\d\b", " ", t)
+    t = re.sub(r"\b(19|20)\d\d\s+(in|at|on)\b", " ", t, flags=re.I)
+    t = re.sub(r"(taken|photographed|uploaded|photos?|pictures?|images?)\s+(on|in|from|of)?\s*(19|20)\d\d", " ", t,
+               flags=re.I)
+    t = re.sub(r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
+               r"\s+(\d{1,2},?\s+)?(19|20)\d\d", " ", t, flags=re.I)
+    return t
+
+
+def imagens_commons(termo, pasta, n=3, largura=1600, texto="", geracao=None):
     """Fotos com licença livre do Wikimedia Commons (console, pessoa, empresa, evento).
     Devolve entradas de banco com autor/licença para crédito."""
     import hashlib
@@ -1953,6 +2114,8 @@ def imagens_commons(termo, pasta, n=3, largura=1600, texto=""):
         sobre = " ".join(str((meta.get(k) or {}).get("value", "")) for k in ("ImageDescription", "Categories", "ObjectName"))
         if _RUIM_COMMONS.search(re.sub(r"<[^>]+>", " ", sobre)):
             continue
+        if geracao and not geracao_ok(geracao, _sem_datas(f"{titulo} {sobre}")):
+            continue  # carro: foto da geração certa (o C4 Cactus 2014 entrava no lugar do 2018+)
         lic = (meta.get("LicenseShortName") or {}).get("value", "")
         if not re.search(r"CC|Public domain|PD", lic, re.I):
             continue

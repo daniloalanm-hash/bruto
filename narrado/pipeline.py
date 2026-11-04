@@ -1147,6 +1147,7 @@ def teste_job(pasta, st):
     os.makedirs(sub, exist_ok=True)
     shutil.copy(origem, os.path.join(sub, "job.json"))
     tag = os.environ.pop("NARRADO_TAG", None)  # sem publicar: final.mp4/projeto.json da release ficam intactos
+    assets.DEBUG_DIR = sub  # carros: nota do CLIP de cada quadro (vistas_debug.json/.jpg) para calibrar
     try:
         preparar(sub, st)
     finally:
@@ -1155,7 +1156,8 @@ def teste_job(pasta, st):
     pub = publicador()
     if pub:
         saidas = []
-        for x in ("final.mp4", "projeto.json", "thumb_1.jpg", "thumb_2.jpg", "thumb_3.jpg"):
+        for x in ("final.mp4", "projeto.json", "thumb_1.jpg", "thumb_2.jpg", "thumb_3.jpg", "vistas_debug.json",
+                  "vistas_debug.jpg"):
             p = os.path.join(sub, x)
             if os.path.exists(p):
                 d = os.path.join(sub, f"{nome}_{x}")
