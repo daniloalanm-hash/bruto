@@ -9,6 +9,27 @@ Vídeo longo para YouTube (horizontal, 10 min+), sem rosto: roteiro pesquisado +
 IA para teste) + vídeos oficiais dos carros por baixo. Referência de formato: canal "Carros. com"
 (ex.: "5 Carros INJUSTIÇADOS que SUPERAM os MAIS CAROS").
 
+## Vídeos de referência (canal "Carros. com")
+
+Antes de planejar um vídeo, (re)veja estes — o canal de carros segue esta fórmula:
+
+1. **5 Carros INJUSTIÇADOS que SUPERAM os MAIS CAROS 😱: IMPOSSÍVEL ACREDITAR no que eles OFERECEM**
+   — https://www.youtube.com/watch?v=xNorSEoqxqw (30 min, ~25 mil views na análise de out/2026)
+2. **5 SUVs QUE TODO BRASILEIRO IGNORA, MAS QUE HUMILHAM OS CONCORRENTES | TODOS ABAIXO DA FIPE**
+   — https://www.youtube.com/watch?v=vmR02ZRKP9c (22 min, ~67 mil views na análise de nov/2026). Modelos na
+   tela: Toyota RAV4, Honda, Jeep Cherokee, Mercedes GLA, Suzuki S-Cross.
+
+O que os dois têm em comum (a fórmula):
+- **Ângulo de "achado"/custo-benefício**: carros (muitas vezes usados) que entregam mais do que custam,
+  "ignorados", "injustiçados", "abaixo da FIPE", "humilham os concorrentes". Lista de 5 modelos.
+- **Título em hype com palavras em MAIÚSCULAS** (INJUSTIÇADOS, SUPERAM, HUMILHAM, ABAIXO DA FIPE) + emoji às vezes.
+- **Só imagem oficial/de divulgação do carro**: rodando em estrada, closes (farol, roda, lanterna), interior,
+  multimídia, câmera de ré. Sem apresentador. Narração o tempo todo, música baixa.
+- **Faixa vermelha com o nome do modelo** quando ele entra (a nossa ficha) e **palavra de impacto grande** na
+  abertura ("ACHADOS?", "USADOS").
+- Marca d'água do canal no canto superior direito.
+- Longos: 20–30 min (5 carros com bastante detalhe: motor, consumo, itens, manutenção, preço de usado/FIPE).
+
 ## Regras do Danilo (não quebrar)
 
 - **Nunca citar outros canais, youtubers, streamers ou influenciadores** no roteiro (nem como repercussão).
