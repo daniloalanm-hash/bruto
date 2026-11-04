@@ -670,8 +670,24 @@ def editar(palavras, cenas, nomes=()):
             k += 1
             # o improviso colado só fica se fecha a tomada (vai até o fim/começo dela): senão é o começo
             # de uma tentativa que foi largada ("Você vai comprar o novo…")
+            # frase do roteiro ainda sem fim (o resto foi dito com outras palavras: "US$ 0,99" falado
+            # "99 centavos de dólar"): o que vem colado completa a frase, até umas palavras a mais
+            limite, fecha = 3, None
+            if ws[b]["idx"] is not None:
+                ja = {w["idx"] for w in palavras if w["manter"] and w["idx"] is not None}
+                x, resto = ws[b]["idx"], 0
+                while not re.search(r"[.!?…]$", S[x][2]) and x + 1 < len(S) and S[x + 1][1] == S[ws[b]["idx"]][1]:
+                    x += 1
+                    if x in ja:
+                        resto = 0
+                        break
+                    resto += 1
+                if resto:
+                    limite = min(8, max(3, resto + 4))
+                    m = re.search(r"[.!?…]+$", S[x][2])
+                    fecha = m.group(0) if m else None
             j = b + 1
-            while j < len(ws) and j - b <= 3 and not ws[j]["manter"] and ws[j]["idx"] is None and \
+            while j < len(ws) and j - b <= limite and not ws[j]["manter"] and ws[j]["idx"] is None and \
                     not abandonada(ws[j]) and ws[j]["s"] - ws[j - 1]["e"] < COLADO:
                 j += 1
             if j == len(ws) and j > b + 1:
@@ -688,6 +704,8 @@ def editar(palavras, cenas, nomes=()):
                         prim.update({"junta": True, "idx": ult["idx"]})  # "Just"+"See" = "Justice": legenda na anterior
                         ult["rot"] = True
                 ult["pontua_depois"] = ws[j - 1]["i"]
+                if fecha:
+                    ws[j - 1]["fecha_frase"] = fecha
             j = a - 1
             while j >= 0 and a - j <= 3 and not ws[j]["manter"] and ws[j]["idx"] is None and \
                     not abandonada(ws[j]) and ws[j + 1]["s"] - ws[j]["e"] < COLADO:
@@ -782,6 +800,13 @@ def editar(palavras, cenas, nomes=()):
             w["legenda"] = w["legenda"][:pont.start()]
             alvo["legenda"] = re.sub(r"[.,:;!?…]+$", "", alvo["legenda"]) + pont.group(0)
 
+    for w in palavras:  # frase completada com palavras fora do roteiro: termina com a pontuação dele
+        f = w.pop("fecha_frase", None)
+        if f and w["manter"] and w.get("legenda") and not re.search(r"[.!?…]$", w["legenda"]):
+            w["legenda"] = re.sub(r"[,;:]+$", "", w["legenda"]) + f
+    for w in palavras:  # aparte entre parênteses no roteiro ("(lá ele)"): fala fica, parêntese sai da legenda
+        if w.get("legenda"):
+            w["legenda"] = re.sub(r"[()\[\]]", "", w["legenda"])
     sobras_de_tomada(palavras)
     recomecos(palavras)
     maiusculas_da_legenda(palavras, S)
