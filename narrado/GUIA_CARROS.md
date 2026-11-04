@@ -5,6 +5,9 @@ carros é um "nicho" dentro dele. Tudo que muda em comum vale para os dois canai
 
 ## O que é
 
+Canal: **Radar de Garagem** (youtube.com/@RadardeGaragem). Slogan: "Seu próximo carro pode estar no radar".
+Logo em `narrado/marca/radardegaragem.png` (marca d'água + logo na fala do nome do canal e no fim).
+
 Vídeo longo para YouTube (horizontal, 10 min+), sem rosto: roteiro pesquisado + narração do Danilo (ou voz de
 IA para teste) + vídeos oficiais dos carros por baixo. Referência de formato: canal "Carros. com"
 (ex.: "5 Carros INJUSTIÇADOS que SUPERAM os MAIS CAROS").
@@ -66,6 +69,15 @@ O que os dois têm em comum (a fórmula):
     números animados (`grafico.py`), revisão automática (`qa.py`), thumbs (`thumbs.py`, prefere quadro do vídeo
     oficial à foto do Commons, que pode ser de outra geração).
 
+## Roteiro escrito fora do app (pronto para gravar)
+
+Quando o roteiro é escrito no chat (seguindo a predefinição editorial do Danilo), ele vai para
+`narrado/roteiros/<id>.json` no formato `{id, criado, materia: null, roteiro: {titulo, titulo_tela, formato:
+"horizontal", nicho: "carros", jogos, cenas, post, thumbs}}` (cenas iguais às de `testes/carros_10min.json`:
+`capitulo` + `ficha` na 1ª cena de cada carro, `assunto`, `numero`, `destaques`). O Danilo abre
+`narrado.html?roteiro=<id>`: o app põe no lote, troca para YouTube + carros e abre no passo do roteiro, com
+teleprompter na voz. Primeiro: `suvs-injusticados-fipe` (5 SUVs injustiçados na FIPE, nov/2026).
+
 ## Testar sem o app (voz de IA)
 
 1. Escreva o job em `narrado/testes/<nome>.json` (veja `carros_10min.json`: título, `nicho: "carros"`,
@@ -87,7 +99,8 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
    pessoa).
 3. Alguns modelos têm pouco vídeo bom (Compass, Strada antiga) → trechos repetidos (a revisão aponta).
    Próxima fonte: sites de imprensa das montadoras (Stellantis, VW, Toyota, Hyundai, GM…).
-4. Logo e marca d'água do canal de carros (quando o Danilo mandar a logo): `render.LOGOS` e `cta.CANAIS`.
+4. ~~Logo e marca d'água do canal de carros~~ — feito: `render.LOGOS["radardegaragem"]`, `cta.CANAIS`,
+   `marcaCarros()` no app (marca = "@" + nome do canal sem espaços).
 5. A etapa "Cortando erros e repetições" demora ~12 min com voz de IA (transcrição) — dá para pular no modo IA.
 
 ## Histórico dos testes

@@ -1256,7 +1256,9 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
 
 
 FICHA_DUR = 6.0
-LOGOS = {"jogandosemplano": os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "jogandosemplano.png")}
+_MARCA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca")
+LOGOS = {"jogandosemplano": os.path.join(_MARCA, "jogandosemplano.png"),
+         "radardegaragem": os.path.join(_MARCA, "radardegaragem.png")}
 
 
 def logo_do_canal(projeto):

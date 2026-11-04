@@ -128,7 +128,9 @@ def gerar(pasta, largura=1920):
 
 # ---------------------------------------------------------------- logo do canal quando o nome é falado
 
-CANAIS = {("jogando", "sem", "plano"): os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "jogandosemplano.png")}
+_MARCA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca")
+CANAIS = {("jogando", "sem", "plano"): os.path.join(_MARCA, "jogandosemplano.png"),
+          ("radar", "de", "garagem"): os.path.join(_MARCA, "radardegaragem.png")}
 LOGO_DUR = 2.6
 
 

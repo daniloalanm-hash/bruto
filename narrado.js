@@ -416,7 +416,7 @@ $('#formato').addEventListener('change', atualizaFormato);
   const sel = $('#nichoYt'), nome = $('#canalCarros');
   if (!sel) return;
   sel.value = ls.get(K.nicho) === 'carros' ? 'carros' : 'games';
-  nome.value = ls.get(K.canalCarros) || '';
+  nome.value = ls.get(K.canalCarros) || 'Radar de Garagem';
   const mostra = () => { $('#campoCanalCarros').hidden = sel.value !== 'carros'; };
   sel.addEventListener('change', () => { ls.set(K.nicho, sel.value); mostra(); });
   nome.addEventListener('input', () => ls.set(K.canalCarros, nome.value.trim()));
@@ -469,7 +469,7 @@ const NICHOS = {
 function nichoYt() { return ($('#nichoYt') && $('#nichoYt').value) === 'carros' ? 'carros' : 'games'; }
 function N(nicho) {
   const n = NICHOS[nicho || nichoGerando || state.roteiro?.nicho || nichoYt()] || NICHOS.games;
-  return n.tema === 'carros' ? { ...n, canal: (ls.get(K.canalCarros) || '').trim() || 'nosso canal' } : n;
+  return n.tema === 'carros' ? { ...n, canal: (ls.get(K.canalCarros) || '').trim() || 'Radar de Garagem' } : n;
 }
 
 // pesquisa ANTES do roteiro: a matéria do Danilo é a referência central; a IA busca outras notícias e fontes
@@ -1391,6 +1391,11 @@ function paraBase64(blob) {
   });
 }
 
+// marca d'água do canal de carros: "@" + nome sem espaços (o Radar de Garagem tem logo em narrado/marca)
+function marcaCarros(canal) {
+  const nome = String(canal || '').replace(/[^\p{L}\p{N}]/gu, '');
+  return nome ? `@${nome}` : '';
+}
 function montarJob() {
   const modo = state.voz.modo === 'ia' ? 'ia' : 'gravada';
   const r = state.roteiro;
@@ -1406,7 +1411,7 @@ function montarJob() {
       : (estiloSalvo().legenda_estilo === 'nenhuma' ? { legenda_estilo: 'palavra' } : {})),
     jogos: r.jogos,
     ...(r.formato === 'horizontal' && r.nicho === 'carros'
-      ? { nicho: 'carros', canal: N('carros').canal, marca_dagua: '', cama_clima: 'suave' } : {}),
+      ? { nicho: 'carros', canal: N('carros').canal, marca_dagua: marcaCarros(N('carros').canal), cama_clima: 'suave' } : {}),
     cenas: r.cenas.filter((c) => c.texto.trim()),
     post: r.post || null,
     ...(r.thumbs?.length ? { thumbs: r.thumbs } : {}),
@@ -2556,6 +2561,28 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 /* ---------------- início ---------------- */
+// roteiro pronto (escrito fora do app, em narrado/roteiros/<id>.json): narrado.html?roteiro=<id>
+// entra no lote e abre direto no passo do roteiro, pronto para gravar
+async function abrirRoteiroPronto(id) {
+  if (!/^[a-z0-9-]+$/.test(id)) return;
+  try {
+    const r = await fetch(`narrado/roteiros/${id}.json`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`roteiro "${id}" não encontrado`);
+    const d = await r.json();
+    if (!d?.roteiro?.cenas?.length) throw new Error('roteiro vazio');
+    const item = { id: `pronto-${id}`, criado: Date.now(), materia: d.materia || null, roteiro: d.roteiro };
+    salvarLote([item, ...lote().filter((x) => x.id !== item.id)]);
+    renderLote();
+    if (d.roteiro.formato === 'horizontal') { $('#formato').value = 'horizontal'; atualizaFormato(); }
+    if (d.roteiro.nicho === 'carros' && $('#nichoYt')) {
+      $('#nichoYt').value = 'carros'; ls.set(K.nicho, 'carros'); $('#campoCanalCarros').hidden = false;
+    }
+    abrirDoLote(item.id);
+    history.replaceState(null, '', location.pathname);
+    toast(`Roteiro "${d.roteiro.titulo}" aberto. Revise e siga para a voz.`);
+  } catch (e) { toast(`Não abri o roteiro: ${e.message}`, 'warn'); }
+}
+
 (function iniciar() {
   let r = null;
   try { r = JSON.parse(ls.get(K.rasc) || 'null'); } catch { r = null; }
@@ -2575,6 +2602,8 @@ window.addEventListener('beforeunload', (e) => {
   renderFila();
   vigiarFila();
   if (tagUrl) { abrirVideo(tagUrl); return; }
+  const pronto = new URLSearchParams(location.search).get('roteiro');
+  if (pronto) { abrirRoteiroPronto(pronto); return; }
   if (r?.passo === 'video' && r.tag) { abrirVideo(r.tag); return; }
   // a gravação não sobrevive a um recarregamento: volta no máximo para a voz
   const passo = r?.passo === 'video' ? 'voz' : (r?.passo || 'pauta');
