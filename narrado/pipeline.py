@@ -668,6 +668,16 @@ def aplicar_ajustes(projeto):
             if c.get("midias"):
                 c["midias"] = [m for m in c["midias"] if m not in fora]
         print(f"ajustes: {len(fora)} mídias removidas", flush=True)
+    if aj.get("refazer_fala"):
+        # refaz cortes e legenda a partir da transcrição guardada (correções do alinhamento valem para o vídeo)
+        bruto = [{k: w[k] for k in ("w", "s", "e", "c") if k in w} for w in sorted(projeto["palavras"], key=lambda w: w["s"])]
+        nomes = [j.get("nome") for j in projeto.get("jogos") or [] if isinstance(j, dict)] or projeto.get("nomes_busca") or []
+        projeto["palavras"], projeto["faltando"] = fala.editar(bruto, projeto["cenas"], nomes)
+        if (projeto.get("voz") or {}).get("modo") == "ia":
+            for w in projeto["palavras"]:
+                w["manter"] = True
+            completar_cenas(projeto["palavras"])
+        print("ajustes: fala refeita (cortes e legenda)", flush=True)
     if aj.get("limpar_sobras"):
         fala.sobras_de_tomada(projeto["palavras"])
         fala.recomecos(projeto["palavras"])

@@ -251,7 +251,9 @@ def tokens_roteiro(cenas):
     """Lista de palavras do roteiro: (normalizada, cena, palavra original com pontuação)."""
     out = []
     for ci, c in enumerate(cenas):
-        for w in c["texto"].split():
+        # "74 por cento" vira um token só, "74%": casa com o "74" que o Whisper ouve e a legenda mostra o %
+        texto = re.sub(r"(\d[\d.,]*)\s+por\s+cento\b", r"\1%", c["texto"], flags=re.I)
+        for w in texto.split():
             n = norm(w)
             if n:
                 out.append((n, ci, w))
@@ -304,6 +306,13 @@ def _alinha_trecho(S, C, esperado):
             cc.append(alvo if (len(t) >= 3 or re.search(r"\d[a-z]", t)) and sim(t, alvo) >= 0.75 else t)
         sm = SequenceMatcher(None, janela, cc, autojunk=False)
         r = sm.ratio()
+        # trecho curto (até 6 palavras): a folga de +3 da janela derrubava a nota abaixo do mínimo
+        # ("Segundo o Ascension Tower" contra "Segundo a Sensor Tower"). Nota pelo vão que de fato casou.
+        if n <= 6 and r < 0.42:  # só resgata trecho que seria descartado; o resto alinha como sempre
+            blocos = [b for b in sm.get_matching_blocks() if b.size]
+            if blocos:
+                vao = blocos[-1].a + blocos[-1].size - blocos[0].a
+                r = max(r, 2.0 * sum(b.size for b in blocos) / (n + max(vao, n)) - 0.01 * blocos[0].a)
         d = p - esperado
         if d < -40:
             r -= 0.006 * (-40 - d)
@@ -405,15 +414,29 @@ def erro_de_ouvido(a, b, cru=""):
 
 
 def juntar_hifens(palavras):
-    """O Whisper separa palavra com hífen ("quinta" + "-feira", "E" + "-Day"): junta de volta."""
+    """O Whisper separa palavra com hífen ("quinta" + "-feira", "E" + "-Day") e número decimal ("7" + ",7");
+    e escreve "por cento" por extenso depois do número: junta tudo de volta ("quinta-feira", "7,7", "74%")."""
     saida = []
     for w in palavras:
         if not norm(w["w"]) or norm(w["w"]) in RUIDOS:
             continue  # traço/pontuação solta ou pigarro ("Ahem"): não é fala e atrapalha o alinhamento
         ant = saida[-1] if saida else None
-        if ant and w["w"].startswith("-") and ant["c"] == w["c"] and w["s"] - ant["e"] < 0.35:
+        perto = ant and ant["c"] == w["c"] and w["s"] - ant["e"] < 0.35
+        if perto and w["w"].startswith("-"):
             ant["w"] = ant["w"].rstrip(",.") + w["w"]
             ant["e"] = w["e"]
+            continue
+        if perto and re.fullmatch(r"[,.]\d+[.,!?:;]*", w["w"]) and re.fullmatch(r"\d+", ant["w"]):
+            ant["w"] = ant["w"] + w["w"]  # "7" + ",7" -> "7,7"
+            ant["e"] = w["e"]
+            continue
+        if ant and ant["c"] == w["c"] and norm(w["w"]) == "cento" and len(saida) >= 2 and norm(ant["w"]) == "por" \
+                and re.search(r"\d$", saida[-2]["w"].rstrip(",.")):
+            num = saida[-2]
+            pont = re.search(r"[.,!?:;]+$", w["w"])
+            num["w"] = num["w"].rstrip(",.") + "%" + (pont.group(0) if pont else "")
+            num["e"] = w["e"]
+            saida.pop()  # o "por"
             continue
         saida.append(dict(w))
     return saida
@@ -604,6 +627,13 @@ def editar(palavras, cenas, nomes=()):
                 for w, x in zip(cauda, pos):
                     w.update({"idx": x, "manter": True, "rot": True})
                     ditos.add(x)
+            elif len(cauda) == 2 and pos[0] < len(S) and pos[0] not in ditos and S[pos[0]][1] == S[ws[b]["idx"]][1] \
+                    and re.search(r"[.!?:]$", S[pos[0]][2]):
+                # nome de uma palavra só no roteiro, ouvido como duas ("rose-engine." -> "Rhodes Dyne"),
+                # fechando a frase: as duas ficam no áudio e a legenda sai com a grafia do roteiro
+                cauda[0].update({"idx": pos[0], "manter": True, "rot": True})
+                cauda[1].update({"idx": pos[0], "manter": True, "junta": True})
+                ditos.add(pos[0])
         cabeca = ws[:a]
         if cabeca and len(cabeca) <= 2 and all(w["idx"] is None and not w["manter"] for w in cabeca):
             pos = list(range(ws[a]["idx"] - len(cabeca), ws[a]["idx"]))
@@ -748,7 +778,29 @@ def editar(palavras, cenas, nomes=()):
 
     sobras_de_tomada(palavras)
     recomecos(palavras)
+    maiusculas_da_legenda(palavras, S)
     return palavras, faltando
+
+
+def maiusculas_da_legenda(palavras, S):
+    """Começo de frase do roteiro ("Isso se traduz…") falado depois de outra palavra ("E isso se traduz…"):
+    sem maiúscula no meio da legenda. Nome próprio (maiúscula no meio da frase do roteiro) não muda."""
+    ant = None
+    for w in sorted(palavras, key=lambda w: w["s"]):
+        if not w.get("manter") or not w.get("legenda"):
+            continue
+        x = w.get("idx")
+        leg = w["legenda"]
+        if x is not None and leg[:1].isupper() and leg[1:2].islower() and ant is not None:
+            inicio_roteiro = x == 0 or re.search(r"[.!?:]$", S[x - 1][2]) or S[x - 1][1] != S[x][1]
+            fim_ant = re.search(r"[.!?:…]$", ant["legenda"])
+            # entre a palavra anterior e esta havia fim de frase no roteiro (palavras puladas: "Series [X e S.]"):
+            # a maiúscula fica
+            ai = ant.get("idx")
+            pulou_fim = ai is not None and ai < x - 1 and any(re.search(r"[.!?:]$", S[k][2]) for k in range(ai, x))
+            if inicio_roteiro and not fim_ant and not pulou_fim:
+                w["legenda"] = leg[:1].lower() + leg[1:]
+        ant = w
 
 
 def recomecos(palavras):
