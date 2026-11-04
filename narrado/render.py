@@ -172,6 +172,16 @@ def _fundo_moldura(rotulo_in, rotulo_out):
             f"scale={W}:{H},eq=brightness=-0.10:saturation=1.15{rotulo_out}")
 
 
+def _marca_do_video(src):
+    """Logo fixa de site/gravador ("www.fraps.com") no vídeo: filtro que borra, ou ""."""
+    try:
+        import assets
+        return _delogo(src, (assets.checar_marca(src) or {}).get("marca"))
+    except Exception as e:
+        print(f"aviso: checagem de marca d'água de {os.path.basename(src)} falhou: {e}", flush=True)
+        return ""
+
+
 def seg_video(src, t0, dur, out, zoom_in, trans):
     t0 = _inicio_seguro(src, t0, dur)
     if MOLDURA["ativa"]:
@@ -182,7 +192,7 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
     if trans in PUNCH:
         z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
     c = area_util(src, t0)
-    pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    pre = _marca_do_video(src) + (f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else "")
     vf = (f"{pre}crop='min(iw,ih*{W}/{H})':'min(ih,iw*{H}/{W})',scale={W}:{H},"
           f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
           f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
@@ -203,7 +213,7 @@ def _seg_video_moldura(src, t0, dur, out, zoom_in, trans):
     if trans in PUNCH:
         z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
     c = area_util(src, t0)
-    pre = f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else ""
+    pre = _marca_do_video(src) + (f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else "")
     grafo = (f"[0:v]{pre}fps={FPS},split[a][b];" + _fundo_moldura("[a]", "[bg]") + ";"
              f"[b]crop='min(iw,ih*{W}/{hf})':'min(ih,iw*{hf}/{W})',scale={W}:{hf},"
              f"scale=w='trunc({W}*({z})/2)*2':h='trunc({hf}*({z})/2)*2':eval=frame,crop={W}:{hf},"

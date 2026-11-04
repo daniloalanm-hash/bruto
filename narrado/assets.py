@@ -780,12 +780,22 @@ def gameplay_longo(nome, chave, pasta, janelas=24, cada=10.0):
                 (2 if re.search(r"live|stream|react|facecam|let'?s play", t, re.I) else 0)
             cands.append((-bonus + k * 0.1, v["id"], t, dur))
     cands.sort()
+    # 1ª volta: 720p+; jogo antigo (2004) quase só tem gameplay em 480p — 2ª volta aceita 480p
+    for minimo in (720, 480):
+        achado = _gameplay_dm(cands, chave, pasta, janelas, cada, minimo)
+        if achado:
+            return achado
+    return gameplay_archive(nome, chave, pasta, janelas, cada)
+
+
+def _gameplay_dm(cands, chave, pasta, janelas, cada, minimo):
+    import subprocess
     for _, vid, titulo, dur in cands[:5]:
         p = os.path.join(pasta, f"{chave}_g_{vid}.mp4")
         if os.path.exists(p):
             return {"arquivo": p, "nome": titulo}
         alt, _canal = _info_dm(vid)
-        if alt and alt < 720:
+        if alt and alt < minimo:
             continue
         try:
             r = subprocess.run(["yt-dlp", "-g", "--no-warnings", "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b",
@@ -799,6 +809,48 @@ def gameplay_longo(nome, chave, pasta, janelas=24, cada=10.0):
                 return {"arquivo": p, "nome": titulo}
         except Exception as e:
             print(f"aviso: gameplay {titulo}: {e}", flush=True)
+    return None
+
+
+def gameplay_archive(nome, chave, pasta, janelas=24, cada=10.0):
+    """Internet Archive (archive.org): acervo de vídeos de jogos antigos (trailers da época, gameplays gravadas,
+    longplays). Fonte extra quando o Dailymotion só tem reupload borrado. Pega o .mp4 do item e baixa janelas."""
+    try:
+        q = f'title:("{nome}") AND mediatype:(movies)'
+        d = json.loads(_get("https://archive.org/advancedsearch.php?" + urllib.parse.urlencode(
+            {"q": q, "fl[]": ["identifier", "title"], "rows": 25, "output": "json", "sort[]": "downloads desc"}, doseq=True),
+            timeout=40))
+    except Exception as e:
+        print(f"aviso: busca no Internet Archive falhou: {e}", flush=True)
+        return None
+    docs = d.get("response", {}).get("docs", [])
+    bons = []
+    for k, doc in enumerate(docs):
+        t = str(doc.get("title") or "")
+        if not titulo_do_jogo(nome, t) or re.search(r"\b(review|podcast|soundtrack|ost|music|reaction|news|live)\b", t, re.I):
+            continue
+        bonus = 2 if re.search(r"gameplay|longplay|walkthrough|playthrough|trailer|no commentary", t, re.I) else 0
+        bons.append((-bonus + k * 0.05, doc["identifier"], t))
+    for _, ident, titulo in sorted(bons)[:4]:
+        p = os.path.join(pasta, f"{chave}_g_ia{re.sub(r'[^a-z0-9]', '', ident.lower())[:20]}.mp4")
+        if os.path.exists(p) and duracao(p) > 30:
+            return {"arquivo": p, "nome": titulo}
+        try:
+            meta = json.loads(_get(f"https://archive.org/metadata/{urllib.parse.quote(ident)}", timeout=40))
+            arqs = [f for f in meta.get("files", []) if str(f.get("name", "")).lower().endswith(".mp4")]
+            if not arqs:
+                continue
+            # o maior .mp4 é o original de melhor qualidade (as derivações "512kb" são menores)
+            f = max(arqs, key=lambda f: int(f.get("height") or 0) * 10**12 + int(f.get("size") or 0))
+            if int(f.get("height") or 480) < 360:
+                continue
+            url = f"https://archive.org/download/{urllib.parse.quote(ident)}/{urllib.parse.quote(f['name'])}"
+            baixar_espalhado(url, p, janelas=janelas, cada=cada)
+            if os.path.exists(p) and duracao(p) > 30:
+                print(f"Internet Archive: {titulo} → {int(duracao(p))}s", flush=True)
+                return {"arquivo": p, "nome": titulo}
+        except Exception as e:
+            print(f"aviso: Internet Archive {ident}: {e}", flush=True)
     return None
 
 
@@ -1195,7 +1247,7 @@ def nitidez(png):
         return None
 
 
-def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=None):
+def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=None, nit_min=NITIDEZ_MIN):
     """Trecho [a2, b2] serve como cena? Devolve o candidato ou None (e conta o motivo)."""
     meio = (a2 + b2) / 2
     y, s = medir_quadro(video, meio)
@@ -1209,7 +1261,7 @@ def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=Non
     if quadros is not None:
         q = quadros.em(meio)
         nit = nitidez(q) if q and os.path.exists(q) else None
-        if nit is not None and nit < NITIDEZ_MIN:
+        if nit is not None and nit < nit_min:
             conta["borrado"] = conta.get("borrado", 0) + 1
             return None
     pontos = (meio, a2 + 0.3, b2 - 0.3) if checar_pontas else (meio,)
@@ -1255,12 +1307,27 @@ def _trechos_bons(video, quadros):
         c = _avaliar(video, a2, b2, conta, mascara=mascara, quadros=quadros)
         if c:
             candidatos.append(c)
+    if len(candidatos) < 4 and conta.get("borrado", 0) >= 8:
+        # vídeo de jogo antigo (240p–480p de 2004): tudo é "borrado" pela régua de trailer moderno; aceita o
+        # melhor dele (nitidez de reupload decente), senão o vídeo vira 2 ou 3 trechos repetidos o tempo todo
+        nit_min = 7
+        for a2, b2 in planos:
+            if len(candidatos) >= int(MAX_SHOTS_POR_TRAILER * 1.5):
+                break
+            if any(abs(a2 - c["t"]) < 0.5 for c in candidatos):
+                continue
+            c = _avaliar(video, a2, b2, conta, mascara=mascara, quadros=quadros, nit_min=nit_min)
+            if c:
+                candidatos.append(c)
+    else:
+        nit_min = NITIDEZ_MIN
     n_planos = len(candidatos)
     if len(candidatos) < 6 and fim - ini > 4:
         t = ini
         while t + 1.8 <= fim and len(candidatos) < MAX_SHOTS_POR_TRAILER:
             if all(abs(t - c["t"]) > 1.8 for c in candidatos):
-                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False, mascara=mascara, quadros=quadros)
+                c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False, mascara=mascara, quadros=quadros,
+                             nit_min=nit_min)
                 if c:
                     candidatos.append(c)
             t += 3.0
@@ -1556,7 +1623,8 @@ def analisar_quadros(pasta_quadros):
     h, w = fixo.shape
     rw, rh = int(w * 0.34), int(h * 0.28)
     cands = []
-    for x0, y0 in ((0, 0), (w - rw, 0), (0, h - rh), (w - rw, h - rh)):
+    # cantos + meio do topo/rodapé (gravador de tela: "www.fraps.com", Bandicam, marca centralizada)
+    for x0, y0 in ((0, 0), (w - rw, 0), (0, h - rh), (w - rw, h - rh), ((w - rw) // 2, 0), ((w - rw) // 2, h - rh)):
         ys, xs = np.nonzero(fixo[y0:y0 + rh, x0:x0 + rw])
         if len(xs) < 25:
             continue
@@ -1597,7 +1665,7 @@ def checar_marca(video):
     import json
     import subprocess
     import tempfile
-    cache = video + ".quadros3.json"
+    cache = video + ".quadros4.json"
     if os.path.exists(cache):
         return json.load(open(cache))
     with tempfile.TemporaryDirectory() as tmp:
