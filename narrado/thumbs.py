@@ -5,7 +5,7 @@ Os 3 estilos que mais aparecem nos vídeos de games com muita view no YouTube BR
                  a arte do jogo atrás com o lado do texto escurecido ("BIOWARE ACABOU DE VEZ");
   2. trio      — 2 ou 3 jogos lado a lado em fatias inclinadas + frase curta embaixo ("OS MELHORES JOGOS PS5");
   3. épica     — a imagem mais bonita do jogo, tela cheia e tratada, só um selo pequeno (estilo dos tops).
-As imagens são o material oficial já baixado (screenshots da Steam, quadros dos trailers); a escolha prioriza
+Regras completas em GUIA_THUMBS.md. As imagens são o material oficial já baixado (screenshots da Steam, quadros dos trailers); a escolha prioriza
 imagem colorida, nítida, com contraste e SEM texto na tela.
 """
 import os
@@ -35,7 +35,7 @@ def _nota(img):
     contraste = lum.std()
     brilho = lum.mean()
     lap = np.abs(4 * lum[1:-1, 1:-1] - lum[:-2, 1:-1] - lum[2:, 1:-1] - lum[1:-1, :-2] - lum[1:-1, 2:]).mean()
-    pena_escuro = max(0.0, 55 - brilho) * 1.2 + max(0.0, brilho - 200) * 1.0
+    pena_escuro = max(0.0, 85 - brilho) * 1.6 + max(0.0, brilho - 200) * 1.0
     return cor * 1.0 + contraste * 0.8 + lap * 2.0 - pena_escuro
 
 
@@ -169,7 +169,20 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
                         continue
                 if os.path.exists(q):
                     cands.append(q)
+        # arte guardada no repositório (narrado/arte/<chave>/: key art oficial que o Danilo mandou) vence tudo
+        pasta_arte = os.path.join(os.path.dirname(os.path.abspath(__file__)), "arte", ch)
+        artes = [os.path.join(pasta_arte, a) for a in sorted(os.listdir(pasta_arte))] if os.path.isdir(pasta_arte) else []
+        # imagens que o Danilo subiu no app para o vídeo também entram, com vantagem
+        enviadas = [os.path.join(raw, m.get("arquivo", "")) for m in banco.values()
+                    if m.get("tipo") == "i" and m.get("jogo") == "proprio" and ch == (projeto.get("jogos") or [{}])[0].get("chave")
+                    and os.path.exists(os.path.join(raw, m.get("arquivo", "")))]
         notas, com_texto = [], []
+        for a in artes + enviadas:
+            try:
+                n = _nota(Image.open(a)) + 60 + (35 if _tem_rosto(a) else 0)
+                notas.append((n, a))
+            except Exception:
+                continue
         if hero:
             try:
                 n = _nota(Image.open(hero)) + 25 + (35 if _tem_rosto(hero) else 0)  # arte oficial: vantagem
@@ -376,12 +389,13 @@ def _seta_queda(w, h):
     pts = [(x * w, y * h) for x, y in pts]
     camada = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(camada)
-    d.line(pts, fill=VERMELHO + (255,), width=26, joint="curve")
+    k = max(0.45, min(1.0, w / 1280))
+    d.line(pts, fill=VERMELHO + (255,), width=int(26 * k), joint="curve")
     (x1, y1), (x2, y2) = pts[-2], pts[-1]
     import math
     ang = math.atan2(y2 - y1, x2 - x1)
-    ponta = (x2 + 60 * math.cos(ang), y2 + 60 * math.sin(ang))
-    lados = [(x2 + 52 * math.cos(ang + s), y2 + 52 * math.sin(ang + s)) for s in (math.pi / 2, -math.pi / 2)]
+    ponta = (x2 + 60 * k * math.cos(ang), y2 + 60 * k * math.sin(ang))
+    lados = [(x2 + 52 * k * math.cos(ang + s), y2 + 52 * k * math.sin(ang + s)) for s in (math.pi / 2, -math.pi / 2)]
     d.polygon([ponta, lados[0], lados[1]], fill=VERMELHO + (255,))
     contorno = camada.getchannel("A").filter(ImageFilter.MaxFilter(13))
     base = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -410,34 +424,53 @@ def _palavra(texto, fontes, tam, cor):
     return base
 
 
+NEGATIVO = re.compile(r"FIM|ACAB|QUEDA|CAIU|CAI|FECH|DEMIT|DEMISS|CORT|CANCEL|MORR|FALI|PERD|PREJU|ADEUS|"
+                      r"FRACASS|FLOP|ERRO|PIOR|CRISE|BOMB")
+POSITIVO = re.compile(r"RECORD|HIST[OÓ]RIC|BILH|MILH|ESGOT|SUCESS|EXPLOD|DOMIN|GIGANT|MONSTR|ABSURD|LIDER|TOP|"
+                      r"CRESC|SUBI|DISPAR|INSANO|MAIOR")
+
+
+def _seta(w, h, sobe):
+    """Gráfico da thumb: despencando em vermelho (fim/queda) ou disparando em verde (recorde/sucesso)."""
+    from PIL import Image
+    s = _seta_queda(w, h)
+    if not sobe:
+        return s
+    import numpy as np
+    a = np.asarray(s).copy()
+    verm = (a[..., 0] > 150) & (a[..., 1] < 90)
+    a[verm, 0], a[verm, 1], a[verm, 2] = 40, 230, 90
+    brilho = (a[..., 0] > 100) & (a[..., 1] < 60) & ~verm  # halo vermelho
+    a[brilho, 0], a[brilho, 1], a[brilho, 2] = 40, 230, 90
+    return Image.fromarray(a).transpose(Image.FLIP_TOP_BOTTOM)
+
+
 def impacto(fundo, palavra, fontes, destino, selo=None):
-    """Close do personagem no centro + UMA palavra gigante (partida em volta do rosto, como 'ACA | BOU')
-    + gráfico despencando. Padrão das thumbs de 'fim/queda' com mais views."""
+    """Close do personagem + UMA palavra gigante inteira (nunca partida) embaixo + gráfico só quando a palavra
+    tem sentido de queda (vermelho, descendo) ou de recorde (verde, subindo)."""
     from PIL import Image, ImageEnhance
     foco = _rosto(fundo)
-    img = _cobrir(Image.open(fundo), W, H, foco, alvo_x=0.5, zoom=1.25 if foco else 1.05)
-    img = ImageEnhance.Color(_tratar(img, 1.1)).enhance(0.75)  # tom mais sério
-    img = _vinheta(img, 0.6).convert("RGBA")
-    img.alpha_composite(_seta_queda(W, H))
-    pal = re.sub(r"\s+", "", str(palavra or "").upper())[:9] or "FIM."
-    letras = re.sub(r"\W", "", pal)
-    if foco and len(letras) >= 5:  # parte a palavra em volta do rosto
-        meio = (len(pal) + 1) // 2
-        esq, dir_ = _palavra(pal[:meio], fontes, 250, BRANCO), _palavra(pal[meio:], fontes, 250, BRANCO)
-        larg = max(esq.width, dir_.width)
-        if larg > W * 0.36:
-            esc = W * 0.36 / larg
-            esq = esq.resize((int(esq.width * esc), int(esq.height * esc)))
-            dir_ = dir_.resize((int(dir_.width * esc), int(dir_.height * esc)))
-        y = int(H * 0.30)
-        img.alpha_composite(esq, (max(0, int(W * 0.03)), y))
-        img.alpha_composite(dir_, (min(W - dir_.width, int(W * 0.97) - dir_.width), y))
-    else:
-        t = _palavra(pal, fontes, 300, BRANCO)
-        if t.width > W * 0.9:
-            esc = W * 0.9 / t.width
-            t = t.resize((int(t.width * esc), int(t.height * esc)))
-        img.alpha_composite(t, ((W - t.width) // 2, H - t.height + 10))
+    pal = re.sub(r"\s+", " ", str(palavra or "").upper()).strip()[:14] or "FIM."
+    neg, pos = bool(NEGATIVO.search(pal)), bool(POSITIVO.search(pal))
+    img = _cobrir(Image.open(fundo), W, H, foco, alvo_x=0.5, zoom=1.15 if foco else 1.0)
+    img = _tratar(img, 1.1 if not neg else 0.9)
+    if neg:
+        img = ImageEnhance.Color(img).enhance(0.75)  # tom mais sério
+    img = _vinheta(img, 0.5 if neg else 0.35)
+    import numpy as np
+    a = np.clip((np.linspace(0, 1, H) - 0.5) / 0.5, 0, 1) ** 1.4 * 200  # chão escuro para a palavra
+    img = Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), img,
+                          Image.fromarray(np.tile(a[:, None], (1, W)).astype("uint8"))).convert("RGBA")
+    if neg or pos:  # gráfico num quadro do lado oposto ao rosto (nunca por cima do personagem)
+        bw, bh = int(W * 0.40), int(H * 0.46)
+        cx = (foco[0] if foco else 0.5)
+        x0 = int(W * 0.03) if cx >= 0.5 else W - bw - int(W * 0.03)
+        img.alpha_composite(_seta(bw, bh, sobe=pos and not neg), (x0, int(H * 0.06)))
+    t = _palavra(pal, fontes, 300, AMARELO if pos and not neg else BRANCO)
+    if t.width > W * 0.94:
+        esc = W * 0.94 / t.width
+        t = t.resize((int(t.width * esc), int(t.height * esc)), Image.LANCZOS)
+    img.alpha_composite(t, ((W - t.width) // 2, H - t.height + 14))
     if selo:
         s = _selo(selo, fontes, 56)
         img.alpha_composite(s, (W - s.width - 26, 24))
@@ -507,10 +540,18 @@ def gerar(projeto, raw, fontes, pasta):
     usadas.add(epi)
     # trio: a melhor imagem de cada jogo que ainda não foi usada
     outros = []
-    for ch in ordem[:3]:
-        c = next((c for n, c in cands[ch] if c not in usadas), cands[ch][0][1])
-        outros.append(c)
-        usadas.add(c)
+    for ch in relevantes[:3]:
+        c = next((c for n, c in cands[ch] if c not in usadas), None)
+        if c:
+            outros.append(c)
+            usadas.add(c)
+    if len(outros) < 3:  # vídeo de um jogo só: as melhores imagens dele, sem repetir
+        for n, c in cands[principal]:
+            if len(outros) >= 3:
+                break
+            if c not in usadas and c not in outros:
+                outros.append(c)
+                usadas.add(c)
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
     saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
