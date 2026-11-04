@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 
-FORA_DE_JOGO = ("materia", "proprio", "commons", "trilha", "")
+FORA_DE_JOGO = ("materia", "proprio", "commons", "trilha", "cartao", "")  # cartao: cartões do próprio vídeo
 
 
 def _quadros_pequenos(video, fps=1, w=32, h=18):
