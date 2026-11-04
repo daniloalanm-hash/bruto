@@ -132,3 +132,14 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 - Fotos do Commons também passam pela geração: ano do modelo no nome ou nas categorias (datas da foto
   como "2019 in Paris" não contam). Sem foto da geração certa, fica sem foto.
 - Teste com voz de IA publica `<nome>_vistas_debug.jpg/.json` (nota de cada quadro) para calibrar.
+
+## Lições do 3º teste
+- O "gente" do CLIP não separa: apresentador dá 0,3–0,45 e porta com acabamento de madeira também. Gente
+  agora é pelo **detector YOLOX** ("person" ≥ 0,45, caixa de 0,8% a 90% da tela), quadro a quadro, **2 por
+  segundo** (vinheta de outro canal no meio do plano escapava com 1 por segundo).
+- Foto do Commons só entra se o carro tiver menos de 90 s de vídeo limpo. "Cactus (2019) (flickr id)" era o
+  ano da FOTO de um Cactus 2014. Foto de rali/conceito/corrida ("3008 DKR") nunca entra.
+- Cartões automáticos de número (lidos da fala) **desligados** no canal: deram "138.900 na tabela FIPE"
+  (era o preço de lançamento) e "3.008" (nome do carro). Só os cartões do roteiro, com rótulo conferido.
+- Abertura que fala o preço de um carro: cada plano dele entra uma vez; acabou, a montagem segue com os outros
+  carros (o Territory em loop por 15 s parecia defeito).

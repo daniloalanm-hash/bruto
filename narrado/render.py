@@ -629,6 +629,20 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
         arq, a, b, mid = lst[(len(lst) // 2 + v) % len(lst)]  # do meio do trailer: a parte de ação
         return (mid, max(a, min((a + b) / 2 - CORTE_ABERTURA / 2, b - CORTE_ABERTURA)), CORTE_ABERTURA)
 
+    ja_fixo = set()
+
+    def plano_fixo(j, d):
+        """Abertura que fala o preço de UM carro: planos diferentes dele (vídeo, depois foto), sem repetir."""
+        for arq, a, b, mid in sorted(vids.get(j, []), key=lambda f: f[1] - f[2]):
+            if mid not in ja_fixo and b - a >= d + 0.1:
+                ja_fixo.add(mid)
+                return (mid, max(a, min((a + b) / 2 - d / 2, b - d)), d)
+        for mid in imgs.get(j, []):
+            if mid not in ja_fixo:
+                ja_fixo.add(mid)
+                return (mid, 0.0, d)
+        return None
+
     tarefas, lista, usados, k = [], [], [], 0
     giro = 0
     for fi, (c, a, b) in enumerate(faixas):
@@ -649,8 +663,11 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                     d = dur - t_acum
                 # fala com preço/número de UM carro ("Territory 2021 hoje"): a tela mostra esse carro
                 fixo = jogo if (cenas[c].get("numero") and vids.get(jogo)) else None
-                pl = plano_abertura(fixo or com_video[giro % len(com_video)])
-                if not fixo:
+                pl = plano_fixo(fixo, d) if fixo else None
+                if not pl:
+                    # carro com pouco material: cada plano dele entra uma vez só; depois a montagem segue
+                    # com os outros carros (o mesmo plano em loop por 15 s parece defeito)
+                    pl = plano_abertura(com_video[giro % len(com_video)])
                     giro += 1
                 pecas.append((pl[0], pl[1], d))
                 t_acum += d

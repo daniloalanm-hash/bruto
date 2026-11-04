@@ -608,7 +608,10 @@ def preparar(pasta, st):
         "post": job.get("post") or {},
         "thumbs": job.get("thumbs") or [],
         **{k: job[k] for k in ESTILO_PADRAO if k in job},
+        # carros: só os cartões de número do roteiro (com rótulo conferido); os automáticos da fala erraram
+        # rótulo ("138.900 na tabela FIPE" era o preço de lançamento) e liam o nome "3008" como número
         **({"nicho": "carros", "som_original": False, "cama_clima": job.get("cama_clima") or "suave",
+            "graficos_auto": False,
             "canal": job.get("canal") or ""} if job.get("nicho") == "carros" else {}),
     }
     if projeto["formato"] == "horizontal":

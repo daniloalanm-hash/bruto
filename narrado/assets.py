@@ -1452,7 +1452,7 @@ def trechos_corridos(video, extra=None):
                             pasta_v = video + ".vistas"
                             os.makedirs(pasta_v, exist_ok=True)
                             dur_r = fim_run - run_ini
-                            n_q = max(1, int(round(dur_r)))
+                            n_q = max(1, int(round(dur_r * 2)))  # 2 por segundo: vinheta curta não passa
                             qs = []
                             for iq in range(n_q):
                                 tq = run_ini + dur_r * (iq + 0.5) / n_q
@@ -1676,7 +1676,20 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
                     **({"personagem": t["personagem"]} if t.get("personagem") else {})}
     if os.environ.get("NARRADO_NICHO") == "carros":
         classificar_vistas(banco)
+        # foto do Commons só para carro com pouco vídeo: o nome da foto nem sempre diz a geração (o Cactus
+        # 2014 entrou como "Cactus (2019)", ano da foto) e o vídeo oficial é mais confiável
+        segs = {}
+        for m in banco.values():
+            if m.get("tipo") == "v":
+                segs[m["jogo"]] = segs.get(m["jogo"], 0.0) + float(m.get("dur") or 0)
+        for k_b in [k for k, m in banco.items() if m.get("tipo") == "i" and segs.get(m.get("jogo"), 0) >= FOTO_SO_ATE]:
+            del banco[k_b]
+        print(f"segundos de vídeo por carro: { {j: round(v) for j, v in segs.items()} } "
+              f"(fotos só abaixo de {FOTO_SO_ATE:.0f} s)", flush=True)
     return banco
+
+
+FOTO_SO_ATE = 90.0
 
 
 # ---------------------------------------------------------------- o que cada trecho de carro mostra
@@ -1763,6 +1776,63 @@ def _carregar_clip():
     return _clip[0]
 
 
+PESSOA_LIMITE = 0.45  # YOLOX: confiança de "person" (ocupando 0,8%-90% do quadro) que tira o quadro
+_YOLOX = []
+
+
+def _carregar_yolox():
+    """YOLOX-S (ONNX, release oficial no GitHub) rodando no OpenCV DNN, na CPU. None se não baixar."""
+    if _YOLOX:
+        return _YOLOX[0]
+    net = None
+    try:
+        import cv2
+        caminho = os.path.expanduser("~/.cache/narrado/yolox_s.onnx")
+        if not os.path.exists(caminho) or os.path.getsize(caminho) < 30_000_000:
+            os.makedirs(os.path.dirname(caminho), exist_ok=True)
+            tmp = f"{caminho}.{os.getpid()}.tmp"
+            with open(tmp, "wb") as f:
+                f.write(_get("https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.onnx",
+                             timeout=180))
+            os.replace(tmp, caminho)
+        net = cv2.dnn.readNetFromONNX(caminho)
+    except Exception as e:
+        print(f"aviso: YOLOX não carregou: {e}", flush=True)
+    _YOLOX.append(net)
+    return net
+
+
+def _pessoa_yolox(net, arq, lado=640):
+    """Maior confiança de pessoa no quadro (0 se nenhuma): caixa entre 0,8% e 90% da tela (fora: gente minúscula
+    lá no fundo da rua e a caixa falsa do tamanho da tela inteira em close de couro)."""
+    try:
+        import cv2
+        import numpy as np
+        im = cv2.imread(arq)
+        if im is None:
+            return 0.0
+        h, w = im.shape[:2]
+        r = min(lado / h, lado / w)
+        pad = np.full((lado, lado, 3), 114, np.uint8)
+        pad[:int(h * r), :int(w * r)] = cv2.resize(im, (int(w * r), int(h * r)))
+        net.setInput(pad.transpose(2, 0, 1)[None].astype(np.float32))
+        o = net.forward()[0]
+        grades, passos = [], []
+        for s in (8, 16, 32):
+            n = lado // s
+            yv, xv = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+            grades.append(np.stack((xv, yv), 2).reshape(-1, 2))
+            passos.append(np.full((n * n, 1), s))
+        st = np.concatenate(passos)
+        wh = np.exp(o[:, 2:4]) * st
+        area = wh[:, 0] * wh[:, 1] / (r * r) / (w * h)
+        conf = o[:, 4] * o[:, 5]  # objeto x classe 0 (person)
+        ok = (area >= 0.008) & (area <= 0.9)
+        return float(conf[ok].max()) if ok.any() else 0.0
+    except Exception:
+        return 0.0
+
+
 def classificar_vistas(banco):
     """Põe em cada trecho de vídeo de carro a "vista" (interior, painel, rodas, frente, traseira, porta_malas,
     motor, estrada, exterior) e confere quadro a quadro (1 por segundo) que só tem carro: quadro com gente, mão,
@@ -1820,6 +1890,27 @@ def classificar_vistas(banco):
                 json.dump(m["_notas"], open(m["quadro"] + ".vista2.json", "w"))
             except Exception:
                 pass
+    # gente pelo detector de objetos (YOLOX, COCO "person"): o CLIP dá 0,3-0,45 de "gente" tanto para o
+    # apresentador quanto para porta com acabamento; o detector separa (apresentador, mãos no volante,
+    # pedestre ao lado do carro) sem pegar close de couro/painel
+    yolox = _carregar_yolox() if any("_notas" in m for m in pend) else None
+    if yolox is not None:
+        for m in pend:
+            ns = m.get("_notas")
+            if not ns:
+                continue
+            mudou = False
+            for (tq, arq), n in zip(m["quadros"], ns):
+                if n is not None and "p" not in n:
+                    n["p"] = round(_pessoa_yolox(yolox, arq), 2)
+                    mudou = True
+            if mudou:
+                try:
+                    json.dump(ns, open(m["quadro"] + ".vista2.json", "w"))
+                except Exception:
+                    pass
+    else:
+        print("ALERTA: sem o detector de pessoas (YOLOX), só o CLIP confere gente", flush=True)
     debug = []
     for k_b, m in list(banco.items()):
         if m.get("tipo") != "v" or "_notas" not in m:
@@ -1832,7 +1923,9 @@ def classificar_vistas(banco):
                 bons.append(None)  # quadro que não abriu: não decide
                 continue
             ruim = None
-            if n["g"].get("gente", 0) >= CONFERE_LIMITE:
+            if n.get("p", 0) >= PESSOA_LIMITE:
+                ruim = "pessoa"
+            elif n["g"].get("gente", 0) >= CONFERE_LIMITE:
                 ruim = "gente"
             elif n["g"].get("sem_carro", 0) >= CONFERE_LIMITE:
                 ruim = "sem_carro"
@@ -1968,6 +2061,9 @@ _RUIM_COMMONS = re.compile(r"logo|icon|map|flag|diagram|chart|screenshot|svg|sig
                            r"wordmark|banner|button|symbol|motherboard|teardown|disassembl|pcb|inside|walk.of.fame|star.on|"
                            r"hollywood.star|grave|tomb|plaque|statue|autograph|wax|museum|sign\b|poster|"
                            r"\.pdf|\.tif", re.I)
+_CORRIDA_COMMONS = re.compile(r"\b(dkr|dakar|rally|rallye|wrc|rx|concept|conceito|prototype|prot[oó]tipo|"
+                              r"race|racing|corrida|touring car|btcc|tcr|gt3|gt4|cup|trophy|safety car|police|pol[ií]cia|"
+                              r"ambulance|taxi|t[aá]xi|wreck|crash|interior|engine)\b", re.I)
 _GENERICAS = {"console", "the", "de", "do", "da", "of", "photo", "foto", "headquarters", "sede", "office", "logo",
               "and", "e", "game", "games", "event", "evento"}
 
@@ -2058,6 +2154,7 @@ def _sem_datas(sobre):
     t = re.sub(r"\b(19|20)\d\d[-/.]\d{1,2}([-/.]\d{1,2})?\b", " ", t)
     t = re.sub(r"\b\d{1,2}[-/.]\d{1,2}[-/.](19|20)\d\d\b", " ", t)
     t = re.sub(r"\b(19|20)\d\d\s+(in|at|on)\b", " ", t, flags=re.I)
+    t = re.sub(r"\((19|20)\d\d\)\s*\(\d{6,}\)", " ", t)  # upload do Flickr: "(2019) (53950371681)" = ano da foto
     t = re.sub(r"(taken|photographed|uploaded|photos?|pictures?|images?)\s+(on|in|from|of)?\s*(19|20)\d\d", " ", t,
                flags=re.I)
     t = re.sub(r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
@@ -2114,6 +2211,8 @@ def imagens_commons(termo, pasta, n=3, largura=1600, texto="", geracao=None):
         sobre = " ".join(str((meta.get(k) or {}).get("value", "")) for k in ("ImageDescription", "Categories", "ObjectName"))
         if _RUIM_COMMONS.search(re.sub(r"<[^>]+>", " ", sobre)):
             continue
+        if geracao and _CORRIDA_COMMONS.search(titulo):
+            continue  # carro de rali/conceito/corrida com o nome do modelo ("3008 DKR"): não é o carro da rua
         if geracao and not geracao_ok(geracao, _sem_datas(f"{titulo} {sobre}")):
             continue  # carro: foto da geração certa (o C4 Cactus 2014 entrava no lugar do 2018+)
         lic = (meta.get("LicenseShortName") or {}).get("value", "")
