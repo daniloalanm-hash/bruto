@@ -434,6 +434,25 @@ def carro_no_titulo(nome, titulo):
     return True
 
 
+ANOS_CARRO = {}  # modelo -> (ano mínimo, ano máximo) da geração citada no roteiro (vem da ficha do capítulo)
+
+
+def anos_da_ficha(texto):
+    """"2019 a 2024", "2017–2022", "2018" -> (2019, 2024). None se não houver ano."""
+    anos = [int(x) for x in re.findall(r"\b(19[5-9]\d|20[0-4]\d)\b", str(texto or ""))]
+    return (min(anos), max(anos)) if anos else None
+
+
+def geracao_ok(nome, titulo):
+    """Vídeo da geração certa? Título com ano fora da faixa da ficha (folga de 1 ano) é de outra geração
+    ("2025 Hyundai Tucson" não serve para o New Tucson 2017–2020). Sem ano no título: passa."""
+    faixa = ANOS_CARRO.get(nome)
+    if not faixa:
+        return True
+    anos = [int(x) for x in re.findall(r"\b(19[5-9]\d|20[0-4]\d)\b", str(titulo))]
+    return not anos or any(faixa[0] - 1 <= a <= faixa[1] + 1 for a in anos)
+
+
 def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
     """Vídeos de um modelo de carro no Dailymotion: design exterior/interior, rodando, lançamento oficial.
     Fora: crash test, brinquedo, jogo de corrida, comparativo. Apresentador na câmera sai depois, na análise."""
@@ -445,6 +464,11 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
     vistos, cands = set(tentados), []
     termos = ((f"{nome} exterior design", 3), (f"{nome} interior design", 3), (f"{nome} driving", 2),
               (f"{nome} official", 2), (nome, 1))
+    faixa = ANOS_CARRO.get(nome)
+    if faixa:  # busca também pelos anos da geração (a busca só pelo nome traz o modelo atual)
+        meio = (faixa[0] + faixa[1]) // 2
+        termos = tuple((f"{t} {meio}" if i < 3 else t, p + (1 if i < 3 else 0)) for i, (t, p) in enumerate(termos)) + \
+            ((f"{nome} {faixa[0]}", 3), (f"{nome} {faixa[1]}", 2))
     if extra:
         termos = ((f"{nome} footage", 3), (f"{nome} on the road", 2), (f"{nome} review", 1), (f"{nome} test drive", 1))
     for termo, peso in termos:
@@ -458,8 +482,13 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
             t, dur = v.get("title", ""), v.get("duration") or 0
             if v["id"] in vistos or not carro_no_titulo(nome, t) or RUIM_CARRO.search(t) or not 20 <= dur <= 900:
                 continue
+            if not geracao_ok(nome, t):
+                print(f"descartado (outra geração): {t[:70]}", flush=True)
+                continue
             vistos.add(v["id"])
             bonus = 2 if BOM_CARRO.search(t) else 0
+            if faixa and re.search(r"\b(19[5-9]\d|20[0-4]\d)\b", t):
+                bonus += 1.5  # ano da geração no título: certeza maior de que é o carro certo
             cands.append((-(peso + bonus) + k * 0.1, v["id"], t))
     cands.sort()
     avaliados = []
@@ -1317,6 +1346,7 @@ def trechos_corridos(video, extra=None):
     datas), tela preta. O fim do trailer (logo do jogo) é usado à parte pelo render, no fecho do capítulo.
 
     Um passe só no trailer: detecção de cortes + quadros da tela inteira a 2 por segundo."""
+    import shutil
     import subprocess
     import tempfile
     from PIL import Image
@@ -1390,6 +1420,14 @@ def trechos_corridos(video, extra=None):
                     fim_run = min(b, (t - 0.25) if t is not None else b)
                     if fim_run - run_ini >= 1.0:
                         bons.append({"t": round(run_ini, 2), "dur": round(fim_run - run_ini, 2)})
+                        if os.environ.get("NARRADO_NICHO") == "carros":
+                            q = quadro((run_ini + fim_run) / 2)
+                            if q:
+                                pasta_v = video + ".vistas"
+                                os.makedirs(pasta_v, exist_ok=True)
+                                destino_q = os.path.join(pasta_v, f"{int(run_ini * 10)}.jpg")
+                                shutil.copyfile(q, destino_q)
+                                bons[-1]["quadro"] = destino_q
                     run_ini = None
         planos = range(n_planos)
         if extra is not None:
@@ -1597,8 +1635,115 @@ def banco_corrido(jogos_info, pasta_thumbs, progresso=None, ti0=0):
                     "t": c["t"], "dur": c["dur"], "corrido": True,
                     **({"marca": ex["marca"]} if ex.get("marca") else {}),
                     **({"area": ex["area"]} if ex.get("area") else {}),
+                    **({"quadro": c["quadro"]} if c.get("quadro") else {}),
                     **({"personagem": t["personagem"]} if t.get("personagem") else {})}
+    if os.environ.get("NARRADO_NICHO") == "carros":
+        classificar_vistas(banco)
     return banco
+
+
+# ---------------------------------------------------------------- o que cada trecho de carro mostra
+# Narração fala de interior, rodas, painel… -> a tela mostra isso (render.montar_corrido). Cada trecho é
+# classificado pelo quadro do meio com o CLIP (texto x imagem, sem treino), na CPU do servidor.
+VISTAS = {
+    "interior": ["a photo of the inside of a car with the seats", "the back seats inside a car",
+                 "the leather front seats of a car interior"],
+    "painel": ["a car dashboard with the steering wheel", "a close-up of the touchscreen in a car dashboard",
+               "the digital instrument cluster behind a steering wheel", "a car center console with gear shifter"],
+    "rodas": ["a close-up of a car alloy wheel and tire", "a close-up of a car rim"],
+    "frente": ["a close-up of a car headlight", "the front grille of a car, close-up", "the front of a car"],
+    "traseira": ["the rear of a car with its taillights", "a close-up of a car taillight"],
+    "porta_malas": ["the open trunk of a car", "the cargo area of an SUV with the tailgate open"],
+    "motor": ["the engine bay of a car with the hood open", "a car engine, close-up"],
+    "estrada": ["a car driving fast on a road", "a car driving on a highway", "a car driving on a curvy mountain road"],
+    "exterior": ["a side view of a parked car", "a car parked in a city street", "a car photographed in a studio"],
+}
+_clip = []
+
+
+def _carregar_clip():
+    if _clip:
+        return _clip[0]
+    try:
+        import open_clip  # noqa: F401
+        import torch  # noqa: F401
+    except ImportError:  # só o canal de carros usa: instala na hora (CPU), não pesa nos vídeos de games
+        import subprocess
+        import sys
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "torch", "--index-url",
+                        "https://download.pytorch.org/whl/cpu"], check=False)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "open_clip_torch"], check=False)
+    try:
+        import open_clip
+        import torch
+        torch.set_num_threads(max(1, os.cpu_count() or 1))
+        modelo, _, prep = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
+        tok = open_clip.get_tokenizer("ViT-B-32")
+        nomes, frases = [], []
+        for v, fs in VISTAS.items():
+            for f in fs:
+                nomes.append(v)
+                frases.append(f)
+        with torch.no_grad():
+            t = modelo.encode_text(tok(frases))
+            t = t / t.norm(dim=-1, keepdim=True)
+        _clip.append((modelo.eval(), prep, t, nomes, torch))
+    except Exception as e:
+        print(f"aviso: CLIP não carregou ({e}); trechos de carro sem classificação de vista", flush=True)
+        _clip.append(None)
+    return _clip[0]
+
+
+def classificar_vistas(banco):
+    """Põe em cada trecho de vídeo de carro a "vista" (interior, painel, rodas, frente, traseira, porta_malas,
+    motor, estrada, exterior) e a confiança. Cacheado ao lado do quadro."""
+    from PIL import Image
+    pend = [m for m in banco.values() if m.get("tipo") == "v" and m.get("quadro") and "vista" not in m]
+    if not pend:
+        return
+    faltam = []
+    for m in pend:
+        cache = m["quadro"] + ".vista.json"
+        if os.path.exists(cache):
+            try:
+                m.update(json.load(open(cache)))
+                continue
+            except Exception:
+                pass
+        faltam.append(m)
+    clip = _carregar_clip() if faltam else None
+    if clip:
+        modelo, prep, txt, nomes, torch = clip
+        for i in range(0, len(faltam), 32):
+            lote = faltam[i:i + 32]
+            imgs = []
+            for m in lote:
+                try:
+                    imgs.append(prep(Image.open(m["quadro"]).convert("RGB")))
+                except Exception:
+                    imgs.append(None)
+            ok = [k for k, x in enumerate(imgs) if x is not None]
+            if not ok:
+                continue
+            with torch.no_grad():
+                f = modelo.encode_image(torch.stack([imgs[k] for k in ok]))
+                f = f / f.norm(dim=-1, keepdim=True)
+                prob = (100.0 * f @ txt.T).softmax(dim=-1)
+            for k, pr in zip(ok, prob):
+                por_vista = {}
+                for v, pv in zip(nomes, pr.tolist()):
+                    por_vista[v] = por_vista.get(v, 0.0) + pv
+                v, pv = max(por_vista.items(), key=lambda x: x[1])
+                r = {"vista": v if pv >= 0.45 else "exterior", "vista_p": round(pv, 2)}
+                lote[k].update(r)
+                try:
+                    json.dump(r, open(lote[k]["quadro"] + ".vista.json", "w"))
+                except Exception:
+                    pass
+    cont = {}
+    for m in pend:
+        cont[m.get("vista", "?")] = cont.get(m.get("vista", "?"), 0) + 1
+    print(f"vistas dos trechos de carro: {cont}", flush=True)
 
 
 def segundos_de_video(banco, chave):

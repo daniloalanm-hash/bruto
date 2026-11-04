@@ -1,0 +1,486 @@
+{
+ "formato": "horizontal",
+ "edicao": "corrido",
+ "legenda_estilo": "nenhuma",
+ "musica": false,
+ "zoom_enfase": false,
+ "cama_clima": "suave",
+ "id": "teste-suvs-ia",
+ "titulo": "5 SUVs INJUSTIÇADOS que despencaram na FIPE e viraram oportunidade",
+ "titulo_tela": "SUVs INJUSTIÇADOS",
+ "nicho": "carros",
+ "canal": "Radar de Garagem",
+ "marca_dagua": "@RadardeGaragem",
+ "jogos": [
+  "Citroën C4 Cactus",
+  "Ford Territory",
+  "Hyundai Tucson",
+  "Mitsubishi Eclipse Cross",
+  "Peugeot 3008"
+ ],
+ "cenas": [
+  {
+   "texto": "Em 2020, a Ford pedia quase 198 mil reais pelo Territory Titanium. Hoje, a Tabela FIPE diz que esse mesmo carro, ano 2021, vale pouco mais de 108 mil. São quase 90 mil reais que evaporaram em cinco anos.",
+   "assunto": "Ford Territory",
+   "capitulo": "Introdução",
+   "destaques": [
+    "quase 90 mil reais"
+   ],
+   "numero": {
+    "valor": "R$ 108.594",
+    "rotulo": "Territory 2021 hoje",
+    "comparar": {
+     "valor": "R$ 197.900",
+     "rotulo": "no lançamento"
+    }
+   }
+  },
+  {
+   "texto": "E o Territory não está sozinho.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "Existe uma turma de SUVs que fez quase tudo certo. Motor turbo, câmbio automático, lista de equipamentos de carro caro. Mesmo assim, ficaram de lado, enquanto todo mundo disputava os mesmos três ou quatro modelos de sempre.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "O resultado aparece na tabela. Esses carros perderam valor muito mais rápido que os concorrentes famosos. Para quem comprou zero, foi prejuízo. Para quem está procurando um usado agora, pode ser uma das melhores oportunidades do mercado.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Neste vídeo, você vai conhecer cinco desses SUVs injustiçados. Um deles acelera como esportivo e custa menos que um T-Cross seminovo. Outro foi eleito carro do ano no Japão, e quase ninguém lembra que ele existe. E o último da lista é, para muita gente, um dos SUVs mais bonitos que já passaram pelas concessionárias brasileiras.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  },
+  {
+   "texto": "Mas tem um detalhe. Carro barato que dá dor de cabeça não é oportunidade, é armadilha. Por isso, em cada um deles, você também vai saber o que olhar antes de fechar negócio.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "Esse é o Radar de Garagem. Aqui você descobre quais carros realmente valem o que custam, quais modelos surpreendem pelo que oferecem e o que você precisa saber antes de escolher seu próximo automóvel.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "Começa pelo carro que mais engana na primeira olhada.",
+   "assunto": "Citroën C4 Cactus",
+   "capitulo": "Citroën C4 Cactus THP: o esportivo disfarçado",
+   "ficha": {
+    "carro": "Citroën C4 Cactus Shine Pack THP",
+    "geracao": "2018-2024",
+    "ano": "2019 a 2024",
+    "motor": "1.6 turbo flex, automático 6 marchas",
+    "potencia": "até 173 cv",
+    "consumo": "10,1 km/l (teste, gasolina)",
+    "preco": "FIPE 2019: R$ 70.214"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "O Citroën C4 Cactus chegou ao Brasil em 2018 com cara de SUV compacto descolado. Rodas grandes, molduras plásticas, aquele visual de quem gosta de estrada de terra. Só que, na versão certa, ele esconde um segredo debaixo do capô.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "É o motor 1.6 THP. Turbo, injeção direta, até 173 cavalos com etanol e 24,5 kgfm de torque, ligado a um câmbio automático de seis marchas. Num carro leve e baixo para um SUV, isso muda tudo.",
+   "assunto": "Citroën C4 Cactus",
+   "numero": {
+    "valor": "173 cv",
+    "rotulo": "com etanol"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Quanto muda? A Citroën declara de 0 a 100 km/h em 7,7 segundos. Para comparar, um T-Cross 200 TSI precisa de pouco mais de 10 segundos para fazer o mesmo. Em 2023, o Cactus THP chegou a ser apontado como o SUV mais rápido à venda no Brasil. E não estamos falando de um modelo de luxo.",
+   "assunto": "Citroën C4 Cactus",
+   "numero": {
+    "valor": "7,7 s",
+    "rotulo": "de 0 a 100 km/h"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Agora vem a parte que interessa para o bolso. Quando a versão Shine Pack com esse motor chegou, no fim de 2018, ela custava cerca de 100 mil reais. Hoje, um Cactus THP Shine Pack 2019 aparece na Tabela FIPE de novembro de 2026 por cerca de 70 mil. O 2021 fica perto de 78 mil.",
+   "assunto": "Citroën C4 Cactus",
+   "numero": {
+    "valor": "R$ 70.214",
+    "rotulo": "Cactus THP 2019 na FIPE",
+    "comparar": {
+     "valor": "R$ 99.990",
+     "rotulo": "no lançamento"
+    }
+   },
+   "destaques": []
+  },
+  {
+   "texto": "E o T-Cross 2021? Na FIPE de abril deste ano, começava em torno de 87 mil reais. Ou seja, o Citroën entrega bem mais desempenho por menos dinheiro.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "Por que ele não vendeu tanto? A marca nunca teve no Brasil o tamanho da rede da Volkswagen ou da Chevrolet. E o Cactus tem limitações reais. O porta-malas é menor que o do T-Cross. E quem testou o carro por um mês notou que, em curvas fortes, a suspensão elevada não acompanha tão bem toda essa potência.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "No dia a dia, a recompensa é o consumo. Num teste com mais trechos urbanos que rodoviários, ele fez média de 10,1 km/l com gasolina. Nada mal para quem tem 173 cavalos à disposição.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "O ponto de atenção é o próprio THP. É um motor que pede manutenção em dia, com óleo correto e revisões no prazo. Os pontos que mais preocupam os mecânicos são a corrente de comando e a bomba de alta pressão da injeção. Então, histórico de revisões não é opcional aqui. É o documento mais importante do carro.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "Para quem ele faz sentido? Para quem quer um carro divertido de dirigir, não precisa de um porta-malas enorme e topa ser cuidadoso com a manutenção.",
+   "assunto": "Citroën C4 Cactus",
+   "destaques": []
+  },
+  {
+   "texto": "Se o Cactus é o injustiçado pequeno, o próximo é o caso mais extremo de desvalorização desta lista.",
+   "assunto": "Ford Territory",
+   "capitulo": "Ford Territory: o Ford que veio da China",
+   "ficha": {
+    "carro": "Ford Territory Titanium",
+    "geracao": "2019-2023",
+    "ano": "2021 a 2023",
+    "motor": "1.5 turbo gasolina, CVT",
+    "potencia": "150 cv",
+    "consumo": "9,2 km/l cidade (Ford)",
+    "preco": "FIPE 2021: R$ 108.594"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "O Ford Territory chegou ao Brasil em 2020, como modelo 2021. Importado da China, ele é produzido pela JMC, uma fabricante chinesa da qual a Ford é sócia. A missão era clara: brigar com Jeep Compass e Volkswagen Tiguan.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "E no papel, ele tinha argumentos. O Territory Titanium veio com câmera 360 graus, carregador de celular por indução e rodas de 18 polegadas. A câmera 360, inclusive, era um item que os rivais diretos não ofereciam naquela época.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "O motor é um 1.5 turbo a gasolina, com 150 cavalos e 22,9 kgfm de torque, disponível desde 1.500 giros. O câmbio é CVT, simulando oito marchas. Não é um carro rápido: são 11,8 segundos de 0 a 100. Mas o torque aparece cedo, o que deixa o uso urbano agradável.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "Tem até uma curiosidade. Na primeira geração, o botão de partida ficava à esquerda do volante, como nos Porsche. Na linha 2024, ele mudou para o lado direito.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "Agora, os números que explicam a presença do Territory aqui. Em 2020, o SEL custava 179.900 reais e o Titanium, 197.900. Na Tabela FIPE de novembro de 2026, o Titanium 2021 vale cerca de 108,5 mil. O 2022 fica perto de 115,5 mil, e o 2023, de 127 mil.",
+   "assunto": "Ford Territory",
+   "numero": {
+    "valor": "R$ 197.900",
+    "rotulo": "Titanium no lançamento"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "O Titanium 2021 perdeu cerca de 45% do valor de lançamento. Por quê? Há alguns fatores. O carro é importado e só funciona com gasolina, num mercado acostumado com motor flex. Em 2024, chegou uma geração renovada, com o motor recalibrado. E muita gente ainda olha com desconfiança para um Ford feito na China, mesmo com o oval azul na grade.",
+   "assunto": "Ford Territory",
+   "numero": {
+    "valor": "-45%",
+    "rotulo": "queda desde o lançamento"
+   },
+   "destaques": [
+    "45%"
+   ]
+  },
+  {
+   "texto": "O consumo também não é destaque. A Ford divulgou 9,2 km/l na cidade e 10 km/l na estrada. Antes de comprar, vale cotar o seguro e o preço das principais peças na sua região.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "Para quem ele faz sentido? Para a família que quer um SUV médio, espaçoso, bem equipado e confortável, pelo preço de um compacto, e que roda mais na cidade do que na estrada.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "Agora, um nome que todo mundo conhece. O problema é que muita gente conhece o Tucson errado.",
+   "assunto": "Hyundai Tucson",
+   "capitulo": "Hyundai New Tucson: o Tucson que pouca gente percebeu",
+   "ficha": {
+    "carro": "Hyundai New Tucson GLS",
+    "geracao": "2016-2020",
+    "ano": "2017 a 2022",
+    "motor": "1.6 turbo gasolina, dupla embreagem 7 marchas",
+    "potencia": "177 cv",
+    "consumo": "9,8 km/l cidade",
+    "preco": "FIPE 2018: R$ 92.404"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Em 2017, a Hyundai e a CAOA lançaram o New Tucson, montado em Anápolis, em Goiás. Só que o Tucson antigo, aquele dos anos 2000, continuava sendo vendido. E ainda tinha o ix35 na mesma loja. Três SUVs parecidos no nome, com preços e gerações completamente diferentes. Não é difícil entender por que o mais moderno passou despercebido.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "E ele era o mais interessante de todos. O motor é um 1.6 turbo com injeção direta, de 177 cavalos e 27 kgfm de torque, que aparecem já a 1.500 giros. O câmbio é de dupla embreagem, com sete marchas. O resultado: 0 a 100 em 9,1 segundos e máxima de 201 km/h.",
+   "assunto": "Hyundai Tucson",
+   "numero": {
+    "valor": "177 cv",
+    "rotulo": "1.6 turbo"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Na versão GLS, a lista de equipamentos inclui ar-condicionado digital de duas zonas, bancos de couro com ajustes elétricos e teto solar.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "No lançamento, o New Tucson partia de 138.900 reais. Na Tabela FIPE de novembro de 2026, um GLS 2018 vale cerca de 92 mil. O 2020 fica perto de 99 mil, e o 2022, de 109 mil.",
+   "assunto": "Hyundai Tucson",
+   "numero": {
+    "valor": "R$ 92.404",
+    "rotulo": "GLS 2018 na FIPE",
+    "comparar": {
+     "valor": "R$ 138.900",
+     "rotulo": "no lançamento"
+    }
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Para dimensionar, um Hyundai Creta 2021 aparecia na FIPE de abril deste ano a partir de uns 85 mil reais. Com pouco mais que isso, você leva um SUV médio de 177 cavalos, um segmento acima.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "E o ponto de atenção? O câmbio de dupla embreagem a seco. Ele é rápido e eficiente, mas não gosta de abuso no anda e para. No test drive, preste atenção em trancos em manobras e saídas lentas. E peça o histórico de revisões. O motor também é só a gasolina, e o consumo urbano declarado gira em torno de 9,8 km/l.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "Para quem ele faz sentido? Para quem quer desempenho de verdade num SUV médio, de uma marca com boa rede, sem pagar o preço de um Compass.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "O próximo da lista já começou a vida cercado de polêmica. E o motivo foi o nome.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "capitulo": "Mitsubishi Eclipse Cross: o carro do ano que o Brasil esqueceu",
+   "ficha": {
+    "carro": "Mitsubishi Eclipse Cross HPE-S",
+    "geracao": "2018-2020",
+    "ano": "2019 a 2022",
+    "motor": "1.5 turbo gasolina, CVT",
+    "potencia": "165 cv",
+    "consumo": "~10 km/l cidade",
+    "preco": "FIPE 2022: R$ 120.594"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Para muita gente, Eclipse lembra o esportivo cupê dos anos 90. Quando a Mitsubishi usou esse nome num SUV, em 2018, nem todo fã gostou. A marca até deixou uma homenagem: as lanternas traseiras interligadas, inspiradas no esportivo.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Polêmica à parte, o carro era muito bom. No mesmo ano em que chegou ao Brasil, o Eclipse Cross foi eleito Carro do Ano no Japão.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Aqui, ele chegou importado do Japão, em setembro de 2018, custando a partir de 149.990 reais. A versão com tração integral S-AWC saía por 155.990. Depois, passou a ser produzido em Catalão, em Goiás.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "numero": {
+    "valor": "R$ 149.990",
+    "rotulo": "preço de lançamento"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "O motor é um 1.5 turbo a gasolina, com 165 cavalos e 25,5 kgfm de torque. O câmbio é CVT, simulando oito marchas, com aletas atrás do volante. A versão S-AWC tem controle eletrônico que distribui a força entre as rodas, algo raro nessa faixa de preço.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Tem detalhes práticos que pouca gente conhece. O banco traseiro desliza e reclina, e o porta-malas tem 473 litros.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "E mesmo assim, menos de um ano depois do lançamento, a imprensa especializada já descrevia o Eclipse Cross como o bom SUV que ninguém lembrava que existia.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Na Tabela FIPE de outubro de 2026, um Eclipse Cross HPE-S Sport 2022 aparece por cerca de 120,5 mil reais. Perto do preço de um SUV compacto bem equipado zero quilômetro.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "numero": {
+    "valor": "R$ 120.594",
+    "rotulo": "HPE-S Sport 2022 na FIPE"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "O ponto fraco é o comportamento do câmbio CVT. O turbo ajuda nas saídas, mas em ultrapassagens curtas na estrada é preciso planejar com antecedência. Nos números de referência, o consumo fica na casa de 10 km/l na cidade e 12 km/l na estrada.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Para quem ele faz sentido? Para quem quer um SUV diferente, com engenharia japonesa, e principalmente para quem precisa de tração integral em estrada de terra ou serra com chuva.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "E o último da lista é o carro que talvez melhor represente a palavra injustiçado.",
+   "assunto": "Peugeot 3008",
+   "capitulo": "Peugeot 3008: o mais bonito ficou para o final",
+   "ficha": {
+    "carro": "Peugeot 3008 Griffe",
+    "geracao": "2017-2023",
+    "ano": "2018 a 2023",
+    "motor": "1.6 THP turbo, automático 6 marchas",
+    "potencia": "165 cv",
+    "consumo": "",
+    "preco": "FIPE 2022: R$ 137.472"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "A segunda geração do Peugeot 3008 chegou ao Brasil em 2017. Pouco antes, ela tinha sido eleita Carro do Ano na Europa. E aqui, estreou em versão única, a Griffe, por 135.990 reais na pré-venda.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  },
+  {
+   "texto": "O destaque era o interior. O i-Cockpit da Peugeot usa um volante pequeno e o painel posicionado acima dele, não atrás. Parece estranho no começo. Depois de alguns quilômetros, muita gente não quer voltar ao painel tradicional.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  },
+  {
+   "texto": "O motor é o 1.6 THP turbo, de 165 cavalos, com câmbio automático de seis marchas. É o mesmo princípio do Cactus, num SUV maior. O porta-malas tem 520 litros, e o tanque de 53 litros garante boa autonomia em viagem.",
+   "assunto": "Peugeot 3008",
+   "numero": {
+    "valor": "520 litros",
+    "rotulo": "de porta-malas"
+   },
+   "destaques": []
+  },
+  {
+   "texto": "Então, por que ele vendeu pouco? Preço. Com o dólar subindo, o 3008 importado da França foi ficando cada vez mais caro. Na reestilização da linha 2022, ele voltou custando 229.990 reais na Griffe e 249.990 na GT. Um preço que o colocava contra SUVs mais famosos e mais baratos.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  },
+  {
+   "texto": "Pois bem. Na Tabela FIPE de agosto de 2026, o 3008 Griffe 2022 valia cerca de 137,5 mil reais. Quem comprou zero perdeu mais de 90 mil. Quem compra agora leva um SUV médio francês, com painel digital de 12,3 polegadas e acabamento de categoria superior, pelo preço de um intermediário.",
+   "assunto": "Peugeot 3008",
+   "numero": {
+    "valor": "R$ 137.472",
+    "rotulo": "Griffe 2022 na FIPE",
+    "comparar": {
+     "valor": "R$ 229.990",
+     "rotulo": "no lançamento"
+    }
+   },
+   "destaques": []
+  },
+  {
+   "texto": "O ponto de atenção é o mesmo do Cactus: o THP precisa de manutenção rigorosa. Corrente de comando, bomba de alta pressão e revisões em dia. Uma inspeção pré-compra com um mecânico que conheça o motor é dinheiro bem gasto.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  },
+  {
+   "texto": "Para quem ele faz sentido? Para quem valoriza design, conforto e espaço para a família, e está disposto a cuidar do carro como ele merece.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  },
+  {
+   "texto": "Repare numa coisa. Nenhum desses cinco SUVs perdeu valor por ser um carro ruim.",
+   "assunto": "Citroën C4 Cactus",
+   "capitulo": "Vale a pena?",
+   "destaques": []
+  },
+  {
+   "texto": "O Cactus esbarrou no tamanho da marca. O Territory, na desconfiança com o carro chinês e no motor só a gasolina. O New Tucson se perdeu entre os próprios irmãos. O Eclipse Cross foi esquecido. E o 3008 ficou caro demais por causa do câmbio.",
+   "assunto": "Ford Territory",
+   "destaques": []
+  },
+  {
+   "texto": "Quem pagou essa conta foi o primeiro dono. Para o segundo, sobra a parte boa: um carro mais completo, pelo preço de um mais simples. Desde que você faça a lição de casa, com histórico de revisões, vistoria cautelar e test drive sem pressa.",
+   "assunto": "Hyundai Tucson",
+   "destaques": []
+  },
+  {
+   "texto": "Se você curte descobrir esse tipo de oportunidade, o Radar de Garagem foi feito para você. Se inscreve no canal, porque tem muito carro injustiçado esperando a vez de aparecer por aqui.",
+   "assunto": "Mitsubishi Eclipse Cross",
+   "destaques": []
+  },
+  {
+   "texto": "Agora quero saber de você: qual desses cinco SUVs você colocaria na garagem? E qual outro modelo injustiçado merecia estar nessa lista? Conta aqui nos comentários.",
+   "assunto": "Peugeot 3008",
+   "destaques": []
+  }
+ ],
+ "post": {
+  "titulo_yt": "5 SUVs INJUSTIÇADOS que despencaram na FIPE e viraram oportunidade",
+  "legenda": "C4 Cactus THP, Ford Territory, Hyundai New Tucson, Mitsubishi Eclipse Cross e Peugeot 3008: cinco SUVs usados que perderam muito valor na Tabela FIPE, mas continuam entregando motor turbo, câmbio automático e muito equipamento. Veja quanto cada um vale hoje e o que conferir antes de comprar.\n\nQual desses você colocaria na garagem? Conta nos comentários!",
+  "hashtags": [
+   "suv",
+   "carrosusados",
+   "tabelafipe",
+   "c4cactus",
+   "territory",
+   "tucson",
+   "eclipsecross",
+   "peugeot3008",
+   "seminovos"
+  ],
+  "comentario": "Qual desses 5 SUVs você colocaria na garagem? E qual injustiçado ficou de fora? 👇",
+  "fontes": [
+   "veiculos.fipe.org.br",
+   "autoo.com.br",
+   "autopapo.com.br",
+   "icarros.com.br",
+   "motorshow.com.br",
+   "vrum.com.br",
+   "garagem360.com.br",
+   "fichacompleta.com.br"
+  ],
+  "titulos": [
+   {
+    "titulo": "5 SUVs INJUSTIÇADOS que despencaram na FIPE e viraram oportunidade",
+    "estrategia": "curiosidade"
+   },
+   {
+    "titulo": "Esses 5 SUVs perderam até 45% do valor, e ainda são ÓTIMOS carros",
+    "estrategia": "emoção"
+   },
+   {
+    "titulo": "5 SUVs que quase ninguém procura, mas entregam MUITO mais do que custam",
+    "estrategia": "busca"
+   }
+  ]
+ },
+ "thumbs": [
+  {
+   "texto": "PERDERAM ATÉ 45%",
+   "destaque": "45%"
+  },
+  {
+   "texto": "SUV BARATO DEMAIS?",
+   "destaque": "BARATO"
+  },
+  {
+   "texto": "INJUSTIÇADOS",
+   "destaque": ""
+  }
+ ],
+ "voz": {
+  "modo": "ia",
+  "voz_ia": "pt-BR-AntonioNeural"
+ }
+}

@@ -473,6 +473,41 @@ def _faixa_midia(m):
     return a, a + float(m.get("dur", 3))
 
 
+# carros: o que a narração cita -> o que a tela mostra (trechos classificados em assets.classificar_vistas)
+PEDE_VISTA = [
+    ("painel", re.compile(r"^(painel|volante|multim[ií]dia|tela|cockpit|i-cockpit|instrumentos|c[aâ]mera|carregador|console|"
+                          r"alavanca|aletas|borboletas)$")),
+    ("interior", re.compile(r"^(interior|interna|interno|cabine|bancos?|acabamento|couro|ar-condicionado|passageiros|"
+                            r"espa[cç]o|espa[cç]oso)$")),
+    ("rodas", re.compile(r"^(rodas?|aros?|pneus?)$")),
+    ("porta_malas", re.compile(r"^(porta-malas|bagageiro)$")),
+    ("traseira", re.compile(r"^(lanternas?|traseira|traseiras)$")),
+    ("frente", re.compile(r"^(far[oó]is|farol|grade)$")),
+    ("motor", re.compile(r"^(cap[oô])$")),
+    ("estrada", re.compile(r"^(acelera|acelerar|desempenho|ultrapassagens?|estrada|rodovia|rodovi[aá]rio|rodando|curvas?|"
+                           r"viagem|viagens|velocidade)$")),
+]
+VISTA_DUR = 4.0   # quanto tempo a tela fica no que foi citado
+VISTA_ANTES = 0.35  # a imagem chega um pouco antes da palavra
+
+
+def pedidos_de_vista(projeto, cena, a, b):
+    """[(instante relativo à faixa, vista)] das palavras da cena que pedem uma vista (1 por vista, espaçadas)."""
+    ws = [w for w in projeto.get("palavras", []) if w.get("manter") and "ns" in w and w.get("cena") == cena]
+    saida = []
+    for i, w in enumerate(ws):
+        tok = re.sub(r"[^\wà-ü-]", "", str(w.get("legenda") or w.get("w") or "").lower())
+        if tok == "porta" and i + 1 < len(ws) and "malas" in str(ws[i + 1].get("w", "")).lower():
+            tok = "porta-malas"
+        for vista, rx in PEDE_VISTA:
+            if rx.match(tok):
+                t = max(0.0, w["ns"] - a - VISTA_ANTES)
+                if t < (b - a) - 1.2 and all(v != vista and abs(t - t2) >= 2.5 for t2, v in saida):
+                    saida.append((t, vista))
+                break
+    return saida[:3]
+
+
 def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
     """Decide os trechos do modo corrido: cada jogo toca o trailer dele em sequência (de onde parou, pulando só
     os planos ruins), a abertura é uma montagem rápida dos jogos da lista e cada capítulo fecha no fim do trailer
@@ -507,6 +542,27 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
         vids[j] = [f for f in faixas_j if f[2] - f[1] >= 1.0]
     cursor = {}  # jogo -> [índice do trecho, posição]
     visitas = {}
+    # carros: trechos por vista (interior, rodas, painel…), para mostrar o que a narração cita
+    por_vista, uso_vista = {}, {}
+    for mid, m in banco.items():
+        if m.get("tipo") == "v" and m.get("vista") and not m.get("personagem") and m.get("jogo"):
+            por_vista.setdefault((m["jogo"], m["vista"]), []).append(mid)
+
+    def tomar_vista(j, vista, d):
+        """Pedaços com a vista pedida (o menos usado e mais longo primeiro); [] se o carro não tem."""
+        cands = sorted(por_vista.get((j, vista), []), key=lambda x: (uso_vista.get(x, 0), -float(banco[x].get("dur", 0))))
+        out, falta = [], d
+        for mid in cands:
+            if falta < 0.8:
+                break
+            t0, t1 = _faixa_midia(banco[mid])
+            take = min(falta, t1 - t0)
+            if take < 1.0:
+                continue
+            out.append((mid, t0, take))
+            uso_vista[mid] = uso_vista.get(mid, 0) + 1
+            falta -= take
+        return out
     esgotado, alterna, n_foto = {}, {}, {}
 
     def tomar(j, d):
@@ -612,6 +668,20 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                 if not pv and imgs.get(("p", pn)):
                     pv = [(imgs[("p", pn)][0], 0.0, min(3.5, fatia))]
                 pecas += pv
+            eventos = pedidos_de_vista(projeto, c, a, b) if por_vista else []
+            pos = sum(p[2] for p in pecas)
+            for t_ev, vista in eventos:
+                if t_ev < pos - 0.3 or t_ev > corpo - 1.0:
+                    continue
+                seg = tomar_vista(jogo, vista, min(VISTA_DUR, corpo - max(pos, t_ev)))
+                if not seg:
+                    continue
+                if t_ev - pos >= 0.8:
+                    pecas += tomar(jogo, t_ev - pos)
+                    pos = sum(p[2] for p in pecas)
+                pecas += seg
+                pos = sum(p[2] for p in pecas)
+                usados[-1].setdefault("vistas", []).append({"t": round(a + t_ev, 2), "vista": vista, "trechos": [x[0] for x in seg]})
             pecas += tomar(jogo, corpo - sum(p[2] for p in pecas))
             if not pecas and corpo > 0.05:
                 # jogo sem vídeo: as imagens dele (inteiras), 4 s cada

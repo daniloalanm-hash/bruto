@@ -66,6 +66,7 @@
     "capitulo": "Citroën C4 Cactus THP: o esportivo disfarçado",
     "ficha": {
      "carro": "Citroën C4 Cactus Shine Pack THP",
+     "geracao": "2018-2024",
      "ano": "2019 a 2024",
      "motor": "1.6 turbo flex, automático 6 marchas",
      "potencia": "até 173 cv",
@@ -141,6 +142,7 @@
     "capitulo": "Ford Territory: o Ford que veio da China",
     "ficha": {
      "carro": "Ford Territory Titanium",
+     "geracao": "2019-2023",
      "ano": "2021 a 2023",
      "motor": "1.5 turbo gasolina, CVT",
      "potencia": "150 cv",
@@ -205,6 +207,7 @@
     "capitulo": "Hyundai New Tucson: o Tucson que pouca gente percebeu",
     "ficha": {
      "carro": "Hyundai New Tucson GLS",
+     "geracao": "2016-2020",
      "ano": "2017 a 2022",
      "motor": "1.6 turbo gasolina, dupla embreagem 7 marchas",
      "potencia": "177 cv",
@@ -266,6 +269,7 @@
     "capitulo": "Mitsubishi Eclipse Cross: o carro do ano que o Brasil esqueceu",
     "ficha": {
      "carro": "Mitsubishi Eclipse Cross HPE-S",
+     "geracao": "2018-2020",
      "ano": "2019 a 2022",
      "motor": "1.5 turbo gasolina, CVT",
      "potencia": "165 cv",
@@ -333,6 +337,7 @@
     "capitulo": "Peugeot 3008: o mais bonito ficou para o final",
     "ficha": {
      "carro": "Peugeot 3008 Griffe",
+     "geracao": "2017-2023",
      "ano": "2018 a 2023",
      "motor": "1.6 THP turbo, automático 6 marchas",
      "potencia": "165 cv",

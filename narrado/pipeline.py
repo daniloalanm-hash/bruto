@@ -464,6 +464,19 @@ def preparar(pasta, st):
         n_trailers = {n: (4 if i == 0 else 3 if assuntos_c.count(n) >= 4 else 2 if assuntos_c.count(n) >= 2 else 1)
                       for i, n in enumerate(nomes)}
 
+    if job.get("nicho") == "carros":
+        # geração certa do carro: anos da ficha do capítulo ("geracao" tem prioridade sobre o "ano" exibido)
+        for c in cenas:
+            fi = c.get("ficha") or {}
+            faixa = assets.anos_da_ficha(fi.get("geracao") or fi.get("ano")) if c.get("assunto") and fi else None
+            if faixa:
+                assets.ANOS_CARRO[c["assunto"]] = faixa
+        if assets.ANOS_CARRO:
+            print(f"gerações dos carros (anos aceitos nos vídeos): {assets.ANOS_CARRO}", flush=True)
+        if corrido:  # vídeo de carro pede vistas variadas (interior, rodas, painel): mais vídeos por modelo
+            assuntos_c = [c.get("assunto") for c in cenas if c.get("assunto")]
+            n_trailers = {n: max(n_trailers.get(n, 1), 4 if assuntos_c.count(n) >= 4 else 2) for n in nomes}
+
     st.etapa("Buscando trailers e imagens oficiais", 5)
     assets.TEXTO_ROTEIRO = " ".join(c["texto"] for c in cenas)  # personagem/DLC citado ganha o vídeo/arte dele
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
