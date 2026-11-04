@@ -540,8 +540,10 @@ def gerar(projeto, raw, fontes, pasta):
     usadas.add(epi)
     # trio: a melhor imagem de cada jogo que ainda não foi usada
     outros = []
+    # fatia só com imagem boa: nota perto da melhor do vídeo (quadro escuro de gameplay fica de fora)
+    corte = max(n for ch in cands for n, _ in cands[ch][:1]) * 0.6
     for ch in relevantes[:3]:
-        c = next((c for n, c in cands[ch] if c not in usadas), None)
+        c = next((c for n, c in cands[ch] if c not in usadas and n >= corte), None)
         if c:
             outros.append(c)
             usadas.add(c)
@@ -549,9 +551,12 @@ def gerar(projeto, raw, fontes, pasta):
         for n, c in cands[principal]:
             if len(outros) >= 3:
                 break
-            if c not in usadas and c not in outros:
+            if c not in usadas and c not in outros and n >= corte:
                 outros.append(c)
                 usadas.add(c)
+    if len(outros) < 3:  # faltou imagem boa inédita: repete a melhor arte em outro recorte, mas nunca escura
+        boas = [c for ch in cands for n, c in cands[ch] if n >= corte and c not in outros]
+        outros += boas[:3 - len(outros)]
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
     saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
