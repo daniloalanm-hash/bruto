@@ -163,8 +163,12 @@ def candidatas(projeto, raw, pasta, por_jogo=8):
                 q = os.path.join(pasta, f"{mid}.jpg")
                 if not os.path.exists(q):
                     try:
+                        pre = ""
+                        if m.get("marca"):  # logo de outro canal no canto: borrada como no vídeo
+                            import render
+                            pre = render._delogo(src, m["marca"])
                         ffmpeg("-ss", f"{float(m.get('t', 0)) + float(m.get('dur', 2)) / 2:.2f}", "-i", src,
-                               "-frames:v", 1, "-q:v", 2, "-vf", "scale=1920:-2", q)
+                               "-frames:v", 1, "-q:v", 2, "-vf", pre + "scale=1920:-2", q)
                     except Exception:
                         continue
                 if os.path.exists(q):

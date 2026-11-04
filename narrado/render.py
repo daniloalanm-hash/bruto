@@ -584,7 +584,9 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
         out, falta, voltas = [], d, 0
         fotos = imgs.get(j) or []
         while falta > 0.02 and voltas < 3 * len(lst) + 3:
-            if esgotado.get(j) and fotos and alterna.get(j) == "foto" and falta > 2.0:
+            if esgotado.get(j) and fotos and alterna.get(j) == "foto" and falta > 2.0 and \
+                    (projeto.get("nicho") != "carros" or n_foto.get(j, 0) < 2 * len(fotos)):
+                # (carros: cada foto no máximo 2 vezes — a mesma foto 5 vezes em 40 s parece defeito)
                 # o vídeo do jogo já passou inteiro: intercala as imagens oficiais antes de repetir trecho
                 k_img = n_foto.get(j, 0)
                 n_foto[j] = k_img + 1
@@ -683,7 +685,9 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                 t_acum += d
         else:
             fim = None
-            if prox_cap and g_resp:
+            # carros: o fim do vídeo de review é o apresentador se despedindo / a vinheta do canal dele, não a
+            # logo do jogo — nunca vai ao ar (era o que deixava gente na tela sem passar pelo detector)
+            if prox_cap and g_resp and projeto.get("nicho") != "carros":
                 fim = final_do_trailer(jogo, min(g_resp + 1.5, dur * 0.5)) if dur > g_resp + 3 else None
             final_m = 0.0
             if fi == len(faixas) - 1 and len([j for j in ordem if vids.get(j)]) >= 1:

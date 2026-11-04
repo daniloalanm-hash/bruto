@@ -143,3 +143,13 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   (era o preço de lançamento) e "3.008" (nome do carro). Só os cartões do roteiro, com rótulo conferido.
 - Abertura que fala o preço de um carro: cada plano dele entra uma vez; acabou, a montagem segue com os outros
   carros (o Territory em loop por 15 s parecia defeito).
+
+## Lições do 4º teste
+- Gente que sobrava vinha do **fim do vídeo de review** (o "final do trailer" que no canal de games mostra a
+  logo do jogo): ali é o apresentador se despedindo e a vinheta do canal dele, sem passar por detector nenhum.
+  No canal de carros esse fecho de capítulo está **desligado**.
+- Foto do Commons também passa pelo detector de pessoas (pedestre ao lado do Cactus entrou numa foto de rua).
+- **Logo de outro canal no canto** (Top Gear, Caradisiac, AutoShowTV): a checagem antiga pedia texto legível
+  e logo translúcida não passava. Agora, no canal de carros, vale a borda que fica no mesmo lugar em quase
+  todos os quadros do vídeo — o canto é borrado no vídeo e no quadro que vai para a thumb.
+- Cada foto aparece no máximo 2 vezes (a mesma foto do Cactus 5 vezes em 40 s parecia defeito).

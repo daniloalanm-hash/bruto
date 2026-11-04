@@ -1419,6 +1419,12 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
                 continue
             if tem_texto(p, limite=4):
                 continue  # screenshot de mapa/menu/legenda
+            if os.environ.get("NARRADO_NICHO") == "carros":
+                # foto de rua do Commons: pedestre/dono ao lado do carro não vai ao ar (GUIA_CARROS.md)
+                net = _carregar_yolox()
+                if net is not None and _pessoa_yolox(net, p) >= PESSOA_LIMITE:
+                    print(f"foto fora (pessoa): {os.path.basename(p)}", flush=True)
+                    continue
             mid = f"{j['chave']}_s{i}"
             banco[mid] = {"tipo": "i", "jogo": j["chave"], "arquivo": os.path.basename(p)}
         for ti, t in enumerate(j["trailers"]):
@@ -1587,6 +1593,51 @@ def baixar_yunet():
     return caminho
 
 
+def _marca_fixa_carros(pasta_quadros, arqs, util):
+    """Logo de outro canal num canto do vídeo de carro (Top Gear, Caradisiac, AutoShowTV): logo translúcida não
+    some na média como a do site de jogo, mas a BORDA dela está no mesmo lugar em quase todo quadro, enquanto as
+    bordas do carro e da rua mudam. Vídeo de carro não tem HUD, então não precisa do EAST confirmar."""
+    import cv2
+    import numpy as np
+    W_, H_ = 640, 360
+    passo = max(1, len(arqs) // 150)
+    quadros = [cv2.imread(os.path.join(pasta_quadros, f), 0) for f in arqs[::passo]]
+    quadros = [cv2.resize(q, (W_, H_)) for q in quadros if q is not None]
+    if len(quadros) < 20:
+        return None
+    freq = np.mean([cv2.Canny(q, 60, 150) > 0 for q in quadros], axis=0)
+    y0, y1, x0, x1 = int(util[0] * H_) + 4, int(util[1] * H_) - 4, int(util[2] * W_) + 4, int(util[3] * W_) - 4
+    fixo = np.zeros_like(freq, dtype=bool)
+    fixo[y0:y1, x0:x1] = freq[y0:y1, x0:x1] > 0.3
+    # linha reta comprida (borda de tarja/janela) não é logo
+    u8 = fixo.astype(np.uint8)
+    hz = cv2.morphologyEx(u8, cv2.MORPH_CLOSE, np.ones((1, 11), np.uint8))
+    vt = cv2.morphologyEx(u8, cv2.MORPH_CLOSE, np.ones((11, 1), np.uint8))
+    linhas = cv2.morphologyEx(hz, cv2.MORPH_OPEN, np.ones((1, 81), np.uint8)) | \
+        cv2.morphologyEx(vt, cv2.MORPH_OPEN, np.ones((81, 1), np.uint8))
+    fixo &= ~cv2.dilate(linhas, np.ones((3, 3), np.uint8)).astype(bool)
+    rw, rh = int(W_ * 0.30), int(H_ * 0.25)
+    cands = []
+    for cx, cy in ((x0, y0), (x1 - rw, y0), (x0, y1 - rh), (x1 - rw, y1 - rh), ((W_ - rw) // 2, y0),
+                   ((W_ - rw) // 2, y1 - rh)):
+        jan = fixo[cy:cy + rh, cx:cx + rw]
+        if jan.sum() < 60:
+            continue
+        # o maior grupo de bordas juntas (a logo), não o espalhado da janela inteira
+        n_c, rot, est, _ = cv2.connectedComponentsWithStats(cv2.dilate(jan.astype(np.uint8), np.ones((7, 7), np.uint8)))
+        for ci in range(1, n_c):
+            xa, ya, bw, bh, _ = est[ci]
+            px = int((jan & (rot == ci)).sum())
+            if px < 60 or bw < 10 or bh < 8 or bw * bh > W_ * H_ * 0.06 or px / (bw * bh) < 0.05:
+                continue
+            cands.append((px, cx + xa - 6, cy + ya - 6, bw + 12, bh + 12))
+    if not cands:
+        return None
+    _, x, y, bw, bh = max(cands)
+    x, y = max(1.0, x), max(1.0, y)
+    return [round(float(v), 4) for v in (x / W_, y / H_, min(bw, W_ - x - 1) / W_, min(bh, H_ - y - 1) / H_)]
+
+
 def analisar_quadros(pasta_quadros):
     """Olha o vídeo inteiro de uma vez (os quadros a 2/s da análise) e devolve:
     - "area": a parte com imagem quando há tarja preta fixa (gameplay 4:3 dentro de 16:9) — [x, y, w, h] em fração;
@@ -1614,6 +1665,11 @@ def analisar_quadros(pasta_quadros):
     r0, r1, c0, c1 = int(linhas[0]), int(linhas[-1]) + 1, int(colunas[0]), int(colunas[-1]) + 1
     if (c1 - c0) < 312 or (r1 - r0) < 174:
         saida["area"] = [round(c0 / 320, 4), round(r0 / 180, 4), round((c1 - c0) / 320, 4), round((r1 - r0) / 180, 4)]
+    if os.environ.get("NARRADO_NICHO") == "carros":
+        m = _marca_fixa_carros(pasta_quadros, arqs, (r0 / 180, r1 / 180, c0 / 320, c1 / 320))
+        if m:
+            saida["marca"] = m
+        return saida
     a0, a1, b0, b1 = r0 + 3, r1 - 3, c0 + 3, c1 - 3
     sub = pilha[:, a0:a1, b0:b1]
     media, desvio = sub.mean(0), sub.std(0)
