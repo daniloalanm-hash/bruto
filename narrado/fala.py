@@ -747,7 +747,37 @@ def editar(palavras, cenas, nomes=()):
             alvo["legenda"] = re.sub(r"[.,:;!?…]+$", "", alvo["legenda"]) + pont.group(0)
 
     sobras_de_tomada(palavras)
+    recomecos(palavras)
     return palavras, faltando
+
+
+def recomecos(palavras):
+    """Frase recomeçada que ficou inteira nas duas versões ("Segundo o Assim Saltar…" pausa "Segundo o Sensor
+    Tower, a Rockstar…"): trecho mantido curto (2 a 6 palavras), sem ponto final, seguido de pausa, e a frase
+    seguinte começa com as MESMAS palavras. A primeira tentativa sai."""
+    ordem = [w for w in sorted(palavras, key=lambda w: w["s"]) if w.get("manter")]
+    blocos, atual = [], []
+    for w in ordem:
+        if atual and w["s"] - atual[-1]["e"] > 0.8:
+            blocos.append(atual)
+            atual = []
+        atual.append(w)
+    if atual:
+        blocos.append(atual)
+    tirou = 0
+    for a, b in zip(blocos, blocos[1:]):
+        if not 2 <= len(a) <= 6 or len(b) < 2:
+            continue
+        if re.search(r"[.!?…]$", str(a[-1].get("legenda") or a[-1]["w"]).strip()):
+            continue  # frase completa: repetir o começo depois pode ser de propósito
+        pa, pb = [norm(w["w"]) for w in a], [norm(w["w"]) for w in b]
+        mesmo_comeco = pa[0] == pb[0] and (pa[1] == pb[1] or sim(pa[1], pb[1]) >= 0.6)
+        if mesmo_comeco and len(pa[0]) + len(pa[1]) >= 4:
+            for w in a:
+                w["manter"] = False
+            tirou += 1
+            print(f"fala: frase recomeçada, 1ª tentativa removida: \"{' '.join(w['w'] for w in a)}\"", flush=True)
+    return tirou
 
 
 def sobras_de_tomada(palavras):

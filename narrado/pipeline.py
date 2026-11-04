@@ -670,6 +670,7 @@ def aplicar_ajustes(projeto):
         print(f"ajustes: {len(fora)} mídias removidas", flush=True)
     if aj.get("limpar_sobras"):
         fala.sobras_de_tomada(projeto["palavras"])
+        fala.recomecos(projeto["palavras"])
     for k, campos in (aj.get("cenas") or {}).items():
         if str(k).isdigit() and int(k) < len(projeto["cenas"]):
             projeto["cenas"][int(k)].update(campos)
