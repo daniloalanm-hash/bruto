@@ -1284,9 +1284,9 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
     # YouTube: número de impacto falado vira cartão com o número contando + gráfico (canto superior direito)
     if L["W"] > L["H"] and projeto.get("graficos", True):
         import grafico
-        for i, (t0, num) in enumerate(grafico.momentos(projeto, tl, total)):
+        for i, (t0, num, dur_m) in enumerate(grafico.momentos(projeto, tl, total)):
             try:
-                g = grafico.gerar(num, os.path.join(pasta_trab, f"grafico{i}"), pasta_fontes, largura=W)
+                g = grafico.gerar(num, os.path.join(pasta_trab, f"grafico{i}"), pasta_fontes, largura=W, dur=dur_m)
             except Exception as e:
                 print(f"aviso: gráfico do número {num.get('valor')} não gerado: {e}", flush=True)
                 g = None
@@ -1296,7 +1296,8 @@ def legendar(projeto, limpo, pasta_trab, destino, pasta_fontes, corte_gancho=Non
             entradas += ["-framerate", str(FPS), "-i", padrao]
             idx = entradas.count("-i") - 1
             grafo.append(f"[{idx}:v]format=rgba,setpts=PTS+{t0:.3f}/TB[gr{i}]")
-            grafo.append(f"{v}[gr{i}]overlay=x=W-w-{int(30 * W / 1920)}:y={int(40 * H / 1080)}:eof_action=pass:"
+            x_g = f"{int(14 * W / 1920)}" if num.get("tipo") == "fonte" else f"W-w-{int(30 * W / 1920)}"
+            grafo.append(f"{v}[gr{i}]overlay=x={x_g}:y={int(40 * H / 1080)}:eof_action=pass:"
                          f"enable='between(t\\,{t0:.3f}\\,{t0 + dur_g:.3f})'[vgr{i}]")
             v = f"[vgr{i}]"
     # YouTube (fórmula dos tops): ficha do jogo no canto inferior esquerdo quando o capítulo dele começa
@@ -1756,9 +1757,12 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
                 eventos.append((t, "woosh", 0.3))
         if W > H and projeto.get("graficos", True):
             import grafico
-            for t, _ in grafico.momentos(projeto, usados_cena, total):
+            for t, it, _ in grafico.momentos(projeto, usados_cena, total):
+                if it.get("tipo") == "fonte":
+                    eventos.append((t, "pop", 0.18))
+                    continue
                 eventos.append((t, "woosh", 0.35))
-                eventos.append((t + 0.15 + grafico.CONTA, "pop", 0.4))
+                eventos.append((t + (0.75 if it.get("tipo") == "data" else 0.15 + grafico.CONTA), "pop", 0.4))
         for c, t in cortes.items():
             if f"cartao_cap_{c}" in banco:
                 eventos.append((t + 0.05, "impacto", 0.4))
