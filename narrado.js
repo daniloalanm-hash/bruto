@@ -99,6 +99,20 @@ async function api(path, opts = {}) {
 
 /* ---------------- Gemini (mesma chave do editor do Bruto) ---------------- */
 const MODELOS = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-flash-lite-latest'];
+// JSON da IA às vezes vem com defeito (vírgula sobrando antes de } ou ], aspas curvas, comentário):
+// conserta o que dá; se não der, devolve undefined e o pedido é refeito
+function lerJsonIA(t) {
+  try { return JSON.parse(t); } catch { /* conserta abaixo */ }
+  let c = String(t)
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(c); } catch { /* segue */ }
+  // chave sem aspas ({titulo: "x"}) e aspas simples em chave
+  c = c.replace(/([{,]\s*)'?([A-Za-z_][\w]*)'?\s*:/g, '$1"$2":');
+  try { return JSON.parse(c); } catch (e) { console.warn('JSON da IA inválido', e, t.slice(0, 400)); return undefined; }
+}
+
 async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
   const key = limpaToken(ls.get(K.gemini));
   if (!key) { abrirConfig('Cadastre a chave gratuita do Gemini para escrever o roteiro.'); throw new Error('Falta a chave do Gemini.'); }
@@ -135,7 +149,8 @@ async function gemini(prompt, onStatus = () => {}, opcoes = {}) {
         const txt = (body.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
         const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
         if (a >= 0 && b > a) {
-          const obj = JSON.parse(txt.slice(a, b + 1));
+          const obj = lerJsonIA(txt.slice(a, b + 1));
+          if (obj === undefined) { ultimo = 'A IA devolveu o roteiro com defeito; tentando de novo…'; continue; }
           // pesquisa no Google: guarda as páginas que a IA leu (vão para as fontes da descrição)
           const chunks = body.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
           if (chunks.length && obj && typeof obj === 'object') {
