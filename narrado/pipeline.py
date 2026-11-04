@@ -707,10 +707,32 @@ def so_thumbs(pasta, st):
     aplicar_ajustes(projeto)
     st.etapa("Preparando o material", 5)
     garantir_material(projeto)
-    st.etapa("Gerando as thumbnails", 50)
     import thumbs
-    arqs = thumbs.gerar(projeto, RAW, FONTES, pasta)
-    projeto["thumbs_arquivos"] = [os.path.basename(x) for x in arqs]
+    # pedido do app ("gerar outra" / texto novo numa thumb só): thumb_pedido.json = {n, vez, texto?, destaque?, manter_imagem?}
+    pedido = ler(os.path.join(pasta, "thumb_pedido.json")) if os.path.exists(os.path.join(pasta, "thumb_pedido.json")) else None
+    if pedido and pedido.get("vez") != projeto.get("thumb_pedido_feito") and str(pedido.get("n")) in ("1", "2", "3"):
+        n = int(pedido["n"])
+        st.etapa(f"Gerando a thumbnail {n}", 50)
+        if str(pedido.get("texto") or "").strip():
+            tx = thumbs.textos(projeto)
+            tx[n - 1] = {"texto": str(pedido["texto"]).strip()[:40].upper(),
+                         "destaque": str(pedido.get("destaque") or "").strip().upper()}
+            projeto["thumbs"] = tx
+        atuais = (projeto.get("thumbs_imgs") or {}).get(str(n)) or []
+        hist = projeto.setdefault("thumbs_hist", {}).setdefault(str(n), [])
+        manter = bool(pedido.get("manter_imagem"))
+        if not manter:
+            hist += [a for a in atuais if a not in hist]
+        arqs = thumbs.gerar(projeto, RAW, FONTES, pasta, so=n, evitar=hist, rodada=pedido.get("vez") or 0,
+                            fixar=atuais if manter else ())
+        projeto["thumb_pedido_feito"] = pedido.get("vez")
+        print(f"thumb {n} refeita ({'mesma imagem, texto novo' if manter else 'imagem nova'}): "
+              f"{(projeto.get('thumbs_imgs') or {}).get(str(n))}", flush=True)
+    else:
+        st.etapa("Gerando as thumbnails", 50)
+        arqs = thumbs.gerar(projeto, RAW, FONTES, pasta)
+    if not pedido:
+        projeto["thumbs_arquivos"] = [os.path.basename(x) for x in arqs]
     gravar(os.path.join(pasta, "projeto.json"), projeto)
     pub = publicador()
     if pub and arqs:

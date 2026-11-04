@@ -1737,9 +1737,23 @@ function renderThumbs() {
   if (!box) return;
   box.hidden = !(ths.length || tits.length) || (p && p.formato !== 'horizontal');
   const nomes = ['Manchete', 'Jogos lado a lado', 'Impacto'];
-  $('#thumbsGrid').replaceChildren(...ths.map((u, i) => h('figure', { class: 'thumb-item' },
-    h('a', { href: u, target: '_blank', rel: 'noopener', title: 'Abrir em tamanho real' }, h('img', { src: u, alt: `Thumbnail ${i + 1}`, loading: 'lazy' })),
-    h('figcaption', { class: 'muted small' }, `${i + 1}. ${nomes[i] || ''} · `, h('a', { href: u, download: `thumb_${i + 1}.jpg` }, 'baixar')))));
+  const txs = p?.thumbs || [];
+  $('#thumbsGrid').replaceChildren(...ths.map((u, i) => {
+    const t = txs[i] || {};
+    const marcado = String(t.texto || '').split(/\s+/).map((w) => (t.destaque && String(t.destaque).toUpperCase().split(/\s+/).includes(w.toUpperCase()) ? `*${w}*` : w)).join(' ');
+    const campo = h('input', { type: 'text', class: 'thumb-texto', value: marcado, maxlength: 40,
+      placeholder: i === 2 ? 'UMA palavra (ex.: HISTÓRICO)' : '2 a 4 palavras', title: 'Palavra entre *asteriscos* fica amarela' });
+    const gerando = state.thumbGerando === i + 1;
+    return h('figure', { class: `thumb-item${gerando ? ' gerando' : ''}` },
+      h('a', { href: u, target: '_blank', rel: 'noopener', title: 'Abrir em tamanho real' }, h('img', { src: u, alt: `Thumbnail ${i + 1}`, loading: 'lazy' })),
+      h('figcaption', { class: 'muted small' }, `${i + 1}. ${nomes[i] || ''} · `, h('a', { href: u, download: `thumb_${i + 1}.jpg` }, 'baixar')),
+      h('div', { class: 'thumb-refazer' },
+        campo,
+        h('button', { class: 'btn small', disabled: !!state.thumbGerando, title: 'Mesmo texto, outra imagem',
+          onclick: () => refazerThumb(i + 1, campo.value, false) }, gerando ? 'Gerando…' : '🔄 Outra imagem'),
+        h('button', { class: 'btn small', disabled: !!state.thumbGerando, title: 'Mesma imagem, com o texto do campo',
+          onclick: () => refazerThumb(i + 1, campo.value, true) }, 'Usar texto')));
+  }));
   $('#titulosYt').replaceChildren(...tits.map((t) => h('li', {},
     h('b', {}, t.titulo), h('span', { class: 'muted small' }, ` · ${t.estrategia || ''} · ${t.titulo.length} caracteres `),
     h('button', { class: 'btn small', onclick: () => { navigator.clipboard.writeText(t.titulo); toast('Título copiado.'); } }, 'Copiar'))));
@@ -1750,6 +1764,46 @@ function renderThumbs() {
     h('div', { class: 'pacote-topo' }, h('b', {}, nome),
       h('button', { class: 'btn small', onclick: () => { navigator.clipboard.writeText(valor); toast(`${nome.split(' (')[0]} copiado.`); } }, 'Copiar')),
     h('textarea', { rows: linhas, readonly: true }, valor))));
+}
+
+// refaz só uma thumbnail no servidor (cerca de 2 a 4 minutos) sem mexer no vídeo
+async function refazerThumb(n, campo, manterImagem) {
+  if (!state.tag || state.thumbGerando) return;
+  const bruto = String(campo || '').trim();
+  const destaque = (bruto.match(/\*([^*]+)\*/g) || []).map((x) => x.replace(/\*/g, '')).join(' ');
+  const texto = bruto.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+  const atual = (state.projeto?.thumbs || [])[n - 1] || {};
+  if (manterImagem && (!texto || texto.toUpperCase() === String(atual.texto || '').toUpperCase()) && destaque.toUpperCase() === String(atual.destaque || '').toUpperCase()) {
+    toast('Mude o texto no campo antes de usar "Usar texto".', 'warn'); return;
+  }
+  const antes = (state.thumbs || [])[n - 1];
+  state.thumbGerando = n;
+  renderThumbs();
+  try {
+    await api('/api/job', { method: 'POST', body: JSON.stringify({ acao: 'thumb', tag: state.tag, n, texto, destaque, manter_imagem: manterImagem }) });
+    toast(`Gerando a thumbnail ${n} de novo (uns 3 minutos)…`);
+    for (let k = 0; k < 120; k++) {
+      await sleep(6000);
+      const s = await api(`/api/status?tag=${encodeURIComponent(state.tag)}`).catch(() => null);
+      const st = s?.status || {};
+      if (st.estado === 'erro') throw new Error(st.erro || 'falha ao gerar a thumbnail');
+      if (st.estado === 'pronto' && s.thumbs?.[n - 1] && s.thumbs[n - 1] !== antes) {
+        state.thumbs = s.thumbs;
+        try { // traz só os campos das thumbs (não perde ajustes ainda não aplicados)
+          const novo = await api(`/api/status?tag=${encodeURIComponent(state.tag)}&projeto=1`);
+          for (const c of ['thumbs', 'thumbs_imgs', 'thumbs_hist', 'thumb_pedido_feito']) if (novo[c] !== undefined) state.projeto[c] = novo[c];
+        } catch { /* fica com o texto antigo no campo */ }
+        toast(`Thumbnail ${n} nova pronta.`);
+        return;
+      }
+    }
+    throw new Error('demorou demais; recarregue a página daqui a pouco');
+  } catch (e) {
+    toast(`Thumbnail ${n}: ${e.message}`, 'warn', 7000);
+  } finally {
+    state.thumbGerando = 0;
+    renderThumbs();
+  }
 }
 
 async function carregarProjeto() {

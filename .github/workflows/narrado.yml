@@ -82,7 +82,7 @@ jobs:
           if [ "${{ inputs.fase }}" = "legenda" ]; then
             gh release download "$NARRADO_TAG" -D job --clobber -p "projeto.json" -p "limpo.mp4" || true
           else
-            gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" -p "cenas.jpg" -p "pm-*" || true
+            gh release download "$NARRADO_TAG" -D job --clobber -p "job.json" -p "voz.part*" -p "projeto.json" -p "voz_ia.mp3" -p "cenas.jpg" -p "pm-*" -p "thumb_pedido.json" || true
           fi
           # o áudio chega em partes (limite de upload do Vercel); junta de volta
           if ls job/voz.part* >/dev/null 2>&1; then

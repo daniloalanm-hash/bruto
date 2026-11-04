@@ -505,13 +505,26 @@ def textos(projeto):
     return ts
 
 
-def gerar(projeto, raw, fontes, pasta):
-    """Gera thumb_1/2/3.jpg em pasta. Devolve a lista de arquivos."""
+def gerar(projeto, raw, fontes, pasta, so=None, evitar=(), rodada=0, fixar=()):
+    """Gera thumb_1/2/3.jpg em pasta. Devolve a lista de arquivos.
+    so=1|2|3 refaz só aquela (botão "gerar outra" do app): as imagens de `evitar` (nomes de arquivo já usados
+    nela) vão para o fim da fila e a escolha varia entre as boas (sorteio pela `rodada`).
+    fixar = nomes das imagens a manter (só o texto mudou). Grava em projeto["thumbs_imgs"] as imagens de cada uma."""
     import collections
+    import random
     trab = os.path.join(pasta, "trab", "thumbs")
     cands = candidatas(projeto, raw, trab)
     if not cands:
         return []
+    corte = max(n for ch in cands for n, _ in cands[ch][:1]) * 0.6
+    evitar = set(evitar or ())
+    todos = {os.path.basename(c): c for ch in cands for _, c in cands[ch]}
+    fix = [todos[b] for b in (fixar or ()) if b in todos] if so else []
+    if so:
+        rng = random.Random(rodada)
+        for ch in cands:  # variação: sorteio entre as boas, as já usadas vão para o fim
+            cands[ch] = sorted(((n + rng.uniform(0, 30) - (500 if so != 2 and os.path.basename(c) in evitar else 0), c)
+                                for n, c in cands[ch]), reverse=True)
     tempo = collections.Counter(c.get("jogo") for c in projeto.get("cenas", []) if c.get("jogo"))
     ordem = sorted(cands, key=lambda ch: -tempo.get(ch, 0))
     principal = ordem[0]
@@ -520,9 +533,18 @@ def gerar(projeto, raw, fontes, pasta):
     saidas = []
     # manchete: de preferência com personagem (rosto) do jogo principal
     # o rosto MAIOR vence (falso positivo do detector costuma ser pequeno, num quadro caótico)
+    def novo(c):
+        return os.path.basename(c) not in evitar
     com_rosto = [(_area_rosto(c), c) for n, c in cands[principal][:8] if _area_rosto(c) >= 0.012]
+    if so == 1 and any(novo(c) for _, c in com_rosto):
+        com_rosto = [(a, c) for a, c in com_rosto if novo(c)]
+        com_rosto = [rng.choice(sorted(com_rosto, reverse=True)[:3])]
     melhor = max(com_rosto)[1] if com_rosto else cands[principal][0][1]
-    saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
+    if so == 1 and fix:
+        melhor = fix[0]
+    usadas_por = {1: [melhor]}
+    if so in (None, 1):
+        saidas.append(manchete(melhor, tx[0]["texto"], tx[0].get("destaque"), fontes, os.path.join(pasta, "thumb_1.jpg")))
     # épica (sem texto): close de personagem, de preferência de OUTRO jogo do vídeo (variedade no teste A/B);
     # só jogos com tempo de tela relevante — nunca um jogo citado de passagem
     usadas = {melhor}
@@ -531,6 +553,8 @@ def gerar(projeto, raw, fontes, pasta):
     for grupo in ([ch for ch in relevantes if ch != principal], [principal]):
         rostos = [(_area_rosto(c), c) for ch in grupo for n, c in cands.get(ch, [])[:8]
                   if c not in usadas and _area_rosto(c) >= 0.012]
+        if so == 3 and any(novo(c) for _, c in rostos):
+            rostos = [rng.choice(sorted((x for x in rostos if novo(x[1])), reverse=True)[:3])]
         if rostos:
             epi = max(rostos)[1]
             break
@@ -538,10 +562,19 @@ def gerar(projeto, raw, fontes, pasta):
         resto = [(n, c) for ch in relevantes for n, c in cands[ch][:3] if c not in usadas]
         epi = max(resto)[1] if resto else melhor
     usadas.add(epi)
+    if so == 3 and not fix and os.path.basename(epi) in evitar:  # sem outro close inédito: outra imagem boa qualquer
+        alt = [c for ch in relevantes for n, c in cands.get(ch, []) if novo(c) and n >= corte - 30]
+        alt = [c for c in alt if c not in usadas] or alt
+        if alt:
+            epi = rng.choice(alt[:3])
+    if so == 3 and fix:
+        epi = fix[0]
+    usadas_por[3] = [epi]
+    if so == 2:  # refazendo o trio: as imagens das outras thumbs podem voltar
+        usadas = set()
     # trio: a melhor imagem de cada jogo que ainda não foi usada
-    outros = []
     # fatia só com imagem boa: nota perto da melhor do vídeo (quadro escuro de gameplay fica de fora)
-    corte = max(n for ch in cands for n, _ in cands[ch][:1]) * 0.6
+    outros = []
     for ch in relevantes[:3]:
         c = next((c for n, c in cands[ch] if c not in usadas and n >= corte), None)
         if c:
@@ -559,6 +592,17 @@ def gerar(projeto, raw, fontes, pasta):
         outros += boas[:3 - len(outros)]
     if len(outros) < 2:
         outros = [c for _, c in cands[principal][:3]]
-    saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
-    saidas.append(impacto(epi, tx[2]["texto"], fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
+    if so == 2 and fix:
+        outros = fix
+    elif so == 2:
+        rng.shuffle(outros)
+    usadas_por[2] = outros
+    if so in (None, 2):
+        saidas.append(trio(outros, tx[1]["texto"], tx[1].get("destaque"), fontes, os.path.join(pasta, "thumb_2.jpg"), selo))
+    if so in (None, 3):
+        saidas.append(impacto(epi, tx[2]["texto"], fontes, os.path.join(pasta, "thumb_3.jpg"), selo or None))
+    imgs = projeto.setdefault("thumbs_imgs", {})
+    for k, v in usadas_por.items():
+        if so in (None, k):
+            imgs[str(k)] = [os.path.basename(c) for c in v]
     return saidas

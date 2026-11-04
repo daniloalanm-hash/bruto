@@ -201,6 +201,9 @@ audio { width: 100%; }
 .thumbs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .thumb-item { margin: 0; }
 .thumb-item img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; display: block; }
+.thumb-item.gerando img { opacity: .45; filter: grayscale(.6); }
+.thumb-refazer { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.thumb-refazer .thumb-texto { flex: 1 1 100%; min-width: 0; text-transform: uppercase; }
 .titulos-yt { margin: 12px 0 6px; padding-left: 20px; display: grid; gap: 6px; }
 .titulos-yt li b { margin-right: 4px; }
 .qa-lista div { margin-left: 8px; color: var(--txt, inherit); } .qa-lista a { font-variant-numeric: tabular-nums; margin-right: 4px; }

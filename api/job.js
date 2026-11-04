@@ -5,6 +5,7 @@
 //   { acao: "projeto", tag, projeto, fase }      -> salva o projeto ajustado e dispara o re-render
 //                                                 (fase "legenda": só a legenda mudou → render rápido)
 //   { acao: "midia", tag, nome, n, base64 }      -> sobe parte de uma imagem/clipe próprio (pm-<id>.<ext>.part<n>)
+//   { acao: "thumb", tag, n, texto?, destaque?, manter_imagem? } -> refaz só a thumbnail n (1 a 3)
 const { gh, REPO, releasePorTag, subirAsset, disparar, checarSenha, responder, lerCorpo, httpError } = require('./_gh');
 
 module.exports = (req, res) => responder(res, async () => {
@@ -68,6 +69,24 @@ module.exports = (req, res) => responder(res, async () => {
     }), 'application/json');
     await disparar(tag, fase);
     return { ok: true, fase };
+  }
+
+  if (acao === 'thumb') {
+    const n = Number(corpo.n);
+    if (![1, 2, 3].includes(n)) throw httpError(400, 'Thumbnail inválida.');
+    const pedido = {
+      n, vez: Date.now(), manter_imagem: !!corpo.manter_imagem,
+      texto: String(corpo.texto || '').slice(0, 40), destaque: String(corpo.destaque || '').slice(0, 40),
+    };
+    const rel = await releasePorTag(tag);
+    if (!rel.assets.some((a) => a.name === 'projeto.json')) throw httpError(400, 'O vídeo ainda não terminou.');
+    await subirAsset(rel, 'thumb_pedido.json', JSON.stringify(pedido), 'application/json');
+    await subirAsset(rel, 'status.json', JSON.stringify({
+      estado: 'processando', fase: 'thumbs', etapa: `Na fila: thumbnail ${n}`, progresso: 1,
+      atualizado: Math.floor(Date.now() / 1000),
+    }), 'application/json');
+    await disparar(tag, 'thumbs');
+    return { ok: true, vez: pedido.vez };
   }
 
   if (acao === 'iniciar') {

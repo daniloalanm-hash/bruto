@@ -30,3 +30,11 @@ Personagem com rosto grande ganha +35.
 ## Textos
 A IA do roteiro escreve `thumbs: [{texto, destaque}]` (2–4 palavras; a 3ª vira uma palavra só).
 Nada de citar outros canais/influenciadores. Loja dos Gifts nunca aparece.
+
+## Refazer uma thumb pelo app
+No "Pacote de postagem do YouTube", cada thumb tem um campo de texto e dois botões:
+- **🔄 Outra imagem**: mesmo texto (ou o do campo), imagem diferente — as já usadas naquela thumb vão para o fim
+  da fila (`projeto.thumbs_hist`), e a escolha é sorteada entre as boas.
+- **Usar texto**: mesma imagem, texto novo do campo. Palavra entre `*asteriscos*` fica amarela.
+Por baixo: `api/job.js` (acao `thumb`) grava `thumb_pedido.json` na release e dispara a fase `thumbs`;
+`pipeline.so_thumbs` refaz só aquela (`thumbs.gerar(..., so=n, evitar=..., fixar=...)`), ~3 min.
