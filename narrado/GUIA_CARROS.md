@@ -35,6 +35,13 @@ O que os dois têm em comum (a fórmula):
 
 ## Regras do Danilo (não quebrar)
 
+- **Apresentação fixa do canal no fim da introdução** (padrão de todo vídeo de carros), sempre com este texto:
+  "Esse é o Radar de Garagem. Aqui você descobre quais carros realmente valem o que custam, quais modelos
+  surpreendem pelo que oferecem e o que você precisa saber antes de escolher seu próximo automóvel."
+  Na tela: logo do canal (quando a narração fala "Radar de Garagem", `cta.momentos_canal`) e logo depois o
+  "inscreva-se + sino" (`cta.momentos_todos`). No app: `NICHOS.carros.apresentacao` + `comApresentacao()`
+  (vale para roteiro gerado e para roteiro pronto); a IA é instruída a não escrever outra apresentação.
+
 - **Nunca citar outros canais, youtubers, streamers ou influenciadores** no roteiro (nem como repercussão).
 - **Sem o som original dos vídeos** dos carros (música de comercial gera reivindicação no YouTube). Só a voz e a
   cama sonora **suave** (clima `suave` em `efeitos.py`, sem batida).

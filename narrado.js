@@ -458,6 +458,9 @@ const NICHOS = {
     assunto: 'o modelo de carro que aparece na tela durante esse trecho (marca + modelo, ex.: "Hyundai i30", "Jeep Compass") ou null',
     umItem: 'capítulo de UM carro (o vídeo dele roda por baixo): diga o nome dele cedo, o que ele entrega (motor, espaço, itens, consumo), um detalhe que pouca gente sabe e um veredito curto (para quem vale e por que está na lista)',
     pausa: '"pausa": null (canal de carros não para a narração);',
+    // apresentação fixa do canal (padrão do Danilo): entra no fim da introdução, já com logo + inscrever/sino
+    // (o render mostra a logo quando a narração fala o nome do canal e, logo depois, o "inscreva-se e ative o sino")
+    apresentacao: (canal) => `Esse é o ${canal}. Aqui você descobre quais carros realmente valem o que custam, quais modelos surpreendem pelo que oferecem e o que você precisa saber antes de escolher seu próximo automóvel.`,
     tipos: {
       curiosidades: 'curiosidades/história: cada capítulo é um bloco de curiosidades ou uma fase da história do modelo/marca',
       top: 'top lista em contagem regressiva (do último ao 1º): cada capítulo é um carro, com o porquê da posição',
@@ -560,7 +563,7 @@ function promptAbertura(plano, palavras) {
 1. gancho nos primeiros 10 segundos (a promessa mais forte: ${plano.gancho || ''}) — a primeira frase tem no máximo 14 palavras, diz o ASSUNTO do título pelo nome (${(plano.jogos || []).slice(0, 1).join('') || 'o tema'}) e cumpre a promessa dos títulos/thumbs (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) — quem clicou precisa ter certeza nos primeiros segundos de que está no vídeo certo; nada de saudação ("olá", "fala galera") antes disso;
 2. o que a pessoa vai descobrir no vídeo (PROVOQUE 2 ou 3 coisas dos capítulos sem contar os detalhes — eles serão contados nos capítulos; nada de adiantar números e nomes) e por que ficar até o fim;
 Só fatos que estão no plano abaixo — não invente nada.
-3. UMA frase de apresentação do canal, natural: "Aqui no ${N().canal}..." + um pedido rápido de inscrição.
+3. ${N().apresentacao ? 'NÃO apresente o canal nem peça inscrição: a apresentação fixa do canal entra logo depois desta abertura, automaticamente.' : `UMA frase de apresentação do canal, natural: "Aqui no ${N().canal}..." + um pedido rápido de inscrição.`}
 
 Capítulos do vídeo: ${plano.capitulos.map((c) => c.titulo).join(' | ')}
 
@@ -609,7 +612,7 @@ function promptRoteiroInteiro(plano, palavrasAbertura, totalPalavras) {
   return `Você escreve para o canal de YouTube "${N().canal}". Escreva o ROTEIRO COMPLETO do vídeo "${plano.titulo}" (~${totalPalavras} palavras narradas), do começo ao fim, como UM texto falado contínuo, dividido em capítulos e cenas.
 
 ESTRUTURA
-- "Introdução" (~${palavrasAbertura} palavras): gancho nos primeiros 10 s (${plano.gancho || ''}) — a 1ª frase tem até 14 palavras e diz o assunto pelo nome; quem clicou pelos títulos (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) tem que saber na hora que está no vídeo certo; sem saudação. Depois PROVOQUE 2 ou 3 coisas que vêm (sem contar) e por que ficar até o fim; feche com UMA frase natural "Aqui no ${N().canal}…" pedindo inscrição.
+- "Introdução" (~${palavrasAbertura} palavras): gancho nos primeiros 10 s (${plano.gancho || ''}) — a 1ª frase tem até 14 palavras e diz o assunto pelo nome; quem clicou pelos títulos (${(plano.titulos || []).map((t) => t.titulo).join(' | ')}) tem que saber na hora que está no vídeo certo; sem saudação. Depois PROVOQUE 2 ou 3 coisas que vêm (sem contar) e por que ficar até o fim; ${N().apresentacao ? 'NÃO apresente o canal nem peça inscrição na introdução: a apresentação fixa do canal entra no fim dela, automaticamente.' : `feche com UMA frase natural "Aqui no ${N().canal}…" pedindo inscrição.`}
 - Depois, os capítulos nesta ordem:
 ${caps}
 - No meio do vídeo, uma frase curta pedindo inscrição, sem quebrar a história.
@@ -644,7 +647,22 @@ function normFicha(fi, cap) {
 let nichoGerando = null;  // durante a geração vale o canal escolhido agora (não o do roteiro anterior)
 async function roteiroLongo(materia, segundos, onStatus = () => {}) {
   nichoGerando = nichoYt();
-  try { return { ...(await roteiroLongo0(materia, segundos, onStatus)), nicho: nichoGerando }; } finally { nichoGerando = null; }
+  try {
+    const r = { ...(await roteiroLongo0(materia, segundos, onStatus)), nicho: nichoGerando };
+    comApresentacao(r);
+    return r;
+  } finally { nichoGerando = null; }
+}
+// põe a apresentação fixa do canal no fim da introdução (antes do 1º capítulo depois dela), uma vez só
+function comApresentacao(r) {
+  const n = N(r.nicho);
+  if (!n.apresentacao || !r.cenas?.length) return r;
+  const texto = n.apresentacao(n.canal);
+  if (r.cenas.some((c) => String(c.texto || '').startsWith(texto.slice(0, 24)))) return r;
+  let k = r.cenas.findIndex((c, i) => i > 0 && c.capitulo);
+  if (k < 0) k = Math.min(1, r.cenas.length);
+  r.cenas.splice(k, 0, { texto, destaques: [], assunto: r.cenas[k - 1]?.assunto || null });
+  return r;
 }
 async function roteiroLongo0(materia, segundos, onStatus = () => {}) {
   const tipo = $('#tipoYt').value || 'auto';
@@ -2570,6 +2588,7 @@ async function abrirRoteiroPronto(id) {
     if (!r.ok) throw new Error(`roteiro "${id}" não encontrado`);
     const d = await r.json();
     if (!d?.roteiro?.cenas?.length) throw new Error('roteiro vazio');
+    comApresentacao(d.roteiro);
     const item = { id: `pronto-${id}`, criado: Date.now(), materia: d.materia || null, roteiro: d.roteiro };
     salvarLote([item, ...lote().filter((x) => x.id !== item.id)]);
     renderLote();
