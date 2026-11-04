@@ -237,17 +237,30 @@ def momentos(projeto, timeline, total=None):
         if k not in inicio:
             continue
         frase = str(c.get("texto") or "")
+        # o que foi FALADO manda (o narrador pode dizer 750 onde o roteiro tinha 751)
+        falada = " ".join(str(w.get("legenda") or w.get("w") or "") for w in projeto.get("palavras") or []
+                          if w.get("manter") and w.get("cena") == k and "ns" in w) or frase
+        autos = numeros_da_fala(falada) if projeto.get("graficos_auto", True) else []
         itens = []
         num = c.get("numero")
         if isinstance(num, dict) and num.get("valor") and ler_valor(num["valor"]) and \
                 not re.fullmatch(r"\s*(19|20)\d{2}\s*", str(num["valor"])):
-            itens.append((0, dict(num)))
+            num = dict(num)
+            if cartoes.momento_do_numero(projeto, k, num["valor"]) is None:
+                v = ler_valor(num["valor"])[1]
+                for a in autos:
+                    va = ler_valor(a["valor"])[1]
+                    if v and abs(va - v) / v <= 0.03 and cartoes.momento_do_numero(projeto, k, a["valor"]) is not None:
+                        dig = re.search(r"\d[\d.,]*\d|\d", a["valor"]).group(0)
+                        num["valor"] = re.sub(r"\d[\d.,]*\d|\d", dig, num["valor"], count=1)
+                        break
+            itens.append((0, num))
         dig_roteiro = cartoes._digitos(num.get("valor"))[:3] if isinstance(num, dict) else ""
+        for a in autos:
+            if dig_roteiro and cartoes._digitos(a["valor"])[:3] == dig_roteiro:
+                continue
+            itens.append((1, a))
         if projeto.get("graficos_auto", True):
-            for a in numeros_da_fala(frase):
-                if dig_roteiro and cartoes._digitos(a["valor"])[:3] == dig_roteiro:
-                    continue
-                itens.append((1, a))
             for dt in datas_da_fala(frase):
                 chave = ("data", dt["dia"], dt["mes"])
                 if chave not in vistos:
