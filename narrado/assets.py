@@ -400,7 +400,9 @@ NICHO = os.environ.get("NARRADO_NICHO", "games")  # "carros": material de montad
 RUIM_CARRO = re.compile(r"\b(crash|acidente|accident|batida|toys?|brinquedos?|hot ?wheels|lego|miniaturas?|miniature|kids|"
                         r"crian[cç]as?|gta|forza|gran turismo|need for speed|assetto|beamng|games?|gameplay|jogos?|mods?|"
                         r"unboxing|comparativo|comparison|vs\.?|podcast|live|reacts?|reaction|rea[cç][aã]o|parte \d|part \d|"
-                        r"leil[aã]o|auction|rc|controle remoto|drift|tuning|tunado|rebaixado|som automotivo|pared[aã]o)\b", re.I)
+                        r"leil[aã]o|auction|rc|controle remoto|drift|tuning|tunado|rebaixado|som automotivo|pared[aã]o|"
+                        r"movie|film|filme|short film|curta|netflix|s[eé]ries?|epis[oó]dios?|temporada|season|"
+                        r"bushfire|wildfire|inc[eê]ndio|aerial footage|news|not[ií]cias?)\b", re.I)
 BOM_CARRO = re.compile(r"exterior|interior|design|driving|on the road|official|oficial|footage|b-?roll|"
                        r"walkaround|reveal|world premiere|lan[cç]amento|apresenta|first look|4k|uhd", re.I)
 MONTADORAS = re.compile(r"hyundai|toyota|volkswagen|\bvw\b|fiat|jeep|chevrolet|\bgm\b|ford|renault|nissan|honda|"
@@ -426,8 +428,8 @@ def carro_no_titulo(nome, titulo):
     if not all(w in achado for w in modelo):
         return False
     marcas = [w for w in pedido if w in MARCAS_CARRO]
-    if len(modelo) == 1 and len(modelo[0]) <= 3 and marcas and not any(m in achado for m in marcas + (["vw"] if "volkswagen" in marcas else [])):
-        return False  # "Gol" sozinho pode ser gol de futebol: exige a marca no título
+    if marcas and not any(m in achado for m in marcas + (["vw"] if "volkswagen" in marcas else [])):
+        return False  # sempre exige a marca: "Territory" sozinho trouxe trailer de filme e queimada na Austrália
     # palavra a mais logo depois do modelo que muda o carro (Corolla Cross, Onix Plus? aceita; Cross não)
     if "cross" in achado and "cross" not in pedido:
         return False
@@ -444,13 +446,19 @@ def anos_da_ficha(texto):
 
 
 def geracao_ok(nome, titulo):
-    """Vídeo da geração certa? Título com ano fora da faixa da ficha (folga de 1 ano) é de outra geração
-    ("2025 Hyundai Tucson" não serve para o New Tucson 2017–2020). Sem ano no título: passa."""
+    """Vídeo da geração certa? Com a geração definida na ficha, o título PRECISA ter um ano dentro da faixa:
+    título sem ano trouxe o C4 Cactus 2014 (outra carroceria) e "2023 all-new" trouxe o Territory novo.
+    Lançamento de geração nova no último ano da faixa também sai."""
     faixa = ANOS_CARRO.get(nome)
     if not faixa:
         return True
     anos = [int(x) for x in re.findall(r"\b(19[5-9]\d|20[0-4]\d)\b", str(titulo))]
-    return not anos or any(faixa[0] - 1 <= a <= faixa[1] + 1 for a in anos)
+    if not anos or not any(faixa[0] <= a <= faixa[1] for a in anos):
+        return False
+    if re.search(r"all[- ]new|new generation|next[- ]gen|nova gera[cç][aã]o|novo modelo|second generation|2nd gen",
+                 str(titulo), re.I) and max(anos) >= faixa[1]:
+        return False
+    return True
 
 
 def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
@@ -471,6 +479,9 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
             ((f"{nome} {faixa[0]}", 3), (f"{nome} {faixa[1]}", 2))
     if extra:
         termos = ((f"{nome} footage", 3), (f"{nome} on the road", 2), (f"{nome} review", 1), (f"{nome} test drive", 1))
+        if faixa:  # a 2ª rodada também precisa trazer a geração certa (título sem ano não passa)
+            termos = tuple((f"{nome} {a}", 3) for a in range(faixa[0], faixa[1] + 1)) + \
+                tuple((f"{t} {(faixa[0] + faixa[1]) // 2}", p) for t, p in termos)
     for termo, peso in termos:
         try:
             d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
@@ -1664,6 +1675,12 @@ VISTAS = {
     "motor": ["the engine bay of a car with the hood open", "a car engine, close-up"],
     "estrada": ["a car driving fast on a road", "a car driving on a highway", "a car driving on a curvy mountain road"],
     "exterior": ["a side view of a parked car", "a car parked in a city street", "a car photographed in a studio"],
+    # o que NÃO pode ir ao ar no canal de carros (GUIA_CARROS.md): sai do banco
+    "fora": ["a person", "a man talking", "a woman standing next to a car", "people in a crowd",
+             "hands of a person holding a steering wheel", "a hand touching a screen", "a person driving a car",
+             "a pencil sketch drawing of a car", "a designer drawing on a tablet", "a landscape with trees and no car",
+             "an aerial view of a forest", "a wildfire with smoke", "a movie scene with subtitles",
+             "text on a screen", "a logo on a plain background", "a black screen", "an animal"],
 }
 _clip = []
 
@@ -1677,9 +1694,12 @@ def _carregar_clip():
     except ImportError:  # só o canal de carros usa: instala na hora (CPU), não pesa nos vídeos de games
         import subprocess
         import sys
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "torch", "--index-url",
+        # torch e torchvision JUNTOS do índice CPU: torchvision do PyPI não casa com o torch CPU
+        # ("operator torchvision::nms does not exist" e o CLIP não carrega)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "torch", "torchvision", "--index-url",
                         "https://download.pytorch.org/whl/cpu"], check=False)
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "open_clip_torch"], check=False)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "open_clip_torch", "--extra-index-url",
+                        "https://download.pytorch.org/whl/cpu"], check=False)
     try:
         import open_clip
         import torch
@@ -1740,8 +1760,11 @@ def classificar_vistas(banco):
                 por_vista = {}
                 for v, pv in zip(nomes, pr.tolist()):
                     por_vista[v] = por_vista.get(v, 0.0) + pv
+                fora = por_vista.pop("fora", 0.0)
                 v, pv = max(por_vista.items(), key=lambda x: x[1])
-                r = {"vista": v if pv >= 0.45 else "exterior", "vista_p": round(pv, 2)}
+                r = {"vista": v if pv >= 0.45 else "exterior", "vista_p": round(pv, 2), "fora_p": round(fora, 2)}
+                if fora >= 0.5:
+                    r["vista"] = "fora"
                 lote[k].update(r)
                 try:
                     json.dump(r, open(lote[k]["quadro"] + ".vista.json", "w"))
@@ -1751,6 +1774,14 @@ def classificar_vistas(banco):
     for m in pend:
         cont[m.get("vista", "?")] = cont.get(m.get("vista", "?"), 0) + 1
     print(f"vistas dos trechos de carro: {cont}", flush=True)
+    # gente, mão no volante, desenho, paisagem, cena de filme: não vai ao ar
+    tirar = [k for k, m in banco.items() if m.get("vista") == "fora"]
+    for k in tirar:
+        print(f"trecho fora (não é o carro): {banco[k]['arquivo']} t={banco[k]['t']:.1f} p={banco[k].get('fora_p')}",
+              flush=True)
+        del banco[k]
+    if clip is None and faltam:
+        print("ALERTA: sem CLIP, nada garante que fala de interior/rodas mostra interior/rodas", flush=True)
 
 
 def segundos_de_video(banco, chave):

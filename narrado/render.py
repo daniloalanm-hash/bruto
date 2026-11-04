@@ -647,8 +647,11 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                 d = min(CORTE_ABERTURA, dur - t_acum)
                 if dur - t_acum - d < 0.8:
                     d = dur - t_acum
-                pl = plano_abertura(com_video[giro % len(com_video)])
-                giro += 1
+                # fala com preço/número de UM carro ("Territory 2021 hoje"): a tela mostra esse carro
+                fixo = jogo if (cenas[c].get("numero") and vids.get(jogo)) else None
+                pl = plano_abertura(fixo or com_video[giro % len(com_video)])
+                if not fixo:
+                    giro += 1
                 pecas.append((pl[0], pl[1], d))
                 t_acum += d
         else:

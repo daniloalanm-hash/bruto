@@ -115,3 +115,12 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 - `carros_ia` (3 carros, 2:53): validou material, ficha, números, cama.
 - `carros_10min` ("6 carros que reinaram no Brasil", ~9:30): Gol, Onix, Corolla (+Cross), i30, Compass,
   Strada. Corrigidos: van Transporter no lugar do Gol; selo "-22%" falso em comparação que não era desconto.
+
+## Lições do 1º teste (SUVs injustiçados, nov/2026)
+- Título do vídeo-fonte precisa ter a **marca** e um **ano dentro da geração** da ficha. Sem isso entrou trailer
+  de filme ("Territory"), queimada na Austrália e o C4 Cactus 2014 (carroceria que não é a vendida aqui).
+- "All-new"/"nova geração" no último ano da faixa é a geração seguinte: fora.
+- A faixa `geracao` da ficha usa os anos mundiais da geração (revelação → troca), não só os anos de Brasil.
+- Cada trecho passa pelo CLIP: o que não é o carro (gente, mão no volante, desenho do designer, paisagem,
+  cena de filme, legenda) sai do banco; o resto ganha a vista (interior, painel, rodas…) que a fala pede.
+- Na abertura, fala com preço de um carro mostra esse carro.
