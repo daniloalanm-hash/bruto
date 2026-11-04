@@ -663,8 +663,12 @@ def ids_rockstar(url):
         return []
     vids = re.findall(r'\{"key":"([\w-]+)","id":\{[^}]*"all":"(\w+)"\},"player":"rockstar"', html)
     vids += [("", v) for v in re.findall(r'videoplayer\?id=(\w+)', html)]
-    pedido = url.rstrip("/").rsplit("/", 1)[-1]
+    pedido = url.split("?")[0].split("#")[0].rstrip("/").rsplit("/", 1)[-1]
     vids.sort(key=lambda kv: kv[0] != pedido)
+    # link direto de um vídeo (rockstargames.com/br/videos/rk721912?resolution=2160p&embed): o id está no caminho
+    m = re.search(r"/videos/(?:video/)?([A-Za-z0-9]+)(?:[/?#]|$)", url)
+    if m:
+        vids.insert(0, ("", m.group(1)))
     return list(dict.fromkeys(v for _, v in vids))
 
 
@@ -686,7 +690,7 @@ def arquivo_rockstar(vid):
     return None
 
 
-def baixar_espalhado(src, p, janelas=18, cada=12.0):
+def baixar_espalhado(src, p, janelas=None, cada=12.0):
     """Baixa um vídeo para virar banco de trechos. Vídeo curto: os primeiros TRECHO_MAX s. Vídeo longo (gameplay
     de 20+ min): janelas espalhadas pelo vídeo todo, juntas num arquivo — senão só sobra o comecinho."""
     total = 0.0
@@ -699,6 +703,9 @@ def baixar_espalhado(src, p, janelas=18, cada=12.0):
         ffmpeg("-user_agent", UA, "-i", src, "-t", TRECHO_MAX, "-c:a", "aac", "-b:a", "128k", "-ac", 2, "-ar", 48000, "-vf", "scale=-2:'min(1080,ih)'",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", 20, p)
         return
+    if janelas is None:
+        # quanto mais longo o vídeo, mais janelas: um vídeo oficial de 30 min rende ~12 min de material variado
+        janelas = int(min(64, max(18, total / 28)))
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         partes = []
@@ -780,7 +787,7 @@ def baixar_rockstar(url, chave, pasta, limite=4):
     """Trailers oficiais do site da Rockstar (o player deles não é aceito pelo yt-dlp)."""
     saida = []
     for vid in ids_rockstar(url)[:limite]:
-        p = os.path.join(pasta, f"{chave}_r{vid}_e.mp4")  # _e: versão com janelas espalhadas
+        p = os.path.join(pasta, f"{chave}_r{vid}_x.mp4")  # _x: janelas espalhadas, quantidade pela duração
         try:
             if not (os.path.exists(p) and duracao(p) > 2):
                 src = arquivo_rockstar(vid)

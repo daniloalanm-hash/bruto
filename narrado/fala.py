@@ -387,6 +387,12 @@ def _tirar_desgarradas(ws, S):
         if r is maior:
             continue
         so_ligacao = len(r) <= 2 and all(norm(w["w"]) in PALAVRAS_LIGACAO or len(norm(w["w"])) <= 2 for w in r)
+        # palavra sozinha longe do resto da tomada que só "parece" a do roteiro ("Bem," -> "em" seis posições
+        # atrás): roubava a posição e cortava a frase da tomada anterior ("vira | em grana viva caindo na conta?")
+        if len(r) == 1:
+            a1 = norm(r[0]["w"])
+            if not (sim(a1, S[r[0]["idx"]][0]) == 1.0 and len(a1) >= 5):
+                so_ligacao = True
         # pedaço encaixado só por posição ("Mas e você? Qual o" -> "os títulos nem o"): nenhuma palavra bate
         if so_ligacao or not any(forte(w) for w in r):
             for w in r:

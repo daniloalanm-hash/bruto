@@ -298,7 +298,7 @@ def cadeia_tratamento(ruido, modelo_rnn, modo="gravada", forcar_nr=None):
     return ",".join(partes), nr
 
 
-def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
+def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None, pausa_frase=None):
     """Corta a gravação nas palavras mantidas e devolve a duração final.
 
     Escreve em cada palavra mantida os tempos na timeline final ("ns"/"ne").
@@ -340,6 +340,7 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
 
     filt, partes, t = [], [], 0.0
     t_fundo = trecho_de_fundo(db, passo, GAP_NEW)
+    t_fundo_l = trecho_de_fundo(db, passo, max(GAP_NEW, pausa_frase or 0))
     # conferência automática: emenda que corta no meio de som de voz (vizinha descartada colada) vira aviso
     import numpy as np
     lim_qa = max(float(np.percentile(db, 10)) + 14, -58.0) + 6
@@ -363,9 +364,14 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None):
             avisos.append({"t": round(t + dur, 2), "onde": "fim", "texto": " ".join(w["w"] for w in b["pal"][-3:])})
         t += dur
         if bi < len(blocos) - 1 and not (b.get("meio_frase") or b.get("interno_fim")):
-            filt.append(f"[0:a]atrim={t_fundo:.3f}:{t_fundo + GAP_NEW:.3f},asetpts=PTS-STARTPTS,afade=t=in:d=0.008,afade=t=out:st={GAP_NEW - 0.008:.3f}:d=0.008[g{bi}]")
+            # vídeo longo (YouTube): fim de frase ganha um respiro de verdade; colado ("dólares.|Mas") soa cortado
+            fim_frase = bool(re.search(r"[.!?…]$", str(b["pal"][-1].get("legenda") or b["pal"][-1]["w"]).strip()))
+            gap = max(GAP_NEW, pausa_frase) if (pausa_frase and fim_frase) else GAP_NEW
+            t0f = t_fundo_l if gap > GAP_NEW else t_fundo
+            filt.append(f"[0:a]atrim={t0f:.3f}:{t0f + gap:.3f},asetpts=PTS-STARTPTS,"
+                        f"apad=whole_dur={gap:.3f},afade=t=in:d=0.008,afade=t=out:st={gap - 0.008:.3f}:d=0.008[g{bi}]")
             partes.append(f"[g{bi}]")
-            t += GAP_NEW
+            t += gap
     ruido = ruido_de_fundo(src, todas) if modo == "gravada" else -90.0
     cadeia, nr = cadeia_tratamento(ruido, modelo_rnn, modo, forcar_nr)
     filt.append("".join(partes) + f"concat=n={len(partes)}:v=0:a=1[cut]")

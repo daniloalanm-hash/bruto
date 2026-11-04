@@ -1364,6 +1364,24 @@ def fichas_png(projeto, timeline, pasta_fontes, pasta_trab):
     return saida
 
 
+def sem_esperados(avisos, projeto, timeline, total):
+    """Tira da conferência o preto/parada que é DE PROPÓSITO: o mergulho no preto entre capítulos (respiro) e a
+    tela final do YouTube. Senão a lista enche de alarme falso e esconde o que é problema de verdade."""
+    if not avisos:
+        return avisos
+    caps = set(cenas_de_capitulo(projeto)) if e_corrido(projeto) else set()
+    inicios = [x["inicio"] for x in (timeline or []) if x.get("cena") in caps]
+    cauda = float(projeto.get("cauda", CAUDA_YT) or 0) if L["W"] > L["H"] else 0.0
+    fora = []
+    for a in avisos:
+        if any(i - 4.5 <= a["t"] <= i + 0.5 for i in inicios):
+            continue  # transição de capítulo
+        if cauda and a["t"] >= total - cauda - 3.0:
+            continue  # montagem final + tela final
+        fora.append(a)
+    return fora
+
+
 def conferir_video(arquivo, total):
     """Procura imagem congelada (>1,2 s parada) e tela preta no vídeo sem legenda. Devolve [{t, tipo, dur}]."""
     r = run(["ffmpeg", "-hide_banner", "-i", arquivo, "-vf",
@@ -1812,7 +1830,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         legendar(projeto, None, pasta_trab, destino, pasta_fontes, corte_gancho, total,
                  base=(entradas, grafo, "[vlimpo]", "[a]"))
         try:
-            projeto["avisos_video"] = conferir_video(destino, total)
+            projeto["avisos_video"] = sem_esperados(conferir_video(destino, total), projeto, usados_cena, total)
         except Exception as e:
             print(f"aviso: conferência da imagem falhou: {e}", flush=True)
         _revisao(projeto, destino, banco, mapa, usados_cena, total)
@@ -1822,7 +1840,7 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
            "-crf", 17, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", 48000, "-movflags", "+faststart", limpo)
     # conferência da imagem (antes da legenda, que mexe a cada palavra e esconderia o congelamento)
     try:
-        projeto["avisos_video"] = conferir_video(limpo, total)
+        projeto["avisos_video"] = sem_esperados(conferir_video(limpo, total), projeto, usados_cena, total)
     except Exception as e:
         print(f"aviso: conferência da imagem falhou: {e}", flush=True)
     # 2) legenda, chamada e emojis por cima

@@ -831,7 +831,9 @@ def finalizar(pasta, projeto, audio, st, p0):
     escolha = projeto["voz"].get("reducao_ruido", "auto")
     forcar = None if escolha == "auto" else escolha == "sim"
     wav = os.path.join(pasta, "voz_final.wav")
-    info = voz.montar(audio_limpo(audio), projeto["palavras"], wav, MODELO_RNN, projeto["voz"]["modo"], forcar)
+    # YouTube (horizontal): respiro de ~0,35 s entre frases; vertical segue no ritmo corrido de vídeo curto
+    pausa = 0.35 if projeto.get("formato") == "horizontal" else None
+    info = voz.montar(audio_limpo(audio), projeto["palavras"], wav, MODELO_RNN, projeto["voz"]["modo"], forcar, pausa)
     projeto["duracao_voz"] = info["duracao"]
     projeto["voz"].update({"ruido_db": info["ruido_db"], "reducao_aplicada": info["reducao_ruido"]})
     projeto["avisos_voz"] = info.get("avisos") or []
