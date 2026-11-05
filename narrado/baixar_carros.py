@@ -3,10 +3,11 @@
 Por quê: o Dailymotion só entrega 216–288p para o servidor de render (bloqueio pelo IP do GitHub Actions);
 da sua internet de casa ele entrega 720p/1080p. Este script usa a MESMA escolha de vídeos do servidor
 (geração certa pelos anos da ficha, sem crash test/brinquedo/jogo, prioridade para HD) e grava os
-trechos já sem som numa pasta por carro. Depois é só mandar cada pasta pela Biblioteca do app
-(campo "Jogo" = nome do carro): os vídeos ficam guardados e entram sozinhos em todo vídeo daquele carro.
+trechos já sem som e MANDA SOZINHO para a Biblioteca do app (pede a senha do app uma vez e guarda
+neste computador). Os vídeos ficam guardados e entram sozinhos em todo vídeo daquele carro.
 
 Uso (precisa só do Python 3.10+ instalado; o resto o script instala na primeira vez):
+    python baixar_carros.py                       -> todos os roteiros de carro com carro ainda sem vídeo HD
     python baixar_carros.py suvs-injusticados-fipe
     python baixar_carros.py "Peugeot 3008:2016-2023" "Hyundai Tucson:2015-2020"
 """
@@ -20,9 +21,12 @@ import site
 import subprocess
 import sys
 import sysconfig
+import urllib.error
 import urllib.request
 
 RAW = "https://raw.githubusercontent.com/daniloalanm-hash/bruto/main/narrado"
+APP = "https://bruto-nu.vercel.app"
+ROTEIROS_API = "https://api.github.com/repos/daniloalanm-hash/bruto/contents/narrado/roteiros"
 AQUI = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -91,42 +95,123 @@ def duracao_ffmpeg(ffmpeg_exe):
     return duracao
 
 
+def ler_roteiro(rid):
+    local = os.path.join(AQUI, "roteiros", f"{rid}.json")
+    if os.path.exists(local):
+        with open(local, encoding="utf-8") as f:
+            return json.load(f)
+    return json.loads(urllib.request.urlopen(f"{RAW}/roteiros/{rid}.json", timeout=60).read())
+
+
+def carros_do_roteiro(dados, assets):
+    carros = {}
+    r = dados.get("roteiro") or {}
+    if r.get("nicho") != "carros":
+        return {}
+    for c in r.get("cenas", []):
+        fi = c.get("ficha") or {}
+        if c.get("assunto"):
+            faixa = assets.anos_da_ficha(fi.get("geracao") or fi.get("ano")) if fi else None
+            if faixa or c["assunto"] not in carros:
+                carros[c["assunto"]] = faixa or carros.get(c["assunto"])
+    return carros
+
+
 def carros_do_pedido(args, assets):
-    """[(nome, (ano_min, ano_max) ou None)] — de um id de roteiro ou de "Nome:2016-2023"."""
-    if len(args) == 1 and ":" not in args[0] and re.fullmatch(r"[a-z0-9-]+", args[0]):
-        local = os.path.join(AQUI, "roteiros", f"{args[0]}.json")
-        if os.path.exists(local):
-            with open(local, encoding="utf-8") as f:
-                dados = json.load(f)
-        else:
-            dados = json.loads(urllib.request.urlopen(f"{RAW}/roteiros/{args[0]}.json", timeout=60).read())
-        carros = {}
-        for c in dados["roteiro"]["cenas"]:
-            fi = c.get("ficha") or {}
-            if c.get("assunto"):
-                faixa = assets.anos_da_ficha(fi.get("geracao") or fi.get("ano")) if fi else None
-                if faixa or c["assunto"] not in carros:
-                    carros[c["assunto"]] = faixa or carros.get(c["assunto"])
-        return list(carros.items()), args[0]
-    saida = []
+    """{nome: (ano_min, ano_max) ou None} — de ids de roteiro, de "Nome:2016-2023" ou (sem nada) de todos."""
+    carros = {}
+    if not args:
+        lista = json.loads(urllib.request.urlopen(ROTEIROS_API, timeout=60).read())
+        args = [x["name"][:-5] for x in lista if x["name"].endswith(".json")]
     for a in args:
-        nome, _, anos = a.partition(":")
-        saida.append((nome.strip(), assets.anos_da_ficha(anos)))
-    return saida, "carros"
+        if ":" in a or not re.fullmatch(r"[a-z0-9-]+", a):
+            nome, _, anos = a.partition(":")
+            carros[nome.strip()] = assets.anos_da_ficha(anos)
+        else:
+            for nome, faixa in carros_do_roteiro(ler_roteiro(a), assets).items():
+                carros[nome] = faixa or carros.get(nome)
+    return carros
+
+
+# ------------------------------------------------------------------ envio para a Biblioteca do app
+def senha_app():
+    arq = os.path.join(AQUI, ".senha_app")
+    if os.path.exists(arq):
+        return open(arq, encoding="utf-8").read().strip()
+    import getpass
+    s = getpass.getpass("Senha do app Bruto (a mesma da tela; fica guardada só neste computador): ").strip()
+    with open(arq, "w", encoding="utf-8") as f:
+        f.write(s)
+    return s
+
+
+def api_bib(senha, corpo=None):
+    req = urllib.request.Request(f"{APP}/api/biblioteca", method="POST" if corpo else "GET",
+                                 data=json.dumps(corpo).encode() if corpo else None,
+                                 headers={"Content-Type": "application/json", "x-narrado-senha": senha})
+    try:
+        return json.loads(urllib.request.urlopen(req, timeout=120).read())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            os.remove(os.path.join(AQUI, ".senha_app"))
+            sys.exit("Senha do app errada. Rode de novo e digite a senha certa.")
+        raise
+
+
+def norm(t):
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(t).lower()) if c.isalnum())
+
+
+def enviar(senha, nome, arquivos, ja):
+    import base64
+    import random
+    import string
+    PARTE = 3 * 1024 * 1024
+    enviados = 0
+    for k, arq in enumerate(arquivos, 1):
+        original = os.path.basename(arq)
+        if (norm(nome), original) in ja:
+            continue
+        lib = "lib-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=8)) + ".mp4"
+        with open(arq, "rb") as f:
+            dados = f.read()
+        total = (len(dados) + PARTE - 1) // PARTE
+        for n in range(total):
+            print(f"\r  enviando {k}/{len(arquivos)} ({original}) parte {n + 1}/{total}   ", end="", flush=True)
+            for tentativa in range(3):
+                try:
+                    api_bib(senha, {"acao": "parte", "nome": lib, "n": n,
+                                    "base64": base64.b64encode(dados[n * PARTE:(n + 1) * PARTE]).decode()})
+                    break
+                except Exception:
+                    if tentativa == 2:
+                        raise
+        api_bib(senha, {"acao": "salvar", "item": {"jogo": nome, "tipo": "arquivo", "nome": lib, "original": original}})
+        enviados += 1
+    print()
+    return enviados
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
     instalar()
     ffmpeg_exe = preparar_ferramentas()
     assets = codigo_do_servidor()
     assets.duracao = duracao_ffmpeg(ffmpeg_exe)
-    carros, nome_pasta = carros_do_pedido(sys.argv[1:], assets)
-    raiz = os.path.join(os.getcwd(), f"clipes_{nome_pasta}")
+    senha = senha_app()
+    itens = api_bib(senha).get("itens", [])
+    ja = {(norm(x.get("jogo")), x.get("original")) for x in itens}
+    com_hd = {norm(x.get("jogo")) for x in itens if str(x.get("original", "")).endswith(".mp4") and "_c" in str(x.get("original"))}
+    carros = carros_do_pedido(sys.argv[1:], assets)
+    if not sys.argv[1:]:  # modo automático: só carro que ainda não tem vídeo HD na biblioteca
+        carros = {n: f for n, f in carros.items() if norm(n) not in com_hd}
+    if not carros:
+        print("Todos os carros dos roteiros já têm vídeo HD na biblioteca. Nada a fazer.")
+        return
+    print("Carros:", ", ".join(carros), flush=True)
+    raiz = os.path.join(AQUI, "clipes_carros")
     resumo = []
-    for nome, faixa in carros:
+    for nome, faixa in carros.items():
         if faixa:
             assets.ANOS_CARRO[nome] = faixa
         pasta = os.path.join(raiz, nome)
@@ -141,12 +226,14 @@ def main():
             total += sum(assets.duracao(c["arquivo"]) for c in extra)
         for x in glob.glob(os.path.join(pasta, "*.tmp*")):
             os.remove(x)
-        resumo.append((nome, len(clipes), total, pasta))
+        arquivos = sorted(glob.glob(os.path.join(pasta, "*.mp4")))
+        n_env = enviar(senha, nome, arquivos, ja) if arquivos else 0
+        resumo.append((nome, len(arquivos), total, n_env))
     print("\n================ PRONTO ================")
-    for nome, n, total, pasta in resumo:
-        print(f"{nome}: {n} vídeo(s), {total / 60:.1f} min  ->  {pasta}")
-    print("\nAgora, no app: Biblioteca de vídeos -> campo Jogo = nome do carro (exatamente como acima)\n"
-          "-> Enviar vídeo… -> selecione TODOS os arquivos da pasta daquele carro.")
+    for nome, n, total, n_env in resumo:
+        print(f"{nome}: {n} vídeo(s) HD, {total / 60:.1f} min, {n_env} enviado(s) agora para a biblioteca"
+              + ("" if n else "  <- nada em HD achado; esse carro vai com fotos"))
+    print("\nPode gravar o áudio e gerar o vídeo no app normalmente.")
 
 
 if __name__ == "__main__":
