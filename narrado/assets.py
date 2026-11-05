@@ -553,11 +553,14 @@ def baixar_carro(nome, pasta, max_videos=3):
     faixa = ANOS_CARRO.get(nome)
     # geração definida: busca pelos anos dela e só aceita foto com o ano do modelo no nome/categorias
     termos = [f"{nome} {a}" for a in range(faixa[0], faixa[1] + 1)] + [nome] if faixa else [nome]
+    # pouco vídeo (Territory: 1 vídeo, 19 s aproveitáveis) -> mais fotos, senão o capítulo vira o mesmo
+    # trecho em loop (cada foto só entra 2 vezes)
+    alvo = 4 if len(info["trailers"]) >= 2 else 10
     for termo in termos:
-        if len(info["screens"]) >= 4:
+        if len(info["screens"]) >= alvo:
             break
         try:
-            for f in imagens_commons(termo, pasta, n=4 - len(info["screens"]), geracao=nome if faixa else None):
+            for f in imagens_commons(termo, pasta, n=alvo - len(info["screens"]), geracao=nome if faixa else None):
                 arq = os.path.join(pasta, f["arquivo"])
                 if arq not in info["screens"]:
                     info["screens"].append(arq)
@@ -1634,6 +1637,10 @@ def _marca_fixa_carros(pasta_quadros, arqs, util):
     if not cands:
         return None
     _, x, y, bw, bh = max(cands)
+    # logo animada (a do 3008 pisca e as barras deslizam): só parte dela fica parada o bastante para entrar
+    # na frequência de bordas — a caixa cresce em volta para cobrir a logo inteira (teste 5: sobrava o texto)
+    ex, ey = min(0.5 * bw, W_ * 0.06), min(0.6 * bh, H_ * 0.06)
+    x, y, bw, bh = x - ex, y - ey, bw + 2 * ex, bh + 2 * ey
     x, y = max(1.0, x), max(1.0, y)
     return [round(float(v), 4) for v in (x / W_, y / H_, min(bw, W_ - x - 1) / W_, min(bh, H_ - y - 1) / H_)]
 

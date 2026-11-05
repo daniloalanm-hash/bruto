@@ -153,3 +153,11 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   e logo translúcida não passava. Agora, no canal de carros, vale a borda que fica no mesmo lugar em quase
   todos os quadros do vídeo — o canto é borrado no vídeo e no quadro que vai para a thumb.
 - Cada foto aparece no máximo 2 vezes (a mesma foto do Cactus 5 vezes em 40 s parecia defeito).
+
+## Lições do 5º teste
+- Logo animada (a do AutoShowTV pisca e as barras deslizam) só tem parte das bordas paradas: a caixa achada
+  cobria só o pedaço de cima. A caixa agora cresce em volta (metade da largura, 60% da altura) para pegar a
+  logo inteira.
+- Carro com um vídeo só (Territory: 19 s aproveitáveis) virava o mesmo trecho em loop por 2 minutos. Com
+  menos de 2 vídeos, a busca no Commons traz até 10 fotos (antes 4).
+- Mão do motorista no volante, vista de fora pela janela, é aceitável (não é pessoa na câmera).
