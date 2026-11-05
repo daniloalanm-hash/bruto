@@ -904,26 +904,32 @@ $('#btnBibLink').addEventListener('click', async () => {
   } catch (e) { toast(e.message, 'warn'); }
 });
 $('#bibArquivo').addEventListener('change', async (e) => {
-  const f = e.target.files[0]; e.target.value = '';
+  const arquivos = [...e.target.files]; e.target.value = '';
   const jogo = $('#bibJogo').value.trim();
-  if (!f) return;
-  if (!jogo) { toast('Diga de qual jogo é o arquivo.', 'warn'); return; }
-  if (f.size > 330e6) { toast('Arquivo grande demais (máx. 330 MB). Prefira 1080p.', 'warn'); return; }
-  const ext = ((f.name.split('.').pop() || 'mp4').toLowerCase().replace('jpeg', 'jpg'));
-  if (!/^(jpg|png|webp|mp4|mov|webm|m4v|mp3|m4a|wav|ogg|aac)$/.test(ext)) { toast('Formato não aceito (use mp4, mov, webm, jpg, png ou, para trilha, mp3/m4a/wav).', 'warn'); return; }
-  if (/^(mp3|m4a|wav|ogg|aac)$/.test(ext) && !/^(trilha|trilhas|m[uú]sica|m[uú]sicas)$/i.test(jogo)) { toast('Áudio vai como trilha de fundo: escreva "Trilha" no campo Jogo.', 'warn'); return; }
-  const nome = `lib-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  if (!arquivos.length) return;
+  if (!jogo) { toast('Diga de qual jogo (ou carro) é o arquivo.', 'warn'); return; }
   const st = $('#bibStatus');
-  const PARTE = 3 * 1024 * 1024, total = Math.ceil(f.size / PARTE);
-  try {
-    for (let n = 0; n < total; n++) {
-      st.textContent = `Enviando ${f.name} (${n + 1}/${total})…`;
-      const base64 = await paraBase64(f.slice(n * PARTE, (n + 1) * PARTE));
-      await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'parte', nome, n, base64 }) });
-    }
-    bib.itens = (await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'salvar', item: { jogo, tipo: 'arquivo', nome, original: f.name } }) })).itens;
-    st.textContent = ''; renderBib(); toast(`${f.name} salvo na biblioteca de ${jogo}.`);
-  } catch (err) { st.textContent = `Erro: ${err.message}`; }
+  let ok = 0;
+  for (const [k, f] of arquivos.entries()) {
+    const quem = arquivos.length > 1 ? `${f.name} (${k + 1}/${arquivos.length})` : f.name;
+    if (f.size > 330e6) { toast(`${f.name}: grande demais (máx. 330 MB). Prefira 1080p.`, 'warn'); continue; }
+    const ext = ((f.name.split('.').pop() || 'mp4').toLowerCase().replace('jpeg', 'jpg'));
+    if (!/^(jpg|png|webp|mp4|mov|webm|m4v|mp3|m4a|wav|ogg|aac)$/.test(ext)) { toast(`${f.name}: formato não aceito (use mp4, mov, webm, jpg, png ou, para trilha, mp3/m4a/wav).`, 'warn'); continue; }
+    if (/^(mp3|m4a|wav|ogg|aac)$/.test(ext) && !/^(trilha|trilhas|m[uú]sica|m[uú]sicas)$/i.test(jogo)) { toast('Áudio vai como trilha de fundo: escreva "Trilha" no campo Jogo.', 'warn'); continue; }
+    const nome = `lib-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+    const PARTE = 3 * 1024 * 1024, total = Math.ceil(f.size / PARTE);
+    try {
+      for (let n = 0; n < total; n++) {
+        st.textContent = `Enviando ${quem} — parte ${n + 1}/${total}…`;
+        const base64 = await paraBase64(f.slice(n * PARTE, (n + 1) * PARTE));
+        await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'parte', nome, n, base64 }) });
+      }
+      bib.itens = (await api('/api/biblioteca', { method: 'POST', body: JSON.stringify({ acao: 'salvar', item: { jogo, tipo: 'arquivo', nome, original: f.name } }) })).itens;
+      ok++; renderBib();
+    } catch (err) { toast(`${f.name} não foi: ${err.message}`, 'warn', 8000); }
+  }
+  st.textContent = '';
+  if (ok) toast(`${ok} ${ok === 1 ? 'arquivo salvo' : 'arquivos salvos'} na biblioteca de ${jogo}.`);
 });
 
 /* ---------------- 1b. roteiros em lote ---------------- */

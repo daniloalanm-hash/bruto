@@ -176,3 +176,12 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 - O navegador também não resolve sozinho: `player/metadata` do Dailymotion bloqueia CORS de outro domínio.
 - Logo, vídeo HD de carro precisa de outra origem (proxy residencial, download na máquina do Danilo, ou outra
   fonte além do Dailymotion). O log mostra `| site: sd,hd720,...` para comparar com a altura baixada.
+
+## Vídeo HD dos carros: baixado no computador do Danilo (desde 05/11/2026)
+- `narrado/baixar_carros.py <id-do-roteiro>` (ou `"Peugeot 3008:2016-2023" …`) roda no PC dele: instala sozinho
+  yt-dlp + ffmpeg empacotado (imageio-ffmpeg), usa a MESMA escolha do servidor (`assets._dailymotion_carro`, geração
+  pela ficha, HD primeiro) e grava `clipes_<id>/<Carro>/…mp4` (sem som, até 1080p).
+- Ele manda cada pasta pela **Biblioteca** do app (campo Jogo = nome do carro; aceita vários arquivos de uma vez).
+  Fica guardado: vale para todo vídeo futuro daquele carro.
+- No servidor, carro com vídeo da biblioteca descarta os `_c` do Dailymotion (288p) e não busca mais Dailymotion
+  quando falta tempo de vídeo — completa com fotos. Sem biblioteca, segue como antes (288p).

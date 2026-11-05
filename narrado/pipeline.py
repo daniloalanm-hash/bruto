@@ -331,7 +331,8 @@ def juntar_links(jogos, links, nomes):
                 t = assets.baixar_videos_site(ln["url"], info["chave"], RAW) or None
         if t:
             # com vídeo oficial indicado por você, sai o material achado por busca (Dailymotion/YouTube)
-            info["trailers"] = [x for x in info["trailers"] if not re.search(r"_[dy]\d+(_\w+)?\.mp4$", x["arquivo"])]
+            # (carro: inclui os _c do Dailymotion, que no servidor vêm em 288p — o HD baixado em casa substitui)
+            info["trailers"] = [x for x in info["trailers"] if not re.search(r"_[dyc]\d+(_\w+)?\.mp4$", x["arquivo"])]
             for x in reversed(t if isinstance(t, list) else [t]):
                 if all(x["arquivo"] != y["arquivo"] for y in info["trailers"]):
                     info["trailers"].insert(0, x)
@@ -520,6 +521,10 @@ def preparar(pasta, st):
                 continue
             st.etapa(f"Buscando mais vídeo de {j['nome']} (tinha {tem:.0f}s de {precisa:.0f}s)", 26)
             if job.get("nicho") == "carros":
+                if any(t.get("nome") == "biblioteca" for t in j["trailers"]):
+                    print(f"{j['nome']}: só {tem:.0f}s de vídeo HD da biblioteca — completa com fotos, "
+                          f"não com Dailymotion em 288p (rode baixar_carros.py de novo para trazer mais)", flush=True)
+                    continue
                 extras_c = assets._dailymotion_carro(j["nome"], j["chave"], RAW, n=2, extra=True)
                 if extras_c:
                     banco.update(assets.banco_corrido([dict(j, screens=[], trailers=extras_c)], os.path.join(pasta, "thumbs"),
