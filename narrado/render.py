@@ -605,7 +605,8 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
                         alterna[j] = "foto"
                 i, pos, voltas = (i + 1) % len(lst), None, voltas + 1
                 continue
-            take = min(falta, disp, 6.0 if esgotado.get(j) else 1e9)
+            # carros: depois que o vídeo acabou, a repetição fica curta (3,5 s) e as fotos dominam
+            take = min(falta, disp, (3.5 if projeto.get("nicho") == "carros" and fotos else 6.0) if esgotado.get(j) else 1e9)
             if esgotado.get(j):
                 alterna[j] = "foto"
             if 0 < falta - take < 0.8:  # não deixa um pedacinho solto no fim
@@ -632,12 +633,23 @@ def montar_corrido(projeto, banco, faixas, seg_dir, pasta_raw=""):
             return None
         return (mid, ini, d)
 
+    foto_abertura = {}
+
     def plano_abertura(j):
         lst = [f for f in vids.get(j, []) if f[2] - f[1] >= CORTE_ABERTURA + 0.3] or vids.get(j)
         if not lst:
             return None
         v = visitas.get(j, 0)
         visitas[j] = v + 1
+        if projeto.get("nicho") == "carros" and imgs.get(j) and \
+                sum(f[2] - f[1] for f in vids.get(j, [])) < 60 and v % 2 == 1:
+            # carro com pouco vídeo (teste 6: o mesmo plano do Territory 11x entre abertura e final):
+            # na montagem, alterna com as fotos dele em vez de repetir os mesmos 2 planos
+            kf = foto_abertura.get(j, 0)
+            foto_abertura[j] = kf + 1
+            return (imgs[j][kf % len(imgs[j])], 0.0, CORTE_ABERTURA)
+        if projeto.get("nicho") == "carros" and imgs.get(j) and sum(f[2] - f[1] for f in vids.get(j, [])) < 60:
+            v //= 2
         arq, a, b, mid = lst[(len(lst) // 2 + v) % len(lst)]  # do meio do trailer: a parte de ação
         return (mid, max(a, min((a + b) / 2 - CORTE_ABERTURA / 2, b - CORTE_ABERTURA)), CORTE_ABERTURA)
 

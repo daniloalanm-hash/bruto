@@ -161,3 +161,7 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 - Carro com um vídeo só (Territory: 19 s aproveitáveis) virava o mesmo trecho em loop por 2 minutos. Com
   menos de 2 vídeos, a busca no Commons traz até 10 fotos (antes 4).
 - Mão do motorista no volante, vista de fora pela janela, é aceitável (não é pessoa na câmera).
+
+## Lições do 6º teste
+- Carro com pouco vídeo (< 60 s, ex.: Territory com 19 s): na montagem de abertura e no encerramento, os planos dele alternam com as fotos (antes, os mesmos 2 planos apareciam 11–13 vezes no vídeo).
+- Depois que o vídeo do carro acaba, cada repetição de vídeo dura no máximo 3,5 s, intercalada com foto.
