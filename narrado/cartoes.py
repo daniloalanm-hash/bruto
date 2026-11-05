@@ -325,6 +325,20 @@ def achar_numero(texto):
     return {"valor": valor, "rotulo": rotulo}
 
 
+def numero_de_nome(valor, texto):
+    """O número é parte de um nome ("Underground 2", "GTA 6", "PS5", "FIFA 23"), não um dado? Só vale para número
+    solto (sem R$/US$, %, mil/milhões): aí ele tem que aparecer no texto fora de nome para virar cartão."""
+    v = str(valor or "").strip()
+    if not re.fullmatch(r"\d{1,4}", v):
+        return False
+    achou = list(re.finditer(rf"(?<![\d.,]){v}(?![\d.,]\d)", str(texto or "")))
+    if not achou:
+        return False
+    nome = re.compile(r"(?:[A-Z][\w:'’-]*|[A-Z]{2,})\s*$")
+    return all(nome.search(str(texto)[max(0, m.start() - 30):m.start()]) or
+               re.match(r"[A-Za-z]", str(texto)[m.end():m.end() + 1] or " ") for m in achou)
+
+
 def _digitos(s):
     return re.sub(r"\D", "", str(s or ""))
 
@@ -672,6 +686,11 @@ def aplicar(projeto, raw, fontes, pasta_trab):
         if num is None and primeira and "numero" not in c:
             num = achar_numero(c.get("texto"))
             c["numero"] = num  # fica salvo (a tela pode apagar/editar)
+        if num and numero_de_nome(num.get("valor"), c.get("texto")):
+            print(f"número {num.get('valor')!r} do tópico {k} é parte de nome (ex.: Underground 2): sem cartão", flush=True)
+            num = None
+            if banco.pop(f"cartao_num_{k}", None):
+                novo = True
         if not num:
             continue
         mid = f"cartao_num_{k}"

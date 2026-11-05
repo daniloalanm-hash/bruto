@@ -244,7 +244,8 @@ def momentos(projeto, timeline, total=None):
         itens = []
         num = c.get("numero")
         if isinstance(num, dict) and num.get("valor") and ler_valor(num["valor"]) and \
-                not re.fullmatch(r"\s*(19|20)\d{2}\s*", str(num["valor"])):
+                not re.fullmatch(r"\s*(19|20)\d{2}\s*", str(num["valor"])) and \
+                not cartoes.numero_de_nome(num["valor"], frase):
             num = dict(num)
             if cartoes.momento_do_numero(projeto, k, num["valor"]) is None:
                 v = ler_valor(num["valor"])[1]
