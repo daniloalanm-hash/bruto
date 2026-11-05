@@ -379,17 +379,30 @@ def titulo_do_jogo(nome, titulo):
     return n1 <= n2 and k1 <= k2 and not extra
 
 
+DM_FMT = {}  # id -> formatos que a API do Dailymotion diz existir (diagnóstico de qualidade)
+DM_ARGS = {}  # id do Dailymotion -> argumentos extras do yt-dlp que liberaram a melhor resolução
+
+
 def _info_dm(vid):
-    """(maior altura disponível, nome do canal) de um vídeo do Dailymotion, via yt-dlp sem baixar."""
+    """(maior altura disponível, nome do canal) de um vídeo do Dailymotion, via yt-dlp sem baixar.
+    Sem cara de navegador o Dailymotion entrega só 216–288p; se vier abaixo de 720p, tenta de novo
+    se passando por Chrome e por Safari e guarda em DM_ARGS o jeito que trouxe a maior resolução."""
     import subprocess
-    try:
-        r = subprocess.run(["yt-dlp", "-J", "--no-warnings", f"https://www.dailymotion.com/video/{vid}"],
-                           capture_output=True, text=True, timeout=60)
-        d = json.loads(r.stdout or "{}")
-        alt = max([f.get("height") or 0 for f in d.get("formats", [])] + [d.get("height") or 0])
-        return int(alt), d.get("uploader") or d.get("channel") or ""
-    except Exception:
-        return 0, ""
+    melhor = (0, "", [])
+    for extra in ([], ["--impersonate", "chrome"], ["--impersonate", "safari"]):
+        try:
+            r = subprocess.run(["yt-dlp", "-J", "--no-warnings", *extra, f"https://www.dailymotion.com/video/{vid}"],
+                               capture_output=True, text=True, timeout=60)
+            d = json.loads(r.stdout or "{}")
+            alt = max([f.get("height") or 0 for f in d.get("formats", [])] + [d.get("height") or 0])
+            if alt > melhor[0]:
+                melhor = (int(alt), d.get("uploader") or d.get("channel") or "", extra)
+        except Exception:
+            pass
+        if melhor[0] >= 720:
+            break
+    DM_ARGS[vid] = melhor[2]
+    return melhor[0], melhor[1]
 
 
 TENTADOS_DM = {}  # chave do jogo -> ids do Dailymotion já baixados (a 2ª rodada pega outros)
@@ -485,7 +498,7 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
     for termo, peso in termos:
         try:
             d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
-                {"search": termo, "fields": "id,title,duration", "limit": 15, "sort": "relevance"})))
+                {"search": termo, "fields": "id,title,duration,available_formats", "limit": 15, "sort": "relevance"})))
         except Exception as e:
             print(f"aviso: busca no Dailymotion falhou ({termo}): {e}")
             continue
@@ -497,6 +510,7 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
                 print(f"descartado (outra geração): {t[:70]}", flush=True)
                 continue
             vistos.add(v["id"])
+            DM_FMT[v["id"]] = ",".join(v.get("available_formats") or [])[-30:]
             bonus = 2 if BOM_CARRO.search(t) else 0
             if faixa and re.search(r"\b(19[5-9]\d|20[0-4]\d)\b", t):
                 bonus += 1.5  # ano da geração no título: certeza maior de que é o carro certo
@@ -508,7 +522,7 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
         oficial = bool(MONTADORAS.search(f"{canal}"))
         nota = (2 if alt >= 1080 else 1.5 if alt >= 720 else 0.3 if alt >= 480 else -1) + (1.5 if oficial else 0) - ordem * 0.2
         avaliados.append((-nota, alt, vid, titulo))
-        print(f"Dailymotion candidato: {titulo[:60]} | {alt}p | {canal}", flush=True)
+        print(f"Dailymotion candidato: {titulo[:60]} | {alt}p {' '.join(DM_ARGS.get(vid, []))} | {canal} | site: {DM_FMT.get(vid, '?')}", flush=True)
     avaliados.sort()
     if any(a >= 720 for _, a, _, _ in avaliados):
         avaliados = [x for x in avaliados if x[1] >= 720]
@@ -524,7 +538,7 @@ def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
             continue
         tmp = os.path.join(pasta, f"{chave}_c{i}_{vid}.tmp")
         try:
-            r = subprocess.run(["yt-dlp", f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
+            r = subprocess.run(["yt-dlp", *DM_ARGS.get(vid, []), f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
                                 "--no-warnings", "-f", "bv*[height<=1080]/b[height<=1080]",
                                 "--download-sections", f"*0-{TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
                                capture_output=True, text=True, timeout=240)
@@ -609,7 +623,7 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
                                  r"bandai|capcom|konami|sega|square enix|ea\b|bethesda|2k|warner", f"{canal} {titulo}", re.I))
         nota = (2 if alt >= 1080 else 1.5 if alt >= 720 else 0.5 if alt >= 480 else 0) + (1.5 if oficial else 0) - ordem * 0.2
         avaliados.append((-nota, alt, vid, titulo))
-        print(f"Dailymotion candidato: {titulo[:60]} | {alt}p | {canal}", flush=True)
+        print(f"Dailymotion candidato: {titulo[:60]} | {alt}p {' '.join(DM_ARGS.get(vid, []))} | {canal}", flush=True)
     avaliados.sort()
     if any(a >= 720 for _, a, _, _ in avaliados):
         avaliados = [x for x in avaliados if x[1] >= 720]
@@ -625,7 +639,7 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
             continue
         tmp = os.path.join(pasta, f"{chave}_d{i}_{vid}.tmp")
         try:
-            r = subprocess.run(["yt-dlp", f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
+            r = subprocess.run(["yt-dlp", *DM_ARGS.get(vid, []), f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
                                 "--no-warnings", "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b",
                                 "--download-sections", f"*0-{TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
                                capture_output=True, text=True, timeout=240)
