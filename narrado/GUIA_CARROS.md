@@ -165,3 +165,6 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 ## Lições do 6º teste
 - Carro com pouco vídeo (< 60 s, ex.: Territory com 19 s): na montagem de abertura e no encerramento, os planos dele alternam com as fotos (antes, os mesmos 2 planos apareciam 11–13 vezes no vídeo).
 - Depois que o vídeo do carro acaba, cada repetição de vídeo dura no máximo 3,5 s, intercalada com foto.
+
+## Lições do 7º teste (qualidade)
+- Todos os vídeos do Dailymotion vinham em 216p–288p: sem o curl_cffi, o yt-dlp não consegue se passar por navegador e o Dailymotion só entrega as versões pequenas. O requirements agora instala `yt-dlp[default,curl-cffi]`. Conferir no log as linhas "Dailymotion candidato: … | 720p/1080p".
