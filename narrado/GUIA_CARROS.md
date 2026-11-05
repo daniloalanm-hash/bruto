@@ -168,3 +168,11 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
 
 ## Lições do 7º teste (qualidade)
 - Todos os vídeos do Dailymotion vinham em 216p–288p: sem o curl_cffi, o yt-dlp não consegue se passar por navegador e o Dailymotion só entrega as versões pequenas. O requirements agora instala `yt-dlp[default,curl-cffi]`. Conferir no log as linhas "Dailymotion candidato: … | 720p/1080p".
+
+## Lições do 8º/9º teste (qualidade — causa confirmada)
+- O Dailymotion entrega **só a variante 380 (216–288p)** para o IP do GitHub Actions, com ou sem impersonate
+  (chrome, chrome-136, safari-18.4, referer — todos testados em 05/11/2026). De IP residencial o mesmo vídeo
+  traz 720/1080p. A API (`available_formats`) confirma que o HD existe (`hd720`, `hd1080`): é bloqueio por IP.
+- O navegador também não resolve sozinho: `player/metadata` do Dailymotion bloqueia CORS de outro domínio.
+- Logo, vídeo HD de carro precisa de outra origem (proxy residencial, download na máquina do Danilo, ou outra
+  fonte além do Dailymotion). O log mostra `| site: sd,hd720,...` para comparar com a altura baixada.
