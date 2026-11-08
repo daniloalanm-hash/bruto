@@ -1,3 +1,16 @@
 [
- {"id": "fixo-gta6-site", "jogo": "Grand Theft Auto VI", "tipo": "link", "url": "https://www.rockstargames.com/VI"}
+ {"id": "fixo-gta6-site", "jogo": "Grand Theft Auto VI", "tipo": "link", "url": "https://www.rockstargames.com/VI"},
+ {"id": "fixo-pof-site", "jogo": "Plants on Fire", "tipo": "link", "url": "https://p16-marketing-sg.bytedgame.com/obj/g-marketing-assets-sg/static/media/background.aa00c7be.mp4"},
+ {"id": "fixo-pof-launch-trailer", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=SvGUF4oHiwA"},
+ {"id": "fixo-pof-halloween", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=SbmFXYMWcXI"},
+ {"id": "fixo-pof-pumpkin-king", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=kPDA2koGdM8"},
+ {"id": "fixo-pof-mister-hiss", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=4panVrmMg54"},
+ {"id": "fixo-pof-thornmelon", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=tBlKXSvsiHI"},
+ {"id": "fixo-pof-chuckleberry", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=hPr2RpAisyI"},
+ {"id": "fixo-pof-pirate-captain", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=IVKTd_FCZXQ"},
+ {"id": "fixo-pof-piratas", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.youtube.com/watch?v=j_gJxKX5-yA"},
+ {"id": "fixo-pof-tt1223", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.tiktok.com/@playplantsonfire/video/7704901442024361223"},
+ {"id": "fixo-pof-tt6049", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.tiktok.com/@playplantsonfire/video/7704569304892706049"},
+ {"id": "fixo-pof-tt3665", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.tiktok.com/@playplantsonfire/video/7703897640760593665"},
+ {"id": "fixo-pof-tt3380", "jogo": "Plants on Fire", "tipo": "link", "url": "https://www.tiktok.com/@playplantsonfire/video/7703136020807683380"}
 ]

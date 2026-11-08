@@ -1171,6 +1171,53 @@ def teste_quadros(pasta, st):
         pub(*saidas)
 
 
+def teste_links(pasta, st):
+    """Diagnóstico: baixa os links fixos da biblioteca de um jogo (NARRADO_JOGO) e publica uma folha com
+    quadros de cada um (teste_links.jpg) + o resumo (teste_links.json)."""
+    import io
+    import contextlib
+    from PIL import Image
+    jogo = os.environ.get("NARRADO_JOGO") or "Plants on Fire"
+    itens = [x for x in (ler(os.path.join(os.path.dirname(os.path.abspath(__file__)), "biblioteca_fixa.json")) or [])
+             if x.get("jogo") == jogo and x.get("url")]
+    rel, linhas = {}, []
+    for i, it in enumerate(itens):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            t = assets.baixar_link_video(it["url"], "teste_links", RAW, i) or assets.baixar_videos_site(it["url"], "teste_links", RAW)
+        t = (t[0] if isinstance(t, list) and t else t) or None
+        rel[it["id"]] = {"ok": bool(t), "dur": int(assets.duracao(t["arquivo"])) if t else 0, "log": buf.getvalue()[-400:]}
+        if t:
+            quadros = []
+            d = assets.duracao(t["arquivo"])
+            for k in range(6):
+                q = os.path.join(RAW, f"_tl_{i}_{k}.jpg")
+                try:
+                    assets.ffmpeg("-ss", f"{d * (k + 0.5) / 6:.2f}", "-i", t["arquivo"], "-frames:v", 1, "-vf", "scale=-2:180", q)
+                    quadros.append(Image.open(q).convert("RGB"))
+                except Exception:
+                    pass
+            if quadros:
+                linha = Image.new("RGB", (sum(q.width for q in quadros), 180))
+                x = 0
+                for q in quadros:
+                    linha.paste(q, (x, 0))
+                    x += q.width
+                linhas.append(linha)
+    destino = os.path.join(pasta, "teste_links.json")
+    gravar(destino, rel)
+    pub = publicador()
+    if linhas:
+        folha = Image.new("RGB", (max(l.width for l in linhas), 180 * len(linhas)))
+        for k, l in enumerate(linhas):
+            folha.paste(l, (0, 180 * k))
+        folha.save(os.path.join(pasta, "teste_links.jpg"), quality=80)
+        if pub:
+            pub(os.path.join(pasta, "teste_links.jpg"))
+    if pub:
+        pub(destino)
+
+
 def teste_steam(pasta, st):
     """Diagnóstico: nomes dos vídeos da Steam do jogo e das DLCs (para casar personagem citado com vídeo dele)."""
     job = ler(os.path.join(pasta, "job.json"))
@@ -1273,7 +1320,7 @@ def main():
         fase = "teste_job"
     try:
         {"preparar": preparar, "legenda": so_legenda, "teste_transcricao": teste_transcricao,
-         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "teste_carros": teste_carros, "teste_job": teste_job, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
+         "teste_fontes": teste_fontes, "teste_referencia": teste_referencia, "teste_corrido": teste_corrido, "teste_trecho": teste_trecho, "teste_quadros": teste_quadros, "teste_steam": teste_steam, "teste_links": teste_links, "teste_carros": teste_carros, "teste_job": teste_job, "thumbs": so_thumbs}.get(fase, rerender)(pasta, st)
     except Exception as e:
         traceback.print_exc()
         st.erro(str(e)[:400])
