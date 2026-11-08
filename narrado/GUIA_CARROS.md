@@ -209,3 +209,13 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   Rótulo só com o que a frase diz (versão/ano antes do valor, FIPE, lançamento, "na Griffe"); dois preços na
   mesma frase viram barras comparando. O cartão fica até o fim da frase do valor (`_agenda_carros`), um por vez.
 - Barras de comparação usavam escala diferente por barra (o valor menor saía com a barra maior): escala única.
+
+### Cortes de voz na edição das tomadas (08/11/2026, 2ª rodada)
+- Frase que aparece duas vezes no roteiro ("na Tabela FIPE de novembro de 2026"): a regravação da 2ª casava com a 1ª,
+  virava "última tomada" dela e tudo entre as duas sumia (70 mil / 78 mil / "E o T-Cross 2021?"). Agora o alinhamento
+  só volta no roteiro quando a posição de trás é claramente melhor que seguir em frente, e tentativa largada ("…mano…")
+  voltando no roteiro não muda a posição esperada. (Valia para os games também: o vídeo do Elder Scrolls tinha perdido um parágrafo.)
+- Tentativa largada ("Pra quem busca…") não derruba a frase inteira dita antes ("Mas, pra que ele faz sentido?").
+- Frase curta do roteiro dita só uma vez e mal ouvida ("Preço." ouvido "Por isso.") fica no áudio com a legenda do roteiro.
+- Fim de tomada não atravessa o ponto final do roteiro ("9,8 km | por litro" não vira "Para").
+- Conferência: listar o que ficou faltando do roteiro (`faltando`) e cada emenda entre tomadas antes de entregar.

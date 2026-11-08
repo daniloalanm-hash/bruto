@@ -298,6 +298,7 @@ def _alinha_trecho(S, C, esperado):
     Sn = [s[0] for s in S]
     n = len(C)
     melhor = (0, -9.0, None, C)
+    frente = (0, -9.0, None, C)  # melhor posição logo em seguida ao trecho anterior
     for p in range(0, max(1, len(Sn) - max(1, n // 2) + 1)):
         janela = Sn[p:p + n + 3]
         cc = []
@@ -320,6 +321,13 @@ def _alinha_trecho(S, C, esperado):
             r -= 0.006 * (d - 8)
         if r > melhor[1] + 1e-9:
             melhor = (p, r, sm.get_opcodes(), cc)
+        if -8 <= d <= 8 and r > frente[1] + 1e-9:
+            frente = (p, r, sm.get_opcodes(), cc)
+    # frase que aparece duas vezes no roteiro ("na Tabela FIPE de novembro de 2026"): a fala nova casava um pouco
+    # melhor com a de trás, virava "regravação" dela e tudo o que foi dito entre as duas sumia do vídeo.
+    # Voltar no roteiro só quando a de trás é claramente melhor que seguir em frente.
+    if n >= 4 and melhor[0] - esperado < -8 and frente[1] >= 0.5 and frente[1] >= melhor[1] - 0.12:
+        return frente
     return melhor
 
 
@@ -558,10 +566,21 @@ def editar(palavras, cenas, nomes=()):
                 if len(fal) == len(rot):
                     # mesma quantidade de palavras: é a mesma frase com erro de transcrição ou troca de palavra
                     ponta = oi == 0 or oi == ultimo_op
+                    ant = None
                     for w, x in zip(fal, rot):
+                        if oi == ultimo_op and oi > 0 and x > rot[0] and re.search(r"[.!?]$", S[x - 1][2]):
+                            # fim da tomada não atravessa o ponto final do roteiro ("km | por litro" virava "Para"):
+                            # a palavra antes do ponto dita por extenso ("km/l" = "km por litro") fica como foi falada
+                            if ant is not None and sim(norm(ant["w"]), S[x - 1][0]) < 1.0:
+                                ant["idx"] = None
+                                ant.pop("rot", None)
+                            break
+                        ant = w
                         sx = sim(norm(w["w"]), S[x][0])
                         if ponta and sx < 0.5 and (not nome_proprio(x) or sx < 0.45):
                             continue  # palavra de ligação na ponta ("as", "mas"): não é aquela do roteiro
+                        if sx < 0.75 and re.search(r"(\.\.\.|…|[-‐])$", w["w"]):
+                            continue  # palavra largada no meio ("Pra quem busca…") não é a do roteiro ("ele")
                         if ponta and sx < 1.0 and norm(w["w"]) in PALAVRAS_LIGACAO and S[x][0] not in PALAVRAS_LIGACAO:
                             # "Mas" abrindo a tomada seguinte casava com "acima." (sim 0,5) do fim da frase anterior:
                             # contava como "dito por último" e cortava a última palavra da frase ("um segmento |")
@@ -585,8 +604,20 @@ def editar(palavras, cenas, nomes=()):
                             w["idx"] = x
         _tirar_desgarradas(ws, S)
         mapeados = [w["idx"] for w in ws if w["idx"] is not None]
-        if mapeados:
+        if mapeados and not (max(mapeados) < esperado and re.search(r"(\.\.\.|…|[-‐])$", ws[-1]["w"])):
+            # tentativa largada voltando no roteiro ("Bem, na tabela FIPE de 2020, mano…") não muda onde a fala está
             esperado = max(mapeados) + 1
+
+    # 1b) tentativa largada no meio ("Pra quem busca…") cujas partes foram todas ditas inteiras em outra tomada
+    #     ("Mas, pra que ele faz sentido?"): não vale como "dita por último" e não derruba a tomada completa
+    for c in list(validos):
+        ws = por_trecho[c]
+        if not re.search(r"(\.\.\.|…|[-‐])$", ws[-1]["w"]) or len(ws) > 8:
+            continue
+        meus = {w["idx"] for w in ws if w["idx"] is not None}
+        outros = {w["idx"] for o, ow in por_trecho.items() if o != c and o in validos for w in ow if w["idx"] is not None}
+        if meus and meus <= outros:
+            validos.discard(c)
 
     # 2) de trás para frente: cada parte do roteiro fica só com a última vez em que foi dita
     limite = len(S) + 1
@@ -737,6 +768,19 @@ def editar(palavras, cenas, nomes=()):
                     break
             if achou:
                 break
+        if not achou and lacuna and len(ws) <= 3 and len(lacuna) <= 3 and abs(len(ws) - len(lacuna)) <= 1 \
+                and lacuna == list(range(lacuna[0], lacuna[0] + len(lacuna))) \
+                and re.search(r"[.!?]$", S[lacuna[-1]][2]) and (lacuna[0] == 0 or re.search(r"[.!?:]$", S[lacuna[0] - 1][2])) \
+                and not any(re.search(r"(\.\.\.|…|[-‐])$", o["w"]) for o in ws):
+            # frase curta inteira do roteiro ("Preço.") que só foi dita ali, ouvida como outra coisa ("Por isso."):
+            # fica no áudio com a legenda do roteiro, senão some a resposta da pergunta
+            for k2, o in enumerate(ws):
+                x2 = lacuna[min(k2, len(lacuna) - 1)]
+                o.update({"manter": True, "idx": x2, "rot": True})
+                if k2 >= len(lacuna) or (len(ws) > len(lacuna) and k2 > 0 and x2 == lacuna[k2 - 1]):
+                    o["junta"] = True
+                ditos_ate_aqui.add(x2)
+            continue
         if achou:
             w, x = achou
             w["idx"] = x
