@@ -138,6 +138,8 @@ def senha_app():
     arq = os.path.join(AQUI, ".senha_app")
     if os.path.exists(arq):
         return open(arq, encoding="utf-8").read().strip()
+    if not sys.stdin or not sys.stdin.isatty():
+        sys.exit("Sem senha do app guardada: rode o instalador (ou o script no Terminal) uma vez para digitá-la.")
     import getpass
     s = getpass.getpass("Senha do app Bruto (a mesma da tela; fica guardada só neste computador): ").strip()
     with open(arq, "w", encoding="utf-8") as f:
@@ -172,6 +174,10 @@ def enviar(senha, nome, arquivos, ja):
     for k, arq in enumerate(arquivos, 1):
         original = os.path.basename(arq)
         if (norm(nome), original) in ja:
+            try:
+                os.remove(arq)
+            except OSError:
+                pass
             continue
         lib = "lib-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=8)) + ".mp4"
         with open(arq, "rb") as f:
@@ -189,11 +195,37 @@ def enviar(senha, nome, arquivos, ja):
                         raise
         api_bib(senha, {"acao": "salvar", "item": {"jogo": nome, "tipo": "arquivo", "nome": lib, "original": original}})
         enviados += 1
+        try:
+            os.remove(arq)  # já está guardado na biblioteca: não enche o disco
+        except OSError:
+            pass
     print()
     return enviados
 
 
+def trava():
+    """Rodando de hora em hora: se a rodada anterior ainda está baixando, esta sai sem fazer nada."""
+    try:
+        import fcntl
+    except ImportError:
+        return True
+    global _TRAVA
+    _TRAVA = open(os.path.join(AQUI, ".rodando"), "w")
+    try:
+        fcntl.flock(_TRAVA, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
 def main():
+    if "--configurar" in sys.argv:  # só guarda e confere a senha (usado pelo instalador)
+        n = len(api_bib(senha_app()).get("itens", []))
+        print(f"Senha conferida. Biblioteca com {n} item(ns).")
+        return
+    if not trava():
+        print("Outra rodada ainda está baixando; essa fica para a próxima.")
+        return
     instalar()
     ffmpeg_exe = preparar_ferramentas()
     assets = codigo_do_servidor()
@@ -203,8 +235,15 @@ def main():
     ja = {(norm(x.get("jogo")), x.get("original")) for x in itens}
     com_hd = {norm(x.get("jogo")) for x in itens if str(x.get("original", "")).endswith(".mp4") and "_c" in str(x.get("original"))}
     carros = carros_do_pedido(sys.argv[1:], assets)
-    if not sys.argv[1:]:  # modo automático: só carro que ainda não tem vídeo HD na biblioteca
-        carros = {n: f for n, f in carros.items() if norm(n) not in com_hd}
+    arq_tent = os.path.join(AQUI, ".sem_hd.json")
+    try:
+        sem_hd = json.load(open(arq_tent, encoding="utf-8"))
+    except Exception:
+        sem_hd = {}
+    if not sys.argv[1:]:  # modo automático: só carro sem vídeo HD na biblioteca (e sem tentativa vazia nas últimas 24 h)
+        import time as _t
+        carros = {n: f for n, f in carros.items()
+                  if norm(n) not in com_hd and _t.time() - sem_hd.get(n, 0) > 86400}
     if not carros:
         print("Todos os carros dos roteiros já têm vídeo HD na biblioteca. Nada a fazer.")
         return
@@ -229,6 +268,11 @@ def main():
         arquivos = sorted(glob.glob(os.path.join(pasta, "*.mp4")))
         n_env = enviar(senha, nome, arquivos, ja) if arquivos else 0
         resumo.append((nome, len(arquivos), total, n_env))
+        if not arquivos:
+            import time as _t
+            sem_hd[nome] = _t.time()
+            with open(arq_tent, "w", encoding="utf-8") as f:
+                json.dump(sem_hd, f, ensure_ascii=False)
     print("\n================ PRONTO ================")
     for nome, n, total, n_env in resumo:
         print(f"{nome}: {n} vídeo(s) HD, {total / 60:.1f} min, {n_env} enviado(s) agora para a biblioteca"

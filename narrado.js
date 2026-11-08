@@ -1569,8 +1569,21 @@ function tirarDoLote() {
   if (state.loteId) { salvarLote(lote().filter((x) => x.id !== state.loteId)); state.loteId = null; renderLote(); }
 }
 
+// carros: avisa antes de gerar se algum carro do roteiro ainda não tem vídeo HD na biblioteca
+// (o servidor só recebe 288p do Dailymotion; o HD vem do download automático no Mac do Danilo)
+async function confirmaCarrosHD() {
+  const r = state.roteiro;
+  if (!r || r.nicho !== 'carros') return true;
+  if (!bib.itens) await carregarBib();
+  const carros = [...new Set([...(r.cenas || []).map((c) => c.assunto).filter(Boolean), ...nomesJogos()])];
+  const falta = carros.filter((c) => !(bib.itens || []).some((it) => it.tipo === 'arquivo' && nomeParecido(c, it.jogo) && /_c\d+_/.test(it.original || '')));
+  if (!falta.length) return true;
+  return confirm(`Ainda sem vídeo HD na biblioteca: ${falta.join(', ')}.\n\nO Mac baixa sozinho de hora em hora — deixe ligado um pouco e tente de novo.\n\nGerar mesmo assim? (esses carros saem com vídeo em baixa resolução)`);
+}
+
 $('#btnGerar').addEventListener('click', async () => {
   if (!podeGerar()) return;
+  if (!(await confirmaCarrosHD())) return;
   const st = $('#statusEnvio'), btn = $('#btnGerar');
   btn.classList.add('busy');
   st.textContent = 'Enviando…';
@@ -1584,8 +1597,9 @@ $('#btnGerar').addEventListener('click', async () => {
 });
 
 // gravar em sequência: manda este para a fila (o envio continua sozinho) e já abre o próximo roteiro na voz
-$('#btnGerarProximo').addEventListener('click', () => {
+$('#btnGerarProximo').addEventListener('click', async () => {
   if (!podeGerar()) return;
+  if (!(await confirmaCarrosHD())) return;
   const prox = proximoDoLote();
   if (!prox) return;
   const job = montarJob();

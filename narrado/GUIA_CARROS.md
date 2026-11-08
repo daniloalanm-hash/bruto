@@ -190,3 +190,9 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   media.ford.com (403) bloqueiam o GitHub Actions. hyundai.news entrega mp4 de b-roll direto (cdn7.shift.agency).
 - Gravar a tela do YouTube no runner (Chromium real + Xvfb) também não dá: a página mostra "not a bot"/"Sign in"
   e o vídeo nem começa (testado em 08/11/2026).
+- **Mac do Danilo (automático, desde 08/11/2026):** instalado com
+  `bash -c "$(curl -fsSL https://raw.githubusercontent.com/daniloalanm-hash/bruto/main/narrado/mac/instalar.sh)"`.
+  Fica em `~/RadarDeGaragem` (venv via uv, Python 3.12), launchd `br.radardegaragem.baixar` roda `rodar.sh` de hora
+  em hora: atualiza o script do GitHub, baixa os carros sem HD e envia; apaga o arquivo local depois de enviado;
+  carro sem HD achado só é tentado de novo depois de 24 h. Log: `~/RadarDeGaragem/log.txt`.
+- O app, ao gerar vídeo de carros, avisa quais carros ainda não têm HD na biblioteca (original com `_c<n>_`).
