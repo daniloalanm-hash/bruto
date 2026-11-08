@@ -26,33 +26,29 @@ venv/bin/python baixar_carros.py --configurar </dev/tty
 
 cat > rodar.sh <<EOS
 #!/bin/bash
-# roda de hora em hora (launchd): atualiza o script e baixa o que faltar
+# atualiza o script e baixa os vídeos HD dos carros que faltam na biblioteca
 cd "$DIR"
 curl -fsSL "$RAW/baixar_carros.py" -o .novo.py && mv .novo.py baixar_carros.py
-echo "===== \$(date '+%d/%m %H:%M')" >> log.txt
-venv/bin/python baixar_carros.py >> log.txt 2>&1
+venv/bin/python baixar_carros.py "\$@" 2>&1 | tee -a log.txt
 tail -n 3000 log.txt > .log && mv .log log.txt
 EOS
 chmod +x rodar.sh
 
-echo "4/4 Ligando a rodada automática (de hora em hora, em segundo plano)…"
-cat > "$PLIST" <<EOP
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$ROTULO</string>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$DIR/rodar.sh</string></array>
-  <key>StartInterval</key><integer>3600</integer>
-  <key>RunAtLoad</key><true/>
-  <key>LowPriorityIO</key><true/>
-  <key>Nice</key><integer>10</integer>
-</dict></plist>
-EOP
+# versão antiga rodava sozinha de hora em hora: desliga
 launchctl bootout "gui/$(id -u)/$ROTULO" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+rm -f "$PLIST"
+
+echo "4/4 Criando o atalho na Mesa…"
+ATALHO="$HOME/Desktop/Baixar carros HD.command"
+cat > "$ATALHO" <<EOA
+#!/bin/bash
+"$DIR/rodar.sh"
+echo
+read -n 1 -s -p "Terminou. Aperte qualquer tecla para fechar."
+EOA
+chmod +x "$ATALHO"
 
 echo
-echo "Pronto! A partir de agora o Mac baixa sozinho, de hora em hora, os vídeos HD dos carros dos roteiros"
-echo "e manda para a biblioteca do app. A primeira rodada já começou em segundo plano."
-echo "Acompanhar:  tail -f ~/RadarDeGaragem/log.txt"
-echo "Desligar:    launchctl bootout gui/\$(id -u)/$ROTULO"
+echo "Pronto! Antes de gerar um vídeo de carros, dê dois cliques em \"Baixar carros HD\" na Mesa."
+echo "Ele baixa em HD só os carros dos roteiros que ainda não estão na biblioteca e manda para o app."
+echo "Não roda sozinho e não usa IA (não gasta token)."

@@ -1578,7 +1578,7 @@ async function confirmaCarrosHD() {
   const carros = [...new Set([...(r.cenas || []).map((c) => c.assunto).filter(Boolean), ...nomesJogos()])];
   const falta = carros.filter((c) => !(bib.itens || []).some((it) => it.tipo === 'arquivo' && nomeParecido(c, it.jogo) && /_c\d+_/.test(it.original || '')));
   if (!falta.length) return true;
-  return confirm(`Ainda sem vídeo HD na biblioteca: ${falta.join(', ')}.\n\nO Mac baixa sozinho de hora em hora — deixe ligado um pouco e tente de novo.\n\nGerar mesmo assim? (esses carros saem com vídeo em baixa resolução)`);
+  return confirm(`Ainda sem vídeo HD na biblioteca: ${falta.join(', ')}.\n\nNo Mac, dê dois cliques em "Baixar carros HD" (na Mesa), espere terminar e gere de novo.\n\nGerar mesmo assim? (esses carros saem com vídeo em baixa resolução)`);
 }
 
 $('#btnGerar').addEventListener('click', async () => {
