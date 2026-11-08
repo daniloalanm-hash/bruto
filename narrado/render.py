@@ -1680,10 +1680,32 @@ def renderizar(projeto, banco, pasta_raw, voz_wav, pasta_trab, destino, pasta_fo
         elif m["tipo"] == "v" and m.get("proprio"):
             seg_video_proprio(src, m.get("t", 0) + rep * 2.5, d, out, fx)
         elif m["tipo"] == "v":
-            seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)
+            try:
+                seg_video(src, m["t"] + rep * 2.5, d, out, k % 2 == 0, fx)
+            except RuntimeError as e:
+                # arquivo que o ffmpeg não consegue ler (vídeo antigo corrompido): troca por outro trecho de
+                # vídeo do mesmo jogo (de outro arquivo), senão uma imagem; um trecho ruim não derruba o vídeo
+                print(f"aviso: trecho {mid} ({m['arquivo']}) não decodifica; trocando ({str(e).splitlines()[-1][:100]})",
+                      flush=True)
+                ruins.add(m["arquivo"])
+                outros = [x for x in banco.values() if x["tipo"] == "v" and x["arquivo"] not in ruins
+                          and not x.get("corrido") and not x.get("proprio") and not x.get("cartao")]
+                outros.sort(key=lambda x: (x.get("jogo") != m.get("jogo"), (hash(x["arquivo"]) + k) % 97))
+                for x in outros[:4]:
+                    try:
+                        seg_video(os.path.join(pasta_raw, x["arquivo"]), x["t"], d, out, k % 2 == 0, fx)
+                        return tf
+                    except RuntimeError:
+                        ruins.add(x["arquivo"])
+                img = next((banco[x]["arquivo"] for x in midias if x in banco and banco[x]["tipo"] == "i"), None) or \
+                    next((x["arquivo"] for x in banco.values() if x["tipo"] == "i" and x.get("jogo") == m.get("jogo")),
+                         None) or next(x["arquivo"] for x in banco.values() if x["tipo"] == "i")
+                seg_imagem(os.path.join(pasta_raw, img), d, out, k, fx)
         else:
             seg_imagem(src, d, out, k, fx, encaixar=bool(m.get("proprio") or m.get("encaixar")), pre=_recorte(m))
         return tf
+
+    ruins = set()
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=3) as ex:
