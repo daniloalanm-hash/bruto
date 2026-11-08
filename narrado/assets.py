@@ -371,7 +371,8 @@ RUIM_DM = re.compile(r"review|an[aá]lise|reac|react|mod\b|speedrun|tutorial|dic
                      r"\bfilm|movie|filme|curta|fmv", re.I)
 # jogo cujo "trailer" é filme com atores (GTA 2 de 1999 era um curta live-action): busca só gameplay
 TRAILER_FILME = {"grandtheftauto2", "grandtheftauto", "grandtheftautolondon1969"}
-DM_BLOQUEADOS = {"x12zlxz"}  # vídeos conferidos que não mostram o jogo (live-action)
+DM_BLOQUEADOS = {"x12zlxz", "x1l4p3"}  # vídeos conferidos que não mostram o jogo (live-action)
+DUR_DM = {}  # id -> duração (s) vista na busca
 
 
 def titulo_do_jogo(nome, titulo):
@@ -628,9 +629,10 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
         for k, v in enumerate(d.get("list", [])):
             t, dur = v.get("title", ""), v.get("duration") or 0
             if v["id"] in vistos or v["id"] in DM_BLOQUEADOS or not titulo_do_jogo(nome, t) or RUIM_DM.search(t) \
-                    or not 25 <= dur <= 900 or (filme and re.search(r"trailer|teaser", t, re.I)):
+                    or not 25 <= dur <= (7200 if filme else 900) or (filme and (dur < 360 or re.search(r"trailer|teaser", t, re.I))):
                 continue
             vistos.add(v["id"])
+            DUR_DM[v["id"]] = dur
             bonus = 2 if re.search(r"trailer", t, re.I) else (1 if re.search(r"gameplay", t, re.I) else 0)
             cands.append((-(peso + bonus) + k * 0.1, v["id"], t))
     cands.sort()
@@ -658,10 +660,12 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
             saida.append({"arquivo": p, "nome": titulo})
             continue
         tmp = os.path.join(pasta, f"{chave}_d{i}_{vid}.tmp")
+        # jogo antigo com abertura em filme (atores): gravação de gameplay começa pela abertura; pega do meio
+        ini_dl = int(max(240, DUR_DM.get(vid, 0) * 0.35)) if filme else 0
         try:
             r = subprocess.run(["yt-dlp", *DM_ARGS.get(vid, []), f"https://www.dailymotion.com/video/{vid}", "--no-playlist", "--quiet",
                                 "--no-warnings", "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b",
-                                "--download-sections", f"*0-{TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
+                                "--download-sections", f"*{ini_dl}-{ini_dl + TRECHO_MAX}", "-o", tmp + ".%(ext)s"],
                                capture_output=True, text=True, timeout=240)
             baixado = next((os.path.join(pasta, x) for x in os.listdir(pasta) if x.startswith(os.path.basename(tmp))),
                            None)
