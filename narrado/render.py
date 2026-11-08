@@ -182,6 +182,24 @@ def _marca_do_video(src):
         return ""
 
 
+def _seg_com_reserva(src, pre, fazer):
+    """Roda o segmento; se o ffmpeg quebrar (vídeo antigo que muda de tamanho no meio, formato de pixel
+    estranho: "Assertion ... linesize"), tenta de novo com o vídeo normalizado para um tamanho fixo e
+    yuv420p antes de tudo e, por último, sem o recorte e sem o borrão da logo."""
+    try:
+        return fazer(pre)
+    except RuntimeError as e:
+        d = _tamanho(src)
+        norm = (f"scale={d[0] // 2 * 2}:{d[1] // 2 * 2}," if d else "scale=trunc(iw/2)*2:trunc(ih/2)*2,") + \
+            "format=yuv420p,setsar=1,"
+        print(f"aviso: segmento de {os.path.basename(src)} falhou ({str(e).splitlines()[-1][:120]}); "
+              f"refazendo com o vídeo normalizado", flush=True)
+        try:
+            return fazer(norm + pre)
+        except RuntimeError:
+            return fazer(norm)
+
+
 def seg_video(src, t0, dur, out, zoom_in, trans):
     t0 = _inicio_seguro(src, t0, dur)
     if MOLDURA["ativa"]:
@@ -193,12 +211,15 @@ def seg_video(src, t0, dur, out, zoom_in, trans):
         z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
     c = area_util(src, t0)
     pre = _marca_do_video(src) + (f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else "")
-    vf = (f"{pre}crop='min(iw,ih*{W}/{H})':'min(ih,iw*{H}/{W})',scale={W}:{H},"
-          f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
-          f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
-          _fx_transicao(trans) + pad)
-    r = ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
-               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+
+    def fazer(pre):
+        vf = (f"{pre}crop='min(iw,ih*{W}/{H})':'min(ih,iw*{H}/{W})',scale={W}:{H},"
+              f"scale=w='trunc({W}*({z})/2)*2':h='trunc({H}*({z})/2)*2':eval=frame,"
+              f"crop={W}:{H},setsar=1,fps={FPS},eq=contrast=1.06:saturation=1.12:gamma=1.1" + _nitidez(src) +
+              _fx_transicao(trans) + pad)
+        return ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-vf", vf, "-an", "-frames:v", n,
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+    r = _seg_com_reserva(src, pre, fazer)
     _ultimo["seg"] = {"t0": round(t0, 2), "crop": c, "fonte_s": _dur_fonte.get(src), "stderr": (r.stderr or "")[-300:],
                       "bytes": os.path.getsize(out) if os.path.exists(out) else -1}
 
@@ -214,13 +235,17 @@ def _seg_video_moldura(src, t0, dur, out, zoom_in, trans):
         z = f"({z})+{PUNCH[trans]}*max(0\\,1-t/{TRANS})"
     c = area_util(src, t0)
     pre = _marca_do_video(src) + (f"crop={c[0]}:{c[1]}:{c[2]}:{c[3]}," if c and int(c[1]) >= 300 else "")
-    grafo = (f"[0:v]{pre}fps={FPS},split[a][b];" + _fundo_moldura("[a]", "[bg]") + ";"
-             f"[b]crop='min(iw,ih*{W}/{hf})':'min(ih,iw*{hf}/{W})',scale={W}:{hf},"
-             f"scale=w='trunc({W}*({z})/2)*2':h='trunc({hf}*({z})/2)*2':eval=frame,crop={W}:{hf},"
-             f"eq=contrast=1.06:saturation=1.15:gamma=1.08{_nitidez(src)}[fg];"
-             f"[bg][fg]overlay=0:{(H - hf) // 2},setsar=1" + _fx_transicao(trans) + pad)
-    r = ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-filter_complex", grafo, "-an", "-frames:v", n,
-               "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p", *SEG_PADRAO, out)
+
+    def fazer(pre):
+        grafo = (f"[0:v]{pre}fps={FPS},split[a][b];" + _fundo_moldura("[a]", "[bg]") + ";"
+                 f"[b]crop='min(iw,ih*{W}/{hf})':'min(ih,iw*{hf}/{W})',scale={W}:{hf},"
+                 f"scale=w='trunc({W}*({z})/2)*2':h='trunc({hf}*({z})/2)*2':eval=frame,crop={W}:{hf},"
+                 f"eq=contrast=1.06:saturation=1.15:gamma=1.08{_nitidez(src)}[fg];"
+                 f"[bg][fg]overlay=0:{(H - hf) // 2},setsar=1" + _fx_transicao(trans) + pad)
+        return ffmpeg("-ss", f"{t0:.3f}", "-i", src, "-t", f"{dur + 0.5:.3f}", "-filter_complex", grafo, "-an",
+                      "-frames:v", n, "-c:v", "libx264", "-preset", "veryfast", "-crf", 18, "-pix_fmt", "yuv420p",
+                      *SEG_PADRAO, out)
+    r = _seg_com_reserva(src, pre, fazer)
     _ultimo["seg"] = {"t0": round(t0, 2), "crop": c, "fonte_s": _dur_fonte.get(src), "stderr": (r.stderr or "")[-300:],
                       "bytes": os.path.getsize(out) if os.path.exists(out) else -1}
 
