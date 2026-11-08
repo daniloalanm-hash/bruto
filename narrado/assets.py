@@ -474,6 +474,18 @@ def geracao_ok(nome, titulo):
     return True
 
 
+def _so_ano_de_virada(nome, titulo, sobre=""):
+    """Foto cujo único ano é o 1º da geração: nesse ano ainda rodava a geração anterior (3008 2016 minivan).
+    Passa só com sinal da geração nova: código de chassi "(P84E)", "II"/"Mk2", "second generation"."""
+    faixa = ANOS_CARRO.get(nome)
+    anos = {int(x) for x in re.findall(r"\b(19[5-9]\d|20[0-4]\d)\b", str(titulo))}
+    if not faixa or anos != {faixa[0]}:
+        return False
+    texto = re.sub(r"<[^>]+>", " ", f"{titulo} {sobre}")
+    return not re.search(r"all[- ]new|new generation|second generation|third generation|2nd gen|3rd gen|"
+                         r"nova gera|\b(II|III|IV)\b|\bMk ?[2-9]\b|\([A-Z]{1,2}\d{2}[A-Z]?\)", texto)
+
+
 def _dailymotion_carro(nome, chave, pasta, n=3, extra=False):
     """Vídeos de um modelo de carro no Dailymotion: design exterior/interior, rodando, lançamento oficial.
     Fora: crash test, brinquedo, jogo de corrida, comparativo. Apresentador na câmera sai depois, na análise."""
@@ -2371,6 +2383,8 @@ def imagens_commons(termo, pasta, n=3, largura=1600, texto="", geracao=None):
             continue  # carro de rali/conceito/corrida com o nome do modelo ("3008 DKR"): não é o carro da rua
         if geracao and not geracao_ok(geracao, _sem_datas(f"{titulo} {sobre}")):
             continue  # carro: foto da geração certa (o C4 Cactus 2014 entrava no lugar do 2018+)
+        if geracao and _so_ano_de_virada(geracao, titulo, sobre):
+            continue  # "Peugeot 3008 Allure 2016.jpg" era o 3008 antigo (minivan): o ano de virada tem as duas gerações
         lic = (meta.get("LicenseShortName") or {}).get("value", "")
         if not re.search(r"CC|Public domain|PD", lic, re.I):
             continue
