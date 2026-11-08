@@ -560,6 +560,7 @@ const FALA_HUMANA = `- SOAR HUMANO é o mais importante (a voz é de uma pessoa 
   - viradas faladas entre as partes: "mas calma que não para por aí", "e é aqui que você entra", "agora o principal motivo do hype";
   - guarde algo para depois: o melhor fato (ou até o nome, se o gancho funcionar sem ele) vem no meio/fim ("e o nome desse cara é…");
   - fala de verdade: "pra", "tá", "tão", "a gente", frases ligadas com "e", "porque", "já que" — como se fala, não como se escreve;
+  - o jeito humano NÃO encurta o vídeo: o tamanho pedido continua obrigatório — as viradas e reações entram SOMANDO, sem cortar fatos;
   - PROIBIDO (soa texto de jornal): "Além disso", "Apesar de", "O desenvolvedor explicou que", "De acordo com", "Vale lembrar", "Segundo informações", "permite que", "conta com", "oferece suporte".`;
 
 const VOZ_CANAL = `COMO O CANAL FALA (o mais importante):
