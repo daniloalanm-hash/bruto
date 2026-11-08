@@ -208,6 +208,7 @@ Escreva o roteiro a partir da matéria abaixo.
 
 REGRAS
 - Português do Brasil, falado e natural, frases curtas, como quem conta uma novidade para um amigo gamer.
+${FALA_HUMANA}
 - ${longo ? `TAMANHO É OBRIGATÓRIO: entre ${palavras} e ${palavras + 25} palavras no total, NUNCA menos de ${minimo} (o vídeo precisa passar de 1 minuto para monetizar).` : `Cerca de ${palavras} palavras no total (~${segundos} segundos de fala).`}
 - A PRIMEIRA frase é um gancho forte (curiosidade, contraste ou número surpreendente). Nada de "neste vídeo".
 - Divida em ${longo ? '9 a 13' : '6 a 10'} tópicos. Cada tópico = uma ideia; trocar de tópico = trocar de assunto/jogo.${longo ? `
@@ -549,13 +550,26 @@ ${extras ? `\nOUTRAS FONTES\n${extras.slice(0, 14000)}` : ''}`;
 }
 
 // voz do canal: o que deixa o texto vivo (a IA, sem isso, escreve "relatório": fato atrás de fato, tom de jornal)
+// jeito de falar dos vídeos curtos que viralizam: anúncio com emoção, conversa com a galera, reação sincera,
+// comparação com jogo famoso, virada no meio e o melhor guardado para depois
+const FALA_HUMANA = `- SOAR HUMANO é o mais importante (a voz é de uma pessoa animada contando para os amigos, não um locutor lendo notícia):
+  - abra como um ANÚNCIO com emoção e a maior promessa do assunto: "É oficial: [fato]", "Aconteceu: [fato]", "Ninguém esperava, mas [fato]" — e já diga por que isso é grande;
+  - fale COM quem assiste: "você e seus amigos", "a gente", e chame a galera 1 ou 2 vezes no vídeo ("rapaziada", "galera", "meus amigos") — sem exagerar;
+  - UMA reação sincera em primeira pessoa no meio ("isso me pegou de surpresa", "confesso que não esperava"), nunca mais que uma;
+  - compare com o que todo gamer conhece quando o fato permitir ("no estilo de [jogo famoso]", "dos mesmos criadores de [jogo]");
+  - viradas faladas entre as partes: "mas calma que não para por aí", "e é aqui que você entra", "agora o principal motivo do hype";
+  - guarde algo para depois: o melhor fato (ou até o nome, se o gancho funcionar sem ele) vem no meio/fim ("e o nome desse cara é…");
+  - fala de verdade: "pra", "tá", "tão", "a gente", frases ligadas com "e", "porque", "já que" — como se fala, não como se escreve;
+  - PROIBIDO (soa texto de jornal): "Além disso", "Apesar de", "O desenvolvedor explicou que", "De acordo com", "Vale lembrar", "Segundo informações", "permite que", "conta com", "oferece suporte".`;
+
 const VOZ_CANAL = `COMO O CANAL FALA (o mais importante):
 - Conte como HISTÓRIA para um amigo, não como notícia. Use "você" e "a gente". Faça perguntas para quem assiste ("E o nome? Todo mundo pensa na carteira de trabalho.").
 - Frases curtas, de falar em voz alta. Uma ideia por frase. Varie o ritmo: frase curta de impacto depois de uma mais longa.
 - Revele aos poucos: arme a curiosidade ANTES de entregar o fato ("E aqui vem a sacada:", "Mas tem um detalhe:", "Só que…").
 - Mostre com exemplos concretos e engraçados em vez de adjetivos (os nomes das lojas, o ônibus da Transpobre) — nada de "incrível", "impressionante", "vale destacar".
 - Opinião e humor leve são bem-vindos ("O trocadilho é de propósito.", "Se a CLT apertar, tem a dark web.").
-- NÃO escreva: "Além disso", "Vale ressaltar", "É importante destacar", "Em suma", "Nesse sentido", "Por fim", "Confira", "Neste vídeo", "Fique ligado", listas de fatos em sequência, frases de assessoria de imprensa.
+- Fale COM quem assiste e reaja como gente: uma reação sincera em primeira pessoa de vez em quando ("confesso que isso me pegou"), compare com jogos que todo mundo conhece quando o fato permitir, viradas faladas ("mas calma que não para por aí", "e é aqui que fica interessante"). Linguagem falada: "pra", "tá", "a gente".
+- NÃO escreva: "Além disso", "Apesar de", "O desenvolvedor explicou que", "De acordo com", "permite que", "conta com", "Vale ressaltar", "É importante destacar", "Em suma", "Nesse sentido", "Por fim", "Confira", "Neste vídeo", "Fique ligado", listas de fatos em sequência, frases de assessoria de imprensa.
 - Use só os fatos que rendem história — não precisa encaixar todos. Melhor 3 fatos bem contados que 8 empilhados.
 - Escreva o capítulo como um texto falado CONTÍNUO e só depois divida em cenas: cada cena continua a conversa da anterior.
 

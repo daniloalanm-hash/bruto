@@ -82,7 +82,7 @@ def definir_formato(projeto):
     L.clear()
     L.update(LAYOUTS[nome])
     W, H = L["W"], L["H"]
-    CUT = 3.2 if nome == "horizontal" else 1.7
+    CUT = 3.2 if nome == "horizontal" else 1.3  # vertical: ritmo dos curtos que viralizam (~1 corte por segundo)
     for mod in (comum, efeitos, cartoes):
         mod.W, mod.H = W, H
     return nome
