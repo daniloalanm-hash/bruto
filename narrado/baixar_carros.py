@@ -140,9 +140,13 @@ def senha_app():
         return open(arq, encoding="utf-8").read().strip()
     if not sys.stdin or not sys.stdin.isatty():
         sys.exit("Sem senha do app guardada: rode o instalador (ou o script no Terminal) uma vez para digitá-la.")
-    import getpass
     for tentativa in range(3):
-        s = getpass.getpass("Senha do app Bruto (cole com Cmd+V e aperte Enter — não aparece nada, é normal): ").strip()
+        s = input("Senha do app Bruto (cole com Cmd+V e aperte Enter): ")
+        # o Terminal do Mac embrulha o que é colado em códigos invisíveis (ESC[200~ … ESC[201~): tira
+        s = re.sub(r"\x1b\[[0-9;]*[~A-Za-z]|\[?20[01]~", "", s)
+        s = "".join(c for c in s if c.isprintable()).strip()
+        if s:
+            print(f"  conferindo {s[:3]}…{s[-3:]} ({len(s)} caracteres)…", flush=True)
         if not s:
             print("Veio vazia. Cole a senha ANTES de apertar Enter.")
             continue
