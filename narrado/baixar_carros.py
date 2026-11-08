@@ -141,22 +141,42 @@ def senha_app():
     if not sys.stdin or not sys.stdin.isatty():
         sys.exit("Sem senha do app guardada: rode o instalador (ou o script no Terminal) uma vez para digitá-la.")
     import getpass
-    s = getpass.getpass("Senha do app Bruto (a mesma da tela; fica guardada só neste computador): ").strip()
-    with open(arq, "w", encoding="utf-8") as f:
-        f.write(s)
-    return s
+    for tentativa in range(3):
+        s = getpass.getpass("Senha do app Bruto (cole com Cmd+V e aperte Enter — não aparece nada, é normal): ").strip()
+        if not s:
+            print("Veio vazia. Cole a senha ANTES de apertar Enter.")
+            continue
+        try:
+            _chamar(s)
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                print("Essa senha não confere. Tente de novo.")
+                continue
+            raise
+        with open(arq, "w", encoding="utf-8") as f:
+            f.write(s)
+        return s
+    sys.exit("Senha não conferiu. Rode de novo quando tiver a senha (⚙ do app).")
+
+
+def _chamar(senha, corpo=None):
+    req = urllib.request.Request(f"{APP}/api/biblioteca", method="POST" if corpo else "GET",
+                                 data=json.dumps(corpo).encode() if corpo else None,
+                                 headers={"Content-Type": "application/json", "x-narrado-senha": senha,
+                                          "User-Agent": "Mozilla/5.0 (Macintosh) RadarDeGaragem/1.0"})
+    return json.loads(urllib.request.urlopen(req, timeout=120).read())
 
 
 def api_bib(senha, corpo=None):
-    req = urllib.request.Request(f"{APP}/api/biblioteca", method="POST" if corpo else "GET",
-                                 data=json.dumps(corpo).encode() if corpo else None,
-                                 headers={"Content-Type": "application/json", "x-narrado-senha": senha})
     try:
-        return json.loads(urllib.request.urlopen(req, timeout=120).read())
+        return _chamar(senha, corpo)
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            os.remove(os.path.join(AQUI, ".senha_app"))
-            sys.exit("Senha do app errada. Rode de novo e digite a senha certa.")
+        if e.code == 401:
+            try:
+                os.remove(os.path.join(AQUI, ".senha_app"))
+            except OSError:
+                pass
+            sys.exit("A senha do app mudou. Rode de novo no Terminal e digite a nova.")
         raise
 
 
