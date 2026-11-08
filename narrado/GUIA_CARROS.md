@@ -186,3 +186,5 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   (pede a senha do app uma vez e guarda no PC dele, `.senha_app`). Fica guardado para todo vídeo futuro do carro.
 - No servidor, carro com vídeo da biblioteca descarta os `_c` do Dailymotion (288p) e não busca mais Dailymotion
   quando falta tempo de vídeo — completa com fotos. Sem biblioteca, segue como antes (288p).
+- Testado do runner em 08/11/2026: YouTube ("Sign in to confirm you're not a bot"), Vimeo, media.stellantis.com e
+  media.ford.com (403) bloqueiam o GitHub Actions. hyundai.news entrega mp4 de b-roll direto (cdn7.shift.agency).
