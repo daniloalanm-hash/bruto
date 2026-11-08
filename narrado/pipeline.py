@@ -42,10 +42,31 @@ def publicador():
     return pub
 
 
+_EDICAO = re.compile(r"\b(director'?s cut|definitive edition|complete edition|game of the year|goty|remastered|"
+                     r"remaster|enhanced|deluxe edition|deluxe|ultimate edition|gold edition|standard edition|"
+                     r"edition|hd|the)\b|[™®©]", re.I)
+_SEQUENCIA = re.compile(r"(?<![a-z0-9])(\d{1,2}|ii|iii|iv|v|vi|vii|viii|ix|x)(?![a-z0-9])", re.I)
+
+
+def _nota_nome(nome, jogo):
+    """Parecença entre o assunto da cena e o nome do jogo, sabendo que edição não importa e sequência importa:
+    "Death Stranding" é o Director's Cut, não o Death Stranding 2."""
+    a, b = norm(nome), norm(jogo)
+    nota = SequenceMatcher(None, a, b).ratio()
+    base = norm(_EDICAO.sub(" ", str(jogo)))
+    if base and base == norm(_EDICAO.sub(" ", str(nome))):
+        nota += 0.5
+    seq_j = {s.lower() for s in _SEQUENCIA.findall(_EDICAO.sub(" ", str(jogo)))}
+    seq_n = {s.lower() for s in _SEQUENCIA.findall(str(nome))}
+    if seq_j != seq_n:
+        nota -= 0.25  # "Death Stranding" × "Death Stranding 2"
+    return nota
+
+
 def chave_do_jogo(nome, jogos):
     if not nome:
         return None
-    melhor = max(jogos, key=lambda j: SequenceMatcher(None, norm(nome), norm(j["nome"])).ratio(), default=None)
+    melhor = max(jogos, key=lambda j: _nota_nome(nome, j["nome"]), default=None)
     if melhor and SequenceMatcher(None, norm(nome), norm(melhor["nome"])).ratio() >= 0.5:
         return melhor["chave"]
     for j in jogos:  # "Witcher" dentro de "The Witcher 3: Wild Hunt"
@@ -137,7 +158,7 @@ def planejar(cenas, banco, jogos, longo=False):
         vs = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "v" and not d.get("personagem")]
         im = [m for m, d in banco.items() if d["jogo"] == j["chave"] and d["tipo"] == "i" and not d.get("personagem")]
         seq = []
-        por_imagem = 4 if len(vs) >= 3 * max(len(im), 1) else 3 if len(vs) >= 2 * max(len(im), 1) else 2
+        por_imagem = 4 if len(vs) >= 3 * max(len(im), 1) else 3 if len(vs) >= 2 * max(len(im), 1) or len(vs) >= 8 else 2
         while vs or im:
             for _ in range(por_imagem):  # vídeo prende mais que imagem parada
                 if vs:
@@ -151,13 +172,13 @@ def planejar(cenas, banco, jogos, longo=False):
     for j in jogos:
         proprio = fila[j["chave"]]["seq"]
         n_vid = sum(1 for m in proprio if banco[m]["tipo"] == "v")
-        if n_vid >= 2 and len(proprio) >= 6:
+        if n_vid >= 2 and len(proprio) >= 6 and n_vid >= 8:
             continue
         extra = []
         for o in jogos:
             if o["chave"] != j["chave"] and mesma_franquia(j["nome"], o["nome"]):
                 extra += [m for m in fila[o["chave"]]["seq"] if banco[m]["tipo"] == "v"] or fila[o["chave"]]["seq"]
-        if extra:
+        if extra and (n_vid < 2 or len(proprio) < 6):
             mix, a, b = [], list(proprio), list(extra)
             while a or b:  # 1 do próprio jogo : 2 da franquia
                 if a:
@@ -165,6 +186,26 @@ def planejar(cenas, banco, jogos, longo=False):
                 for _ in range(2):
                     if b:
                         mix.append(b.pop(0))
+            fila[j["chave"]]["seq"] = mix
+        elif extra:
+            # tem pouco vídeo e muita imagem (Death Stranding 2: 4 trechos, 10 imagens): vídeo da franquia entra
+            # no lugar das imagens — vídeos do próprio jogo primeiro, imagem só de vez em quando (1 a cada 4)
+            vs = [m for m in proprio if banco[m]["tipo"] == "v"]
+            im = [m for m in proprio if banco[m]["tipo"] != "v"]
+            outros = [m for m in extra if banco[m]["tipo"] == "v"]
+            mix, k = [], 0
+            while vs or outros or im:
+                for _ in range(3):
+                    if vs:
+                        mix.append(vs.pop(0))
+                    elif outros:
+                        mix.append(outros.pop(0))
+                if im:
+                    mix.append(im.pop(0))
+                k += 1
+                if not vs and not outros:
+                    mix += im
+                    break
             fila[j["chave"]]["seq"] = mix
     materia = [m for m, d in banco.items() if d.get("jogo") == "materia"]
     if longo:
@@ -699,6 +740,16 @@ def aplicar_ajustes(projeto):
                 w["manter"] = True
             completar_cenas(projeto["palavras"])
         print("ajustes: fala refeita (cortes e legenda)", flush=True)
+    if aj.get("replanejar"):
+        # refaz a escolha de mídias de cada tópico com as regras novas (cartões do próprio vídeo continuam)
+        cart = {k: [m for m in c.get("midias") or [] if str(m).startswith("cartao_")] for k, c in enumerate(projeto["cenas"])}
+        for c in projeto["cenas"]:
+            c.pop("midias", None)
+        projeto["cenas"] = planejar(projeto["cenas"], projeto["banco"], projeto.get("jogos") or [],
+                                    longo=projeto.get("formato") == "horizontal")
+        for k, c in enumerate(projeto["cenas"]):
+            c["midias"] = cart.get(k, []) + [m for m in c.get("midias") or [] if m not in cart.get(k, [])]
+        print("ajustes: mídias dos tópicos replanejadas", flush=True)
     if aj.get("limpar_sobras"):
         fala.sobras_de_tomada(projeto["palavras"])
         fala.recomecos(projeto["palavras"])
