@@ -1032,7 +1032,7 @@ class Quadros:
                             "[0:v]split[a][b];[a]scale=320:-2,select='gt(scene,0.32)',showinfo,nullsink;"
                             f"[b]fps={self.FPS},crop='min(iw,ih*9/16)':ih,scale=720:-2[q]",
                             "-map", "[q]", "-q:v", "3", os.path.join(pasta, "q%05d.jpg")],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=900)
         self.cortes = [float(x) for x in re.findall(r"pts_time:([\d.]+)", r.stderr)]
         self.n = len([f for f in os.listdir(pasta) if f.startswith("q")])
 
@@ -1336,7 +1336,9 @@ def _trechos_bons(video, quadros):
         c = _avaliar(video, a2, b2, conta, mascara=mascara, quadros=quadros)
         if c:
             candidatos.append(c)
+    y_min = 38
     if len(candidatos) < 6 and conta.get("escuro", 0) + conta.get("borrado", 0) >= 12:
+        y_min = 26
         # jogo de visual escuro/enevoado (Death Stranding, Alan Wake): a régua de trailer colorido joga quase tudo
         # fora; aceita cena mais escura e mais suave, ainda sem texto nem cartela
         for a2, b2 in planos:
@@ -1367,7 +1369,7 @@ def _trechos_bons(video, quadros):
         while t + 1.8 <= fim and len(candidatos) < MAX_SHOTS_POR_TRAILER:
             if all(abs(t - c["t"]) > 1.8 for c in candidatos):
                 c = _avaliar(video, t, t + 1.8, conta, checar_pontas=False, mascara=mascara, quadros=quadros,
-                             nit_min=nit_min)
+                             nit_min=min(nit_min, 10) if y_min < 38 else nit_min, y_min=y_min)
                 if c:
                     candidatos.append(c)
             t += 3.0
@@ -1429,10 +1431,16 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
     if arquivos:
         nucleos = os.cpu_count() or 2
         n = max(1, min(len(arquivos), nucleos))
-        with ProcessPoolExecutor(max_workers=n, initializer=_iniciar_processo,
-                                 initargs=(max(1, nucleos // n),)) as ex:
-            futuros = [ex.submit(_analisar_trailer, a) for a in arquivos]
-            for k, f in enumerate(as_completed(futuros), 1):
+        import multiprocessing
+        from concurrent.futures import TimeoutError as Esgotou
+        # "spawn": processo novo do zero. Com "fork", o filho herdava trava de thread do pai (o envio do log
+        # roda em paralelo) e a 2ª rodada de análise (trailers extras) ficava parada para sempre
+        ex = ProcessPoolExecutor(max_workers=n, initializer=_iniciar_processo, initargs=(max(1, nucleos // n),),
+                                 mp_context=multiprocessing.get_context("spawn"))
+        futuros = [ex.submit(_analisar_trailer, a) for a in arquivos]
+        limite = 600 + 300 * len(arquivos) / n
+        try:
+            for k, f in enumerate(as_completed(futuros, timeout=limite), 1):
                 try:
                     a, trechos = f.result()
                     analise[a] = trechos
@@ -1440,6 +1448,16 @@ def montar_banco(jogos_info, pasta_thumbs, progresso=None, ti0=0):
                     print(f"aviso: análise de trailer falhou: {e}", flush=True)
                 if progresso:
                     progresso(k, len(arquivos))
+        except Esgotou:
+            print(f"aviso: análise de trailers passou de {limite:.0f}s; segue com {len(analise)} de {len(arquivos)}",
+                  flush=True)
+            for pr in list((getattr(ex, "_processes", None) or {}).values()):
+                try:
+                    pr.terminate()
+                except Exception:
+                    pass
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
     banco = {}
     for j in jogos_info:
         antes = len(banco)
