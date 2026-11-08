@@ -188,3 +188,5 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   quando falta tempo de vídeo — completa com fotos. Sem biblioteca, segue como antes (288p).
 - Testado do runner em 08/11/2026: YouTube ("Sign in to confirm you're not a bot"), Vimeo, media.stellantis.com e
   media.ford.com (403) bloqueiam o GitHub Actions. hyundai.news entrega mp4 de b-roll direto (cdn7.shift.agency).
+- Gravar a tela do YouTube no runner (Chromium real + Xvfb) também não dá: a página mostra "not a bot"/"Sign in"
+  e o vídeo nem começa (testado em 08/11/2026).
