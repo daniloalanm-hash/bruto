@@ -1,0 +1,23 @@
+name: diag fontes de video (temporário)
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -q "yt-dlp[default,curl-cffi]" && sudo apt-get -qq install -y ffmpeg >/dev/null
+      - name: youtube
+        run: |
+          yt-dlp --get-id "ytsearch3:Peugeot 3008 2018 review" 2>&1 | tail -5
+          for a in "" "--impersonate chrome" "--extractor-args youtube:player_client=tv,web_safari" "--extractor-args youtube:player_client=mweb" "--extractor-args youtube:player_client=web_embedded"; do
+            echo "=== yt [$a]"; yt-dlp -F $a "https://www.youtube.com/watch?v=xNorSEoqxqw" 2>&1 | grep -E "^[0-9]+ +mp4|ERROR|Sign in" | awk '{print $1,$3}' | tr '\n' ' ' | cut -c1-300; echo
+          done
+      - name: vimeo
+        run: |
+          echo "=== vimeo"; yt-dlp -F "https://vimeo.com/76979871" 2>&1 | grep -E "x[0-9]+|ERROR" | awk '{print $1,$3}' | tr '\n' ' ' | cut -c1-300; echo
+      - name: sites
+        run: |
+          for u in https://www.media.stellantis.com/br-en/citroen/media-library/press-videos https://www.hyundai.news/eu/articles/press-releases/all-new-hyundai-tucson-october-2026/video.html https://media.ford.com https://www.mitsubishi-motors.com/en/newsroom/ https://commons.wikimedia.org/w/api.php?action=query\&list=search\&srnamespace=6\&srsearch=Peugeot%203008%20filetype:video\&format=json; do
+            echo "=== $u"; curl -sSL -A "Mozilla/5.0" -o /tmp/p -w "%{http_code} %{size_download}\n" "$u"; grep -oE "https?://[^\"' ]+\.(mp4|m3u8)[^\"' ]*" /tmp/p | head -3; grep -oE '"title":"[^"]+"' /tmp/p | head -5
+          done
