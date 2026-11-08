@@ -1364,7 +1364,8 @@ def _trechos_bons(video, quadros):
     if len(candidatos) < 4 and conta.get("borrado", 0) >= 8:
         # vídeo de jogo antigo (240p–480p de 2004): tudo é "borrado" pela régua de trailer moderno; aceita o
         # melhor dele (nitidez de reupload decente), senão o vídeo vira 2 ou 3 trechos repetidos o tempo todo
-        nit_min = 7
+        # quase tudo "borrado" (gameplay de 1999 em 240p, câmera de cima): régua mínima, só fora o que é borrão
+        nit_min = 4 if not candidatos and conta.get("borrado", 0) >= 25 else 7
         for a2, b2 in planos:
             if len(candidatos) >= int(MAX_SHOTS_POR_TRAILER * 1.5):
                 break
