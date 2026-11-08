@@ -1264,11 +1264,11 @@ def nitidez(png):
         return None
 
 
-def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=None, nit_min=NITIDEZ_MIN):
+def _avaliar(video, a2, b2, conta, checar_pontas=True, mascara=None, quadros=None, nit_min=NITIDEZ_MIN, y_min=38):
     """Trecho [a2, b2] serve como cena? Devolve o candidato ou None (e conta o motivo)."""
     meio = (a2 + b2) / 2
     y, s = medir_quadro(video, meio)
-    if y < 38:            # escuro demais para celular
+    if y < y_min:         # escuro demais para celular
         conta["escuro"] += 1
         return None
     if s < 10 and y < 50:  # cartela de texto (fundo escuro sem cor); cena noturna dessaturada passa
@@ -1324,6 +1324,17 @@ def _trechos_bons(video, quadros):
         c = _avaliar(video, a2, b2, conta, mascara=mascara, quadros=quadros)
         if c:
             candidatos.append(c)
+    if len(candidatos) < 6 and conta.get("escuro", 0) + conta.get("borrado", 0) >= 12:
+        # jogo de visual escuro/enevoado (Death Stranding, Alan Wake): a régua de trailer colorido joga quase tudo
+        # fora; aceita cena mais escura e mais suave, ainda sem texto nem cartela
+        for a2, b2 in planos:
+            if len(candidatos) >= int(MAX_SHOTS_POR_TRAILER * 1.5):
+                break
+            if any(abs(a2 - c["t"]) < 0.5 for c in candidatos):
+                continue
+            c = _avaliar(video, a2, b2, conta, mascara=mascara, quadros=quadros, nit_min=10, y_min=26)
+            if c:
+                candidatos.append(c)
     if len(candidatos) < 4 and conta.get("borrado", 0) >= 8:
         # vídeo de jogo antigo (240p–480p de 2004): tudo é "borrado" pela régua de trailer moderno; aceita o
         # melhor dele (nitidez de reupload decente), senão o vídeo vira 2 ou 3 trechos repetidos o tempo todo

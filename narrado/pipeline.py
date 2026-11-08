@@ -461,7 +461,7 @@ def _banco_cortes(jogos, cenas, nomes, job, pasta, st, prog):
     # pouco trecho de vídeo para o tamanho do roteiro = o mesmo trecho voltando várias vezes (fica chato).
     # Completa com gameplay longa (janelas espalhadas) dos jogos com mais tempo de tela.
     palavras_rot = sum(len(c["texto"].split()) for c in cenas)
-    cortes_previstos = palavras_rot / 3.1 / (3.2 if job.get("formato") == "horizontal" else 1.7)
+    cortes_previstos = palavras_rot / 3.1 / (3.2 if job.get("formato") == "horizontal" else 1.3)
     assuntos_l = [c.get("assunto") for c in cenas if c.get("assunto")] or nomes[:1]
     for j in sorted(jogos, key=lambda x: -sum(1 for a in assuntos_l if assets.mesmo_jogo(a, x["nome"], 0.4) or norm(a) == norm(x["nome"]))):
         fatia = sum(1 for a in assuntos_l if assets.mesmo_jogo(a, j["nome"], 0.4) or norm(a) == norm(j["nome"])) / max(len(assuntos_l), 1)
@@ -476,6 +476,22 @@ def _banco_cortes(jogos, cenas, nomes, job, pasta, st, prog):
             banco.update(assets.montar_banco([extra], os.path.join(pasta, "thumbs"), ti0=len(j["trailers"])))
             j["trailers"].append(g)
             print(f"{j['nome']}: {tem} → {sum(1 for m in banco.values() if m['jogo'] == j['chave'] and m['tipo'] == 'v')} trechos de vídeo", flush=True)
+        tem2 = sum(1 for m in banco.values() if m["jogo"] == j["chave"] and m["tipo"] == "v")
+        if tem2 < precisa:
+            # ainda pouco (Steam só tem 2 trailers do jogo, gameplay achada não serviu): mais trailers oficiais
+            # (Dailymotion, 720p+ e canais oficiais primeiro)
+            try:
+                novos = [t for t in assets._dailymotion(j["nome"], j["chave"], RAW, n=3, extra=True)
+                         if t["arquivo"] not in {x["arquivo"] for x in j["trailers"]}]
+            except Exception as e:
+                print(f"aviso: trailers extras de {j['nome']}: {e}", flush=True)
+                novos = []
+            if novos:
+                extra = dict(j, trailers=novos, screens=[])
+                banco.update(assets.montar_banco([extra], os.path.join(pasta, "thumbs"), ti0=len(j["trailers"])))
+                j["trailers"] += novos
+                print(f"{j['nome']}: {tem2} → {sum(1 for m in banco.values() if m['jogo'] == j['chave'] and m['tipo'] == 'v')} "
+                      f"trechos de vídeo (trailers extras)", flush=True)
     return banco
 
 
