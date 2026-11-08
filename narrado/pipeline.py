@@ -259,6 +259,19 @@ def planejar(cenas, banco, jogos, longo=False):
     return cenas
 
 
+# jogos de campanha (desafio/patrocínio): o vídeo mostra só esse jogo, com o material oficial da
+# biblioteca_fixa.json. Chave = slug do nome.
+CAMPANHAS = {"plantsonfire": "Plants on Fire"}
+
+
+def jogo_de_campanha(nomes, cenas, job):
+    texto = norm(" ".join([c["texto"] for c in cenas] + [str(job.get("titulo") or "")] + list(nomes)))
+    for chave, nome in CAMPANHAS.items():
+        if any(slug(n) == chave for n in nomes) or norm(nome) in texto:
+            return nome
+    return None
+
+
 def garantir_assets(nomes, permitir_vazio=False, trailers=None, steam_ids=()):
     """Baixa o material de cada jogo em paralelo (rede, não CPU). trailers: {nome: máximo de trailers}."""
     from concurrent.futures import ThreadPoolExecutor
@@ -515,6 +528,14 @@ def preparar(pasta, st):
               **({"pausa": min(max(float(c["pausa"]), 0), 20)} if str(c.get("pausa") or "").replace(".", "", 1).isdigit() and float(c["pausa"]) > 0 else {})}
              for c in job["cenas"] if c.get("texto", "").strip()]
     nomes, n_trailers = jogos_necessarios(job, cenas)
+    campanha = jogo_de_campanha(nomes, cenas, job)
+    if campanha:
+        # vídeo de campanha patrocinada: só o jogo da campanha aparece, nada de outro jogo nem de busca
+        # (Steam/Dailymotion acham jogo parecido); o material vem dos vídeos oficiais da biblioteca fixa
+        print(f"campanha {campanha}: só material oficial dele (outros jogos citados ficam fora da tela)", flush=True)
+        nomes, n_trailers = [campanha], {campanha: assets.MAX_TRAILERS}
+        for c in cenas:
+            c["assunto"] = campanha
     corrido = job.get("formato") == "horizontal" and job.get("edicao", "corrido") == "corrido"
     if corrido:  # o trailer toca corrido: 1 basta por jogo (2 no principal), sem análise de trechos
         # jogo citado de passagem (1 tópico) não precisa de 3 trailers: análise custa ~30 s por trailer
@@ -540,9 +561,13 @@ def preparar(pasta, st):
     links = [x for x in (job.get("links_video") or []) if x.get("url")]
     bib = da_biblioteca(list(dict.fromkeys(nomes + [c["assunto"] for c in cenas if c.get("assunto")])))
     links += [b for b in bib if not any(b.get("url") and b["url"] == x["url"] for x in links)]
+    if campanha:
+        links = [x for x in links if not x.get("jogo") or norm(x["jogo"]) == norm(campanha)
+                 or assets.mesmo_jogo(x["jogo"], campanha, 0.4)]
     steam_ids = [int(x) for x in ((job.get("materia") or {}).get("steam") or []) if str(x).isdigit()][:4]
-    jogos = garantir_assets(nomes, permitir_vazio=bool(job.get("imagens_materia") or links or (job.get("materia") or {}).get("titulo")),
-                            trailers=n_trailers, steam_ids=steam_ids)
+    jogos = [] if campanha else garantir_assets(
+        nomes, permitir_vazio=bool(job.get("imagens_materia") or links or (job.get("materia") or {}).get("titulo")),
+        trailers=n_trailers, steam_ids=steam_ids)
     if links:
         st.etapa("Baixando os vídeos dos links", 12)
         jogos = juntar_links(jogos, links, nomes)

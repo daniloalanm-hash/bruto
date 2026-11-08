@@ -1,0 +1,31 @@
+{
+ "formato": "vertical",
+ "enquadramento": "moldura",
+ "legenda_estilo": "palavra",
+ "transicoes_modo": "por_jogo",
+ "emoji": false,
+ "musica": false,
+ "capas": true,
+ "zoom_enfase": false,
+ "id": "teste-plantsonfire",
+ "titulo": "Plants on Fire: o tower defense que vira duelo em 3 minutos",
+ "titulo_tela": "PLANTAS EM GUERRA",
+ "canal": "Jogando Sem Plano",
+ "marca_dagua": "@jogandosemplano",
+ "jogos": ["Plants on Fire"],
+ "cenas": [
+  {"texto": "Esse jogo pegou o tower defense e transformou numa briga de três minutos contra outra pessoa, ao vivo.", "destaques": ["três minutos", "ao vivo"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "O nome é Plants on Fire. E a ideia é simples: você tem nove casas no campo e vai colocando plantas pra segurar quem vem do outro lado.", "destaques": ["Plants on Fire", "nove casas"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "Só que aqui tem um detalhe que muda tudo. Planta igual com planta igual se junta e vira uma versão mais forte. Duas estrelas, depois três estrelas.", "destaques": ["se junta", "três estrelas"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "Então a partida vira um quebra-cabeça: você junta agora pra ficar forte, ou espalha pra cobrir o campo inteiro?", "destaques": ["quebra-cabeça"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "E no meio da briga aparecem uns inimigos especiais. Quem derruba eles primeiro ganha vantagem, e é aí que muita partida vira.", "destaques": ["inimigos especiais", "vantagem"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "Cada lacaio tem seu jeito. O Mister Hiss solta um veneno que vai corroendo a defesa do outro aos poucos.", "destaques": ["Mister Hiss", "veneno"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "E tem os capitães, que mudam o seu time inteiro. Tem capitão que aumenta a vida máxima das suas plantas, por exemplo.", "destaques": ["capitães", "vida máxima"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "Agora no Halloween o jogo ganhou temporada nova, com abóbora, morcego e o Pumpkin King no meio da confusão.", "destaques": ["Halloween", "Pumpkin King"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "Sinceramente? O que prende é que nenhuma partida é igual, porque do outro lado não tem computador, tem gente pensando igual a você.", "destaques": ["nenhuma partida é igual"], "assunto": "Plants on Fire", "numero": null},
+  {"texto": "E aí, você juntaria tudo numa planta só ou espalharia a defesa? Comenta aí qual é a sua estratégia.", "destaques": ["sua estratégia"], "assunto": "Plants on Fire", "numero": null}
+ ],
+ "post": {"legenda": "Plants on Fire transforma o tower defense em duelo de 3 minutos contra outra pessoa. Qual é a sua estratégia: juntar ou espalhar?", "hashtags": ["#plantsonfire", "#towerdefense", "#jogosmobile", "#gamesbr", "#gamer"]},
+ "links_video": [],
+ "voz": {"modo": "ia", "voz_ia": "pt-BR-AntonioNeural"}
+}
