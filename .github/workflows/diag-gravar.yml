@@ -1,0 +1,25 @@
+name: diag gravar tela youtube (temporário)
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: |
+          sudo apt-get -qq install -y ffmpeg xvfb >/dev/null
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+      - run: |
+          Xvfb :99 -screen 0 1920x1080x24 & sleep 2
+          export DISPLAY=:99
+          for v in xNorSEoqxqw vmR02ZRKP9c; do timeout 180 python .github/diag/grava_yt.py $v || true; done
+          for f in grav_*.mp4; do ffprobe -v error -show_entries format=duration -of csv=p=0 $f; done
+          ls -la
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gravacao
+          retention-days: 2
+          path: |
+            grav_*.mp4
+            shot_*.png
