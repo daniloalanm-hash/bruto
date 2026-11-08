@@ -367,7 +367,11 @@ def _youtube(nome, chave, pasta, n=2):
 
 
 RUIM_DM = re.compile(r"review|an[aá]lise|reac|react|mod\b|speedrun|tutorial|dicas|tips|how to|unboxing|"
-                     r"compara|vs\.?\b|parte \d|part \d|episod|live|stream|ost|soundtrack|music", re.I)
+                     r"compara|vs\.?\b|parte \d|part \d|episod|live|stream|ost|soundtrack|music|"
+                     r"\bfilm|movie|filme|curta|fmv", re.I)
+# jogo cujo "trailer" é filme com atores (GTA 2 de 1999 era um curta live-action): busca só gameplay
+TRAILER_FILME = {"grandtheftauto2", "grandtheftauto", "grandtheftautolondon1969"}
+DM_BLOQUEADOS = {"x12zlxz"}  # vídeos conferidos que não mostram o jogo (live-action)
 
 
 def titulo_do_jogo(nome, titulo):
@@ -611,6 +615,9 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
     termos = ((f"{nome} trailer", 2), (f"{nome} gameplay", 1))
     if extra:
         termos = ((f"{nome} official trailer", 3), (f"{nome} trailer 4K", 2), (f"{nome} trailer oficial", 2))
+    filme = chave in TRAILER_FILME
+    if filme:
+        termos = ((f"{nome} gameplay", 3), (f"{nome} pc gameplay", 2), (f"{nome} walkthrough", 1))
     for termo, peso in termos:
         try:
             d = json.loads(_get("https://api.dailymotion.com/videos?" + urllib.parse.urlencode(
@@ -620,7 +627,8 @@ def _dailymotion(nome, chave, pasta, n=2, extra=False):
             continue
         for k, v in enumerate(d.get("list", [])):
             t, dur = v.get("title", ""), v.get("duration") or 0
-            if v["id"] in vistos or not titulo_do_jogo(nome, t) or RUIM_DM.search(t) or not 25 <= dur <= 900:
+            if v["id"] in vistos or v["id"] in DM_BLOQUEADOS or not titulo_do_jogo(nome, t) or RUIM_DM.search(t) \
+                    or not 25 <= dur <= 900 or (filme and re.search(r"trailer|teaser", t, re.I)):
                 continue
             vistos.add(v["id"])
             bonus = 2 if re.search(r"trailer", t, re.I) else (1 if re.search(r"gameplay", t, re.I) else 0)
