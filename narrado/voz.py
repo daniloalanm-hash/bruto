@@ -32,6 +32,65 @@ def ruido_de_fundo(src, palavras=None):
     return niveis[len(niveis) // 10]
 
 
+def planura(src, passo=0.01):
+    """Planura espectral (0 = tom/voz, 1 = ruído) a cada 10 ms: fungada e respiração são ruído sem tom."""
+    import subprocess
+    import numpy as np
+    bruto = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+                           capture_output=True).stdout
+    x = np.frombuffer(bruto, dtype=np.float32)
+    n = int(16000 * passo)
+    if len(x) < n:
+        return np.array([0.0])
+    x = x[: len(x) // n * n].reshape(-1, n) * np.hanning(n)
+    S = np.abs(np.fft.rfft(x, axis=1)) + 1e-9
+    return np.exp(np.log(S).mean(axis=1)) / S.mean(axis=1)
+
+
+def aparar_fungada(blocos, todas, db, passo, plan):
+    """Fungada/respiração logo depois da última palavra ("179.900. [fungada]"): o fim do bloco esticava por cima
+    dela (a queda antes era menor que SEGURA). Ruído sem tom que começa bem depois do fim da palavra, mais baixo
+    que a voz e separado dela por uma queda: o corte vem para a queda. O "s" final ("novecentos") fica, porque
+    cai dentro da palavra."""
+    import numpy as np
+    piso = float(np.percentile(db, 10))
+    limiar = max(piso + 14, -58.0)
+    n = min(len(db), len(plan))
+    for b in blocos:
+        if b.get("interno_fim"):
+            continue
+        fim_pal = b["pal"][-1]["e"]
+        k_ini, k_fim = int((fim_pal + 0.15) / passo), min(int(b["ce"] / passo) + 1, n)
+        if k_fim - k_ini < 5:
+            continue
+        k0, k1 = int(b["s"] / passo), int(fim_pal / passo)
+        voz = db[k0:k1][db[k0:k1] > limiar]
+        if len(voz) < 10:
+            continue
+        ref = float(np.percentile(voz, 75))
+        # queda funda (20 dB abaixo da voz) depois do fim da palavra, e então um ruído sem tom
+        j = k_ini
+        while j < k_fim and db[j] >= ref - 20:
+            j += 1
+        if j >= k_fim:
+            continue
+        r = j
+        while r < k_fim and db[r] <= ref - 20:
+            r += 1
+        if r >= k_fim:
+            continue  # só a voz morrendo: nada depois da queda
+        j = j + int(np.argmin(db[j:r]))  # o fundo da queda: o ruído começa dali
+        resto = np.arange(j + 1, k_fim)
+        som = resto[db[resto] > limiar]
+        if len(som) < 8 or float(np.mean(plan[som])) <= 0.4 or float(db[som].max()) >= ref - 3:
+            continue
+        novo = max(j * passo + 0.02, fim_pal + 0.04)
+        if novo < b["ce"] - 0.05:
+            print(f"voz: fungada/respiração cortada depois de \"{b['pal'][-1]['w']}\" "
+                  f"({b['ce'] - novo:.2f} s)", flush=True)
+            b["ce"] = novo
+
+
 def envelope(src, passo=0.01):
     """Nível (dB) do áudio a cada 10 ms, para achar onde a fala começa e termina de verdade."""
     import subprocess
@@ -336,6 +395,10 @@ def montar(src, palavras, destino, modelo_rnn, modo="gravada", forcar_nr=None, p
         print(f"voz: palavras soltas de tomada abandonada removidas: {soltos}")
     db, passo = envelope(src)
     definir_cortes(blocos, todas, db, passo)
+    try:
+        aparar_fungada(blocos, todas, db, passo, planura(src))
+    except Exception as e:  # nunca derruba a montagem da voz
+        print(f"aviso: fungada: {e}", flush=True)
     blocos = partir_pausas(blocos, db, passo)
 
     filt, partes, t = [], [], 0.0

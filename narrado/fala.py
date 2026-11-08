@@ -562,6 +562,10 @@ def editar(palavras, cenas, nomes=()):
                         sx = sim(norm(w["w"]), S[x][0])
                         if ponta and sx < 0.5 and (not nome_proprio(x) or sx < 0.45):
                             continue  # palavra de ligação na ponta ("as", "mas"): não é aquela do roteiro
+                        if ponta and sx < 1.0 and norm(w["w"]) in PALAVRAS_LIGACAO and S[x][0] not in PALAVRAS_LIGACAO:
+                            # "Mas" abrindo a tomada seguinte casava com "acima." (sim 0,5) do fim da frase anterior:
+                            # contava como "dito por último" e cortava a última palavra da frase ("um segmento |")
+                            continue
                         w["idx"] = x
                         usar_roteiro(w, x, troca=True)
                 else:

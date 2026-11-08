@@ -196,3 +196,16 @@ navegador dele — para testar roteiro gerado pela ferramenta, ele cola o texto 
   `~/Desktop/Baixar carros HD.command` roda `rodar.sh`, que atualiza o script do GitHub, baixa os carros sem HD e envia; apaga o arquivo local depois de enviado;
   carro sem HD achado só é tentado de novo depois de 24 h. Log: `~/RadarDeGaragem/log.txt`.
 - O app, ao gerar vídeo de carros, avisa quais carros ainda não têm HD na biblioteca (original com `_c<n>_`).
+
+## Voz gravada e motions (vídeo dos SUVs, 08/11/2026)
+
+- Última palavra da frase sumia ("um segmento | acima.", "dinheiro bem | gasto."): o "Mas" que abre a tomada
+  seguinte casava com a palavra do fim da frase anterior (semelhança 0,5) e contava como "dito por último".
+  `fala.editar`: palavra de ligação na ponta da tomada só casa com palavra de ligação do roteiro.
+- Fungada/respiração logo depois de um valor ("179.900. [fungada]") entrava no corte: `voz.aparar_fungada`
+  corta no fundo da queda quando, depois da última palavra, vem ruído sem tom (planura > 0,4) mais baixo que a voz.
+- Motions de carro (`grafico.numeros_carro`, só nicho carros): todo preço (R$, mil, reais), cv, kgfm, km/l,
+  litros (porta-malas/tanque), 0 a 100, %, polegadas (roda/tela) do roteiro vira cartão — só se foi FALADO.
+  Rótulo só com o que a frase diz (versão/ano antes do valor, FIPE, lançamento, "na Griffe"); dois preços na
+  mesma frase viram barras comparando. O cartão fica até o fim da frase do valor (`_agenda_carros`), um por vez.
+- Barras de comparação usavam escala diferente por barra (o valor menor saía com a barra maior): escala única.

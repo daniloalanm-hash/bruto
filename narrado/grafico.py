@@ -169,13 +169,15 @@ def gerar(numero, pasta, fontes, largura=1920, dur=None):
             maior = max(alvo, alvo_c) or 1
             by = int(30 + 236 * e)
             bw = W - 2 * int(44 * e)
-            for k, (val, cor, rot, valtxt) in enumerate((
-                    (alvo_c, CINZA, str(comp.get("rotulo") or "").upper()[:22], f"{pre_c}{fmt(alvo_c, casas_c)}{suf_c}"),
-                    (alvo, AMARELO, rotulo[:22], txt))):
+            barras = ((alvo_c, CINZA, str(comp.get("rotulo") or "").upper()[:22], f"{pre_c}{fmt(alvo_c, casas_c)}{suf_c}"),
+                      (alvo, AMARELO, rotulo[:22], txt))
+            # a MESMA escala nas duas barras (com rótulos de tamanhos diferentes, o valor menor saía com a barra maior)
+            escala = max(40 * e, min([bw * 0.62] + [(bw - medir.textlength(f"{vt}  {r}", font=f_peq) - 24 * e) /
+                                                     max(v / maior, 0.05) for v, _, r, vt in barras]))
+            for k, (val, cor, rot, valtxt) in enumerate(barras):
                 y = by + k * int(46 * e)
                 prog = _suave((t - 0.15 - 0.25 * k) / CONTA)
-                cabe = bw - medir.textlength(f"{valtxt}  {rot}", font=f_peq) - 24 * e
-                comp_b = int(max(40 * e, min(bw * 0.62, cabe)) * (val / maior) * prog)
+                comp_b = int(escala * (val / maior) * prog)
                 d.rounded_rectangle((x_txt, y, x_txt + max(comp_b, 6), y + int(30 * e)), int(8 * e), fill=cor)
                 d.text((x_txt + comp_b + int(14 * e), y - int(2 * e)), f"{valtxt}  {rot}", font=f_peq, fill=BRANCO)
             # selo só quando é desconto/queda de verdade (não em "versão flex × versão híbrida")
@@ -240,7 +242,8 @@ def momentos(projeto, timeline, total=None):
         # o que foi FALADO manda (o narrador pode dizer 750 onde o roteiro tinha 751)
         falada = " ".join(str(w.get("legenda") or w.get("w") or "") for w in projeto.get("palavras") or []
                           if w.get("manter") and w.get("cena") == k and "ns" in w) or frase
-        autos = numeros_da_fala(falada) if projeto.get("graficos_auto", True) else []
+        carros = projeto.get("nicho") == "carros"
+        autos = numeros_carro(frase) if carros else numeros_da_fala(falada) if projeto.get("graficos_auto", True) else []
         itens = []
         num = c.get("numero")
         if isinstance(num, dict) and num.get("valor") and ler_valor(num["valor"]) and \
@@ -256,11 +259,15 @@ def momentos(projeto, timeline, total=None):
                         num["valor"] = re.sub(r"\d[\d.,]*\d|\d", dig, num["valor"], count=1)
                         break
             itens.append((0, num))
-        dig_roteiro = cartoes._digitos(num.get("valor"))[:3] if isinstance(num, dict) else ""
+        dig_roteiro = {cartoes._digitos(x)[:3] for x in ((num.get("valor"), (num.get("comparar") or {}).get("valor"))
+                                                           if isinstance(num, dict) else ()) if x}
         for a in autos:
-            if dig_roteiro and cartoes._digitos(a["valor"])[:3] == dig_roteiro:
+            if cartoes._digitos(a["valor"])[:3] in dig_roteiro and not (carros and a.get("comparar")):
                 continue
-            itens.append((1, a))
+            if carros and isinstance(num, dict) and a.get("comparar") and \
+                    cartoes._digitos(a["valor"])[:3] in dig_roteiro:
+                itens = [x for x in itens if x[1] is not num]  # a comparação falada substitui o número sozinho
+            itens.append((0 if carros and a.get("comparar") else 1, a))
         if projeto.get("graficos_auto", True):
             for dt in datas_da_fala(frase):
                 chave = ("data", dt["dia"], dt["mes"])
@@ -272,8 +279,17 @@ def momentos(projeto, timeline, total=None):
                 if chave not in vistos:
                     vistos.add(chave)
                     itens.append((3, fo))
-        for prio, it in itens:
+        cursor = [0]
+        for prio, it in sorted(itens, key=lambda x: x[1].get("_pos", 0)) if carros else itens:
             it["_frase"] = frase
+            if carros and it.get("tipo") != "fonte":
+                # carros: o cartão entra quando o valor é falado e fica até a frase do valor terminar
+                achou = _fala_do_numero(projeto, k, it["valor"], cursor)
+                if achou is None:
+                    continue  # valor do roteiro que não foi dito: sem cartão
+                t, it["_fim"] = achou
+                cands.append((round(t, 2), prio, it))
+                continue
             if it.get("tipo") == "fonte":
                 t = _momento_palavra(projeto, k, it["nome"].split()[0])
             else:
@@ -288,6 +304,8 @@ def momentos(projeto, timeline, total=None):
     for t, prio, it in cands:
         if it.get("tipo") == "fonte" and (not fontes_ok or t - fontes_ok[-1][0] >= DUR_FONTE + 1):
             fontes_ok.append((t, it, DUR_FONTE))
+    if projeto.get("nicho") == "carros":
+        return sorted(_agenda_carros(cands) + fontes_ok, key=lambda x: x[0])
     # canto direito: um por vez, prioridade para o número do roteiro
     escolhidos = []
     for t, prio, it in cands:
@@ -304,6 +322,179 @@ def momentos(projeto, timeline, total=None):
         dur = max(DUR_MIN, min(DUR, prox - t - 0.4))
         saida.append((t, it, round(dur, 2)))
     return sorted(saida + fontes_ok, key=lambda x: x[0])
+
+
+DUR_CARRO_MAX = 9.0
+
+
+def _agenda_carros(cands):
+    """Um cartão por vez no canto: cada um fica até o fim da frase do valor (no mínimo DUR) e sai quando o próximo
+    valor é falado. Se o próximo vem enquanto o valor de agora ainda está sendo dito, o próximo espera a vez
+    (ou fica de fora). Valor que logo depois vira comparação (SEL 179.900 → Titanium 197.900) sai antes."""
+    itens = sorted(((t, p, it) for t, p, it in cands if it.get("tipo") != "fonte"), key=lambda x: (x[0], x[1]))
+    saida = []
+    for t, prio, it in itens:
+        fim = float(it.get("_fim") or t + DUR)
+        minimo = max(fim - t + 0.5, 1.6)
+        if saida:
+            t0a, ita, dura, mina = saida[-1]
+            if t < t0a + dura:
+                if t - t0a - 0.1 >= mina:
+                    saida[-1] = (t0a, ita, t - t0a - 0.1, mina)
+                elif t - t0a - 0.1 >= 1.0 and it.get("comparar"):
+                    saida[-1] = (t0a, ita, t - t0a - 0.1, mina)  # a comparação falada passa na frente
+                elif it.get("comparar") and (it["comparar"].get("valor") == ita.get("valor")):
+                    saida.pop()  # "99 mil, e o 2022, 109 mil" ditos colados: entra direto a comparação
+                    t = t0a
+                else:
+                    continue
+        dur = min(max(DUR, fim - t + 1.0), DUR_CARRO_MAX)
+        saida.append((t, it, dur, minimo))
+    return [(round(t, 2), it, round(d, 2)) for t, it, d, _ in saida]
+
+
+def _fala_do_numero(projeto, cena, valor, cursor):
+    """(início, fim da frase) do valor na fala: a palavra mantida do tópico com os mesmos dígitos, a partir da
+    última encontrada (o mesmo número dito duas vezes casa na ordem). O fim é a pontuação seguinte (até 6
+    palavras): "custando a partir de 149.990 reais." fica na tela até "reais"."""
+    import cartoes
+    alvo = cartoes._digitos(valor)[:3]
+    ws = [w for w in projeto["palavras"] if w.get("manter") and w.get("cena") == cena and "ns" in w]
+    for j in range(cursor[0], len(ws)):
+        dg = cartoes._digitos(ws[j].get("legenda") or ws[j].get("w"))
+        if alvo and dg and (dg.startswith(alvo) or (len(dg) >= 2 and len(alvo) >= 2 and alvo.startswith(dg))):
+            fim = ws[j].get("ne", ws[j]["ns"] + 0.5)
+            for w in ws[j:j + 7]:
+                fim = w.get("ne", w["ns"] + 0.3)
+                if re.search(r"[.,;:!?…]$", str(w.get("legenda") or w.get("w")).strip()):
+                    break
+            cursor[0] = j + 1
+            return ws[j]["ns"], fim
+    return None
+
+
+# ---------------------------------------------------------------- carros: valores tirados do roteiro
+
+_CARRO_VAL = re.compile(
+    r"(?P<din>(?:R\$\s?)?(?P<dn>\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)(?P<mil>\s+mil)?\s+reais"
+    r"|R\$\s?(?P<dn2>\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)(?P<mil2>\s+mil)?"
+    r"|(?P<dn3>\d+(?:,\d+)?)\s+mil\b(?!\s+(?:km|quil|giros|unidades|carros|pessoas))"
+    r"|(?<![\d.,])(?P<dn4>\d{2,3}\.\d{3})(?![\d.,]\d)(?!\s*(?:giros|rpm|km|quil|unidades|carros))"
+    r"|(?P<cv>\d{2,4})\s*(?:cavalos|cv)\b"
+    r"|(?P<kgfm>\d+(?:,\d+)?)\s*kgfm"
+    r"|(?P<kml>\d+(?:,\d+)?)\s*km/l"
+    r"|(?P<lit>\d+(?:,\d+)?)\s*litros"
+    r"|(?P<seg>\d+(?:,\d+)?)\s*segundos"
+    r"|(?P<pct>\d+(?:,\d+)?)\s*(?:%|por\s+cento)"
+    r"|(?P<pol>\d+(?:,\d+)?)\s*polegadas)", re.I)
+_LANCA = re.compile(r"lança|custava|partia|pedia|saía|chegou|estreou|pré-venda|custando|cobrava|era vendid", re.I)
+_PERDA = re.compile(r"perd|evapor|desvaloriz|queda|deix\w+ para trás", re.I)
+
+
+def _versao_antes(trecho, inicio_frase=False):
+    """Versão/ano logo antes do valor ("o Titanium 2021 vale cerca de" -> "Titanium 2021"). Fora: a 1ª palavra da
+    frase (maiúscula só por abrir a frase), marca do mês da FIPE ("novembro de 2026"), FIPE/Tabela."""
+    trecho = re.sub(r"\b(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)"
+                    r"\s+de\s+\d{4}", " ", trecho, flags=re.I)
+    toks = re.findall(r"[\wÀ-ÿ-]+", trecho)
+    primeiro = 0 if inicio_frase else -1
+    toks = list(enumerate(toks))[-9:]
+    fora = {"tabela", "fipe", "na", "no", "o", "a", "em", "hoje", "r", "ford", "hyundai", "citroën", "citroen",
+            "peugeot", "mitsubishi", "quem", "são", "e", "mas", "pois", "agora"}
+    pegos = []
+    ant = {i: (toks[k - 1][1].lower() if k else "") for k, (i, _) in enumerate(toks)}
+    for i, w in reversed(toks):
+        lugar = ant[i] in ("do", "da", "dos", "das", "de", "em")  # "importado do Japão": lugar, não versão
+        ok = re.fullmatch(r"(19|20)\d\d", w) or (w[:1].isupper() and w.lower() not in fora and i != primeiro
+                                                 and not lugar)
+        if ok:
+            pegos.insert(0, w)
+        elif pegos:
+            break
+    return " ".join(pegos[-2:])
+
+
+def numeros_carro(texto):
+    """Valores do roteiro de carro que viram cartão: preço (R$, mil, reais), cv, kgfm, km/l, litros, 0 a 100,
+    %, polegadas. Rótulo só com o que a frase diz (versão/ano antes do valor, FIPE, lançamento); dois preços na
+    mesma frase viram comparação em barras. Fora: anos, 1.6 THP, nomes (3008, 200 TSI), 360 graus, giros."""
+    achados = []
+    fipe_no_topico = False
+    for frase in re.split(r"(?<=[.!?])\s+", texto or ""):
+        precos = []
+        fim_ant = 0
+        if re.search(r"fipe", frase, re.I):
+            fipe_no_topico = True
+        for m in _CARRO_VAL.finditer(frase):
+            antes = frase[fim_ant:m.start()]
+            inicio_frase = fim_ant == 0
+            fim_ant = m.end()
+            depois = frase[m.end():m.end() + 30]
+            antes_frase = frase[:m.start()]
+            clausula = re.split(r"[,;:]\s", antes)[-1]
+            g = m.groupdict()
+            item = None
+            dn = g["dn"] or g["dn2"] or g["dn3"] or g["dn4"]
+            if dn:
+                mil = bool(g["mil"] or g["mil2"] or g["dn3"])
+                v = ler_valor(dn)[1] * (1000 if mil else 1)
+                if v < 1000:
+                    continue
+                valor = f"R$ {dn}{' mil' if mil else ''}"
+                versao = _versao_antes(antes, inicio_frase)
+                apos = re.match(r"\s*(?:reais\s+)?(?:na|no)\s+(?:vers[aã]o\s+)?([A-Z][\w-]+)", depois)
+                lanca = _LANCA.search(antes_frase)
+                fipe = fipe_no_topico and not lanca
+                if _PERDA.search(clausula) or re.match(r"\s*(?:reais\s+)?que\s+(evapor|sum|se perd)", depois):
+                    rot, valor = "de desvalorização", "-" + valor
+                elif apos:
+                    rot = apos.group(1)
+                elif fipe:
+                    rot = f"{versao} na FIPE" if versao else "na FIPE hoje"
+                elif lanca:
+                    rot = f"{versao} no lançamento" if versao else "no lançamento"
+                else:
+                    rot = versao
+                item = {"valor": valor, "rotulo": rot.strip()[:30], "_preco": v}
+                precos.append(item)
+            elif g["cv"]:
+                item = {"valor": f"{g['cv']} cv", "rotulo": "de potência"}
+            elif g["kgfm"]:
+                item = {"valor": f"{g['kgfm']} kgfm", "rotulo": "de torque"}
+            elif g["kml"]:
+                lado = re.match(r"\s*(na cidade|na estrada|com gasolina|com etanol)", depois, re.I)
+                item = {"valor": f"{g['kml']} km/l", "rotulo": (lado.group(1) if lado else "de consumo")}
+            elif g["lit"]:
+                rot = "de porta-malas" if "porta-malas" in clausula.lower() else \
+                    "de tanque" if "tanque" in clausula.lower() else ""
+                if not rot:
+                    continue
+                item = {"valor": f"{g['lit']} litros", "rotulo": rot}
+            elif g["seg"]:
+                if not re.search(r"0 a 100", f"{antes_frase} {depois}"):
+                    continue
+                item = {"valor": f"{g['seg']} s", "rotulo": "de 0 a 100 km/h"}
+            elif g["pct"]:
+                neg = bool(_PERDA.search(antes_frase))
+                item = {"valor": f"{'-' if neg else ''}{g['pct']}%", "rotulo": "de desvalorização" if neg else ""}
+            elif g["pol"]:
+                rot = "de roda" if "roda" in clausula.lower() else "de tela" if re.search(r"tela|painel|central",
+                                                                                         clausula.lower()) else ""
+                if not rot:
+                    continue
+                item = {"valor": f"{g['pol']}\"", "rotulo": rot}
+            if item:
+                item["_auto"] = True
+                item["_pos"] = len(achados)
+                achados.append(item)
+        # dois preços na mesma frase (lançamento x FIPE, SEL x Titanium): o 2º vira barras comparando com o 1º
+        ok = [p for p in precos if not p["valor"].startswith("-")]
+        if len(ok) >= 2 and ok[0]["rotulo"] and ok[1]["rotulo"]:
+            a, b = ok[0], ok[1]
+            b["comparar"] = {"valor": a["valor"], "rotulo": a["rotulo"]}
+    for a in achados:
+        a.pop("_preco", None)
+    return achados
 
 
 def _momento_palavra(projeto, cena, palavra):
