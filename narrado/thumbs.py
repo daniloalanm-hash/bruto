@@ -454,7 +454,7 @@ def impacto(fundo, palavra, fontes, destino, selo=None):
     tem sentido de queda (vermelho, descendo) ou de recorde (verde, subindo)."""
     from PIL import Image, ImageEnhance
     foco = _rosto(fundo)
-    pal = re.sub(r"\s+", " ", str(palavra or "").upper()).strip()[:14] or "FIM."
+    pal = re.sub(r"\s+", " ", str(palavra or "").upper()).strip()[:40] or "FIM."  # nunca corta no meio da palavra
     neg, pos = bool(NEGATIVO.search(pal)), bool(POSITIVO.search(pal))
     img = _cobrir(Image.open(fundo), W, H, foco, alvo_x=0.5, zoom=1.15 if foco else 1.0)
     img = _tratar(img, 1.1 if not neg else 0.9)
@@ -470,9 +470,22 @@ def impacto(fundo, palavra, fontes, destino, selo=None):
         cx = (foco[0] if foco else 0.5)
         x0 = int(W * 0.03) if cx >= 0.5 else W - bw - int(W * 0.03)
         img.alpha_composite(_seta(bw, bh, sobe=pos and not neg), (x0, int(H * 0.06)))
-    t = _palavra(pal, fontes, 300, AMARELO if pos and not neg else BRANCO)
+    cor = AMARELO if pos and not neg else BRANCO
+    t = _palavra(pal, fontes, 300, cor)
+    if t.width > W * 0.94 * 1.6 and " " in pal:
+        # texto longo ("SUVS INJUSTIÇADOS"): duas linhas equilibradas em vez de encolher demais ou cortar
+        ps = pal.split()
+        k = min(range(1, len(ps)), key=lambda i: abs(len(" ".join(ps[:i])) - len(" ".join(ps[i:]))))
+        l1, l2 = _palavra(" ".join(ps[:k]), fontes, 260, cor), _palavra(" ".join(ps[k:]), fontes, 260, cor)
+        passo = int(260 * 1.02)
+        t = Image.new("RGBA", (max(l1.width, l2.width), passo + l2.height), (0, 0, 0, 0))
+        t.alpha_composite(l1, ((t.width - l1.width) // 2, 0))
+        t.alpha_composite(l2, ((t.width - l2.width) // 2, passo))
     if t.width > W * 0.94:
         esc = W * 0.94 / t.width
+        t = t.resize((int(t.width * esc), int(t.height * esc)), Image.LANCZOS)
+    if t.height > H * 0.62:
+        esc = H * 0.62 / t.height
         t = t.resize((int(t.width * esc), int(t.height * esc)), Image.LANCZOS)
     img.alpha_composite(t, ((W - t.width) // 2, H - t.height + 14))
     if selo:
