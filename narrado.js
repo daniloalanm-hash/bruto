@@ -1808,8 +1808,9 @@ async function refazerThumb(n, campo, manterImagem) {
   const destaque = (bruto.match(/\*([^*]+)\*/g) || []).map((x) => x.replace(/\*/g, '')).join(' ');
   const texto = bruto.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
   const atual = (state.projeto?.thumbs || [])[n - 1] || {};
-  if (manterImagem && (!texto || texto.toUpperCase() === String(atual.texto || '').toUpperCase()) && destaque.toUpperCase() === String(atual.destaque || '').toUpperCase()) {
-    toast('Mude o texto no campo antes de usar "Usar texto".', 'warn'); return;
+  // mesmo texto também vale: refaz a arte com o texto atual (ex.: depois de uma correção no desenho da thumb)
+  if (manterImagem && !texto && !atual.texto) {
+    toast('Escreva o texto no campo antes de usar "Usar texto".', 'warn'); return;
   }
   const antes = (state.thumbs || [])[n - 1];
   state.thumbGerando = n;
