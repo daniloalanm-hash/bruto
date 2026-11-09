@@ -16,6 +16,10 @@ module.exports = (req, res) => responder(res, async () => {
         titulo: r.name.replace(/^Narrado · /, ''),
         criado: r.created_at,
         pronto: r.assets.some((a) => a.name === 'final.mp4'),
+        // longo (YouTube, horizontal) × curto (TikTok/Shorts, vertical): gravado no corpo da release; nos antigos,
+        // deduzido (só o longo tem thumbnails, e o final.mp4 dele passa de 120 MB)
+        longo: /Formato: horizontal/.test(r.body || '') || (!/Formato: vertical/.test(r.body || '')
+          && r.assets.some((a) => a.name === 'thumb_1.jpg' || (a.name === 'final.mp4' && a.size > 120e6))),
       })),
     };
   }

@@ -6,6 +6,10 @@ body.nr { display: block; height: auto; min-height: 100%; }
 #listaVideos { max-height: 60vh; overflow: auto; min-width: 300px; }
 #listaVideos button { display: flex; flex-direction: column; gap: 1px; }
 #listaVideos small { color: var(--muted); }
+#listaVideos .selo-formato { align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  padding: 1px 6px; border-radius: 4px; margin-bottom: 2px; color: #fff; }
+#listaVideos .selo-formato.yt { background: #e62117; }
+#listaVideos .selo-formato.ttk { background: #00a8b5; }
 
 .trilha { list-style: none; display: flex; gap: 0; margin: 0; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); overflow-x: auto; }
 .trilha li { padding: 10px 14px; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }

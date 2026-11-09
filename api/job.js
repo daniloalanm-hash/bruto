@@ -26,7 +26,7 @@ module.exports = (req, res) => responder(res, async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tag_name: tag, target_commitish: 'main', name: `Narrado · ${titulo}`, prerelease: true,
-        body: `Vídeo do Modo Narrado do Bruto.\n\nFonte: ${job.fonte || '—'}\n\nArquivos gerados automaticamente; pode apagar quando não precisar mais.`,
+        body: `Vídeo do Modo Narrado do Bruto.\n\nFormato: ${job.formato === 'horizontal' ? 'horizontal' : 'vertical'}\n\nFonte: ${job.fonte || '—'}\n\nArquivos gerados automaticamente; pode apagar quando não precisar mais.`,
       }),
     });
     await subirAsset(rel, 'job.json', JSON.stringify(job, null, 1), 'application/json');

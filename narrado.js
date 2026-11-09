@@ -2652,7 +2652,8 @@ $('#menuVideos').addEventListener('toggle', async (e) => {
     const { videos } = await api('/api/status?lista=1');
     box.replaceChildren(...(videos.length ? videos.map((v) => h('button', {
       onclick: () => { $('#menuVideos').open = false; abrirVideo(v.tag); },
-    }, v.titulo, h('small', {}, `${new Date(v.criado).toLocaleString('pt-BR')} · ${v.pronto ? 'pronto' : 'em andamento'}`))) : [h('p', { class: 'muted small' }, 'Nenhum vídeo ainda.')]));
+    }, h('span', { class: `selo-formato ${v.longo ? 'yt' : 'ttk'}`, title: v.longo ? 'Vídeo longo (YouTube)' : 'Vídeo curto (TikTok/Shorts)' }, v.longo ? 'YT · longo' : 'TTK · curto'),
+    v.titulo, h('small', {}, `${new Date(v.criado).toLocaleString('pt-BR')} · ${v.pronto ? 'pronto' : 'em andamento'}`))) : [h('p', { class: 'muted small' }, 'Nenhum vídeo ainda.')]));
   } catch (err) { box.replaceChildren(h('p', { class: 'muted small' }, err.message)); }
 });
 $('#btnNovo').addEventListener('click', () => {
